@@ -56,6 +56,10 @@
     ></app-photo-mode>
   }
 
+  @if (showHelp()) {
+    <app-help (closeModal)="showHelp.set(false)"></app-help>
+  }
+
   @if (showCars()) {
     <app-car-select [current]="currentCar().id" (choose)="onChooseCar($event)" (closeModal)="showCars.set(false)"></app-car-select>
   }

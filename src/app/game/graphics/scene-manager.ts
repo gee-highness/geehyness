@@ -157,6 +157,7 @@ export class SceneManager {
     this.vehicleParts = CarFactory.createVehicleMesh(config, visuals);
     this.vehicleMeshGroup = this.vehicleParts.root;
     this.scene.add(this.vehicleMeshGroup);
+    this.buildLightRig(config.wheelBaseM, config.trackWidthM);
     this.modelWheels = [];
     this.modelTail = null;
     this.modelHolder = null;
@@ -164,6 +165,40 @@ export class SceneManager {
     AssetLibrary.attachPlayerCar(this.vehicleMeshGroup, def, config.wheelBaseM, visuals.bodyColor).then((r) => {
       if (r && parts === this.vehicleParts) { this.modelWheels = r.wheels; this.modelTail = r.tail; this.modelSpinSign = r.spinSign; this.modelRadius = r.radius; this.modelHolder = r.holder; this.modelWheelCy = r.wheelCentreY; }
     });
+  }
+
+  // ---- lights rig: head/tail/indicator lamps + one beam, driven by DriveStateService each frame
+  private rig?: { head: THREE.Mesh[]; tail: THREE.Mesh[]; ind: { m: THREE.Mesh; side: number; front: boolean }[]; beam: THREE.SpotLight };
+  private buildLightRig(wheelBase: number, track: number): void {
+    const g = this.vehicleMeshGroup; if (!g) return;
+    const fz = wheelBase / 2 + 0.95, rz = -wheelBase / 2 - 0.95, x = Math.max(0.55, track * 0.4), y = 0.62;
+    const lamp = (px: number, py: number, pz: number, col: number, w = 0.3, h = 0.11) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.06), new THREE.MeshBasicMaterial({ color: col, toneMapped: false })); m.position.set(px, py, pz); g.add(m); return m; };
+    const head = [lamp(-x, y, fz, 0xfff6d8), lamp(x, y, fz, 0xfff6d8)], tail = [lamp(-x, y, rz, 0x7a0000), lamp(x, y, rz, 0x7a0000)];
+    const ind: { m: THREE.Mesh; side: number; front: boolean }[] = [];
+    for (const side of [-1, 1]) { ind.push({ m: lamp(side * (x + 0.28), y, fz - 0.02, 0x3a2500, 0.14, 0.1), side, front: true }); ind.push({ m: lamp(side * (x + 0.28), y + 0.04, rz + 0.02, 0x3a2500, 0.14, 0.1), side, front: false }); }
+    const beam = new THREE.SpotLight(0xfff3d6, 0, 75, 0.5, 0.55, 1.2); beam.position.set(0, 0.8, fz); beam.target.position.set(0, 0.2, fz + 25); g.add(beam, beam.target);
+    this.rig = { head, tail, ind, beam };
+  }
+  /** left of the car is +x (it faces +z)  */
+  public setLights(headlights: number, left: boolean, right: boolean, braking: boolean, reversing: boolean, daylight = 1): void {
+    const r = this.rig; if (!r) return;
+    const hm = (m: THREE.Mesh, c: number) => (m.material as THREE.MeshBasicMaterial).color.setHex(c);
+    for (const m of r.head) hm(m, headlights ? (headlights === 2 ? 0xffffff : 0xfff0c8) : 0x9a9a8c);
+    for (const m of r.tail) hm(m, braking ? 0xff1a1a : headlights ? 0xb01010 : 0x6a0000);
+    for (const i of r.ind) hm(i.m, (i.side > 0 ? left : right) ? 0xffb000 : (!i.front && reversing && i.side > 0 ? 0xffffff : 0x3a2500));
+    const night = 1 - Math.min(1, daylight);
+    r.beam.intensity = headlights === 0 ? 0 : (headlights === 2 ? 30 : 14) * (0.35 + night * 0.9); r.beam.distance = headlights === 2 ? 110 : 70;
+  }
+
+  // ---- map waypoint beacon: a tall magenta light shaft
+  private beacon?: THREE.Mesh;
+  public setWaypoint(wp: [number, number] | null): void {
+    if (!wp) { if (this.beacon) this.beacon.visible = false; return; }
+    if (!this.beacon) {
+      this.beacon = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 400, 16, 1, true).translate(0, 200, 0), new THREE.MeshBasicMaterial({ color: 0xd946ef, transparent: true, opacity: 0.38, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+      this.beacon.frustumCulled = false; this.beacon.renderOrder = 4; this.scene.add(this.beacon);
+    }
+    this.beacon.visible = true; this.beacon.position.set(wp[0], this.worldBuilder.calculateRawTerrainHeight(wp[0], wp[1]), wp[1]);
   }
 
   public updateEnvironment(env: WorldEnvironmentState): void {

@@ -263,6 +263,29 @@ export class AudioService {
     }
   }
 
+  /** Car horn: two detuned square tones (a "two-tone" horn), held while `on`. */
+  private hornNodes: { o: OscillatorNode[]; g: GainNode } | null = null;
+  public setHorn(on: boolean): void {
+    if (!this.ctx || !this.isUnlocked || !this.masterGain) return;
+    if (on && !this.hornNodes && !this.isMuted()) {
+      const g = this.ctx.createGain(), f = this.ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 2200;
+      const o = [392, 494].map((hz) => { const x = this.ctx!.createOscillator(); x.type = 'square'; x.frequency.value = hz; x.connect(f); x.start(); return x; });
+      g.gain.setValueAtTime(0, this.ctx.currentTime); g.gain.linearRampToValueAtTime(0.16, this.ctx.currentTime + 0.03);
+      f.connect(g); g.connect(this.masterGain); this.hornNodes = { o, g };
+    } else if (!on && this.hornNodes) {
+      const { o, g } = this.hornNodes; this.hornNodes = null; const t = this.ctx.currentTime;
+      g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t); g.gain.linearRampToValueAtTime(0, t + 0.06); o.forEach((x) => x.stop(t + 0.08));
+    }
+  }
+
+  /** Indicator relay: a short click, higher on the "on" edge. */
+  public playIndicatorTick(on: boolean): void {
+    if (!this.ctx || !this.isUnlocked || this.isMuted() || !this.masterGain) return;
+    const t = this.ctx.currentTime, o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = 'square'; o.frequency.value = on ? 1900 : 1500; g.gain.setValueAtTime(0.05, t); g.gain.exponentialRampToValueAtTime(0.0005, t + 0.035);
+    o.connect(g); g.connect(this.masterGain); o.start(t); o.stop(t + 0.04);
+  }
+
   /**
    * Exhaust backfire pop & bang on deceleration.
    */

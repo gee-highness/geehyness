@@ -61,88 +61,57 @@ export class GamepadService {
     return null;
   }
 
+  private static readonly NONE: GamepadControlsSnapshot = {
+    connected: false, id: '', isDualShock: false, hasVibration: false, steer: 0, throttle: 0, brake: 0, handbrake: false, shiftUp: false, shiftDown: false,
+    cycleCamera: false, lookBack: false, resetCar: false, toggleMap: false, toggleTelemetry: false, togglePhoto: false,
+    lookX: 0, lookY: 0, indicateLeft: false, indicateRight: false, hazards: false, headlights: false, horn: false, recentreLook: false,
+    toggleCars: false, cycleWeather: false, cycleQuality: false, toggleFps: false, toggleHaptics: false, toggleMute: false, toggleHelp: false, worldTools: false, garage: false,
+  };
+  private shareUsed = false;
+  private dz(v: number, d = this.deadzone): number { return Math.abs(v) < d ? 0 : (v - Math.sign(v) * d) / (1 - d); }
+
+  /**
+   * Standard-mapping layout (PS names; Xbox in brackets)
+   *  Sticks      L: steer · R: look around (R3 recentre) · L3: horn
+   *  Triggers    R2 throttle · L2 brake/reverse        Bumpers  R1 up-shift · L1 down-shift
+   *  Face        Cross [A] handbrake · Circle [B] look back · Square [X] camera · Triangle [Y] reset (hold)
+   *  D-Pad       Left/Right indicators · Up headlights (off/low/high) · Down hazards
+   *  Options [Menu] map · Home photo mode · Share [View] = modifier layer:
+   *    tap Share telemetry; Share+Up weather; Share+Down quality; Share+Left cars; Share+Right FPS;
+   *    Share+Cross vibration; Share+Circle mute; Share+Square garage; Share+Triangle world tools; Share+Options help
+   */
   public pollControls(): GamepadControlsSnapshot {
     const pad = this.getConnectedGamepad();
-    if (!pad) {
-      return {
-        connected: false,
-        id: '',
-        isDualShock: false,
-        hasVibration: false,
-        steer: 0,
-        throttle: 0,
-        brake: 0,
-        handbrake: false,
-        shiftUp: false,
-        shiftDown: false,
-        cycleCamera: false,
-        lookBack: false,
-        resetCar: false,
-        toggleMap: false,
-        toggleTelemetry: false,
-        togglePhoto: false,
-      };
-    }
+    if (!pad) return GamepadService.NONE;
+    const b = pad.buttons, down = (i: number) => b[i]?.pressed || false;
+    const edge = (i: number) => { const d = down(i), e = d && !this.lastButtons[i]; return e; };
+    const share = down(8);
+    const e = [] as boolean[]; for (let i = 0; i < 18; i++) e[i] = edge(i);
+    const combo = (i: number) => share && e[i];
+    if (combo(0) || combo(1) || combo(2) || combo(3) || combo(9) || combo(12) || combo(13) || combo(14) || combo(15)) this.shareUsed = true;
+    const shareTap = !share && this.lastButtons[8] && !this.shareUsed; if (!share && !this.lastButtons[8]) this.shareUsed = false;
+    if (!share && this.lastButtons[8]) this.shareUsed = false;
 
-    // Left Stick X (axis 0)
-    let rawSteer = pad.axes[0] || 0;
-    if (Math.abs(rawSteer) < this.deadzone) rawSteer = 0;
-    else rawSteer = (rawSteer - Math.sign(rawSteer) * this.deadzone) / (1 - this.deadzone);
-
-    // Apply quadratic response curve for fine center control with rapid full-lock
-    const steer = Math.sign(rawSteer) * Math.pow(Math.abs(rawSteer), 1.5);
-
-    // Standard Mapping:
-    // Buttons: 0: Cross, 1: Circle, 2: Square, 3: Triangle
-    // 4: L1, 5: R1, 6: L2 (analog), 7: R2 (analog)
-    // 8: Share, 9: Options, 10: L3, 11: R3
-    // 12: D-Up, 13: D-Down, 14: D-Left, 15: D-Right
-    const b = pad.buttons;
-    const cross = b[0]?.pressed || false;
-    const circle = b[1]?.pressed || false;
-    const square = b[2]?.pressed || false;
-    const triangle = b[3]?.pressed || false;
-    const l1 = b[4]?.pressed || false;
-    const r1 = b[5]?.pressed || false;
-    const l2 = b[6]?.value ?? (b[6]?.pressed ? 1 : 0);
-    const r2 = b[7]?.value ?? (b[7]?.pressed ? 1 : 0);
-    const options = b[9]?.pressed || false;
-    const dUp = b[12]?.pressed || false;
-    const dDown = b[13]?.pressed || false;
-
-    // Edge triggers for toggles
-    const cycleCamera = square && !this.lastButtons[2];
-    const toggleMap = options && !this.lastButtons[9];
-    const toggleTelemetry = dUp && !this.lastButtons[12];
-    const togglePhoto = dDown && !this.lastButtons[13];
-    const shiftUp = r1 && !this.lastButtons[5];
-    const shiftDown = l1 && !this.lastButtons[4];
-
-    this.lastButtons[2] = square;
-    this.lastButtons[9] = options;
-    this.lastButtons[12] = dUp;
-    this.lastButtons[13] = dDown;
-    this.lastButtons[5] = r1;
-    this.lastButtons[4] = l1;
-
-    return {
-      connected: true,
-      id: pad.id,
-      isDualShock: this.isDualShock(),
-      hasVibration: !!(pad as unknown as { vibrationActuator?: VibrationActuatorLike }).vibrationActuator,
-      steer: Math.max(-1, Math.min(1, steer)),
-      throttle: Math.max(0, Math.min(1, r2)),
-      brake: Math.max(0, Math.min(1, l2)),
-      handbrake: cross,
-      shiftUp,
-      shiftDown,
-      cycleCamera,
-      lookBack: circle,
-      resetCar: triangle,
-      toggleMap,
-      toggleTelemetry,
-      togglePhoto,
+    // Left stick X steering with a gentle response curve
+    const rawSteer = this.dz(pad.axes[0] || 0), steer = Math.sign(rawSteer) * Math.pow(Math.abs(rawSteer), 1.5);
+    const l2 = b[6]?.value ?? (b[6]?.pressed ? 1 : 0), r2 = b[7]?.value ?? (b[7]?.pressed ? 1 : 0);
+    const out: GamepadControlsSnapshot = {
+      ...GamepadService.NONE,
+      connected: true, id: pad.id, isDualShock: this.isDualShock(), hasVibration: !!(pad as unknown as { vibrationActuator?: VibrationActuatorLike }).vibrationActuator,
+      steer: Math.max(-1, Math.min(1, steer)), throttle: Math.max(0, Math.min(1, r2)), brake: Math.max(0, Math.min(1, l2)),
+      handbrake: down(0) && !share, lookBack: down(1) && !share,
+      shiftUp: e[5], shiftDown: e[4],
+      cycleCamera: e[2] && !share, resetCar: down(3) && !share,
+      toggleMap: e[9] && !share, togglePhoto: e[16],
+      toggleTelemetry: shareTap,
+      lookX: this.dz(pad.axes[2] || 0, 0.12), lookY: this.dz(pad.axes[3] || 0, 0.12),
+      indicateLeft: e[14] && !share, indicateRight: e[15] && !share, headlights: e[12] && !share, hazards: e[13] && !share,
+      horn: down(10), recentreLook: e[11],
+      cycleWeather: combo(12), cycleQuality: combo(13), toggleCars: combo(14), toggleFps: combo(15),
+      toggleHaptics: combo(0), toggleMute: combo(1), garage: combo(2), worldTools: combo(3), toggleHelp: combo(9),
     };
+    for (let i = 0; i < 18; i++) this.lastButtons[i] = down(i);
+    return out;
   }
 
   /** Cancel any rumble that is still playing. */

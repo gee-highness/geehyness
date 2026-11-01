@@ -16,6 +16,8 @@ import { FestivalService } from '../../services/festival.service';
 import { AudioService } from '../../services/audio.service';
 import { EnvironmentService } from '../../services/environment.service';
 import type { WorldBuilder } from '../../game/graphics/world-builder';
+import { NavigationService } from '../../services/navigation.service';
+import { DriveStateService } from '../../services/drive-state.service';
 import { SettingsService } from '../../services/settings.service';
 import { HapticsService } from '../../services/haptics.service';
 import { WorldPipelineService } from '../../services/world-pipeline.service';
@@ -136,6 +138,15 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
         </div>
       }
 
+      <!-- Indicators, hazards, headlights, waypoint -->
+      <div class="absolute pointer-events-none left-1/2 -translate-x-1/2 flex items-center gap-3" [ngClass]="compact() ? 'top-[68px]' : 'bottom-24 max-sm:bottom-20'">
+        <svg width="34" height="28" viewBox="0 0 34 28" aria-label="Left indicator"><path d="M2 14 L16 2 V9 H32 V19 H16 V26 Z" [attr.fill]="drive.leftOn ? '#34d399' : 'rgba(255,255,255,.14)'" /></svg>
+        @if (drive.headlights() > 0) { <span class="text-[11px] font-black px-2 py-0.5 rounded-md" [class.bg-sky-500]="drive.headlights() === 2" [class.bg-emerald-600]="drive.headlights() === 1">{{ drive.headlights() === 2 ? 'HIGH' : 'LIGHTS' }}</span> }
+        @if (drive.hazards()) { <span class="text-[11px] font-black px-2 py-0.5 rounded-md bg-red-600" [class.opacity-30]="!drive.blink()">HAZ</span> }
+        @if (nav.waypoint(); as wp) { <span class="text-[11px] font-black px-2 py-0.5 rounded-md bg-fuchsia-600 flex items-center gap-1"><svg width="12" height="12" viewBox="-6 -6 12 12" [style.transform]="'rotate(' + wpAngle() + 'rad)'"><path d="M0 -6 L5 5 L0 2 L-5 5 Z" fill="#fff"/></svg>{{ wpDistance() }}</span> }
+        <svg width="34" height="28" viewBox="0 0 34 28" aria-label="Right indicator"><path d="M32 14 L18 2 V9 H2 V19 H18 V26 Z" [attr.fill]="drive.rightOn ? '#34d399' : 'rgba(255,255,255,.14)'" /></svg>
+      </div>
+
       <!-- Bottom-centre: contextual hint (fades) -->
       @if (hintVisible()) {
         <div class="absolute bottom-5 left-1/2 -translate-x-1/2 hint-fade hud-card px-4 py-2 text-[11px] text-zinc-300 flex items-center gap-3 max-md:hidden">
@@ -154,6 +165,8 @@ export class HudComponent {
   public worldPipeline = inject(WorldPipelineService);
   public hapticsService = inject(HapticsService);
   public settings = inject(SettingsService);
+  public nav = inject(NavigationService);
+  public drive = inject(DriveStateService);
   compact = input<boolean>(false);
 
   @ViewChild('minimapCanvas', { static: false }) minimapCanvasRef!: ElementRef<HTMLCanvasElement>;
@@ -196,6 +209,10 @@ export class HudComponent {
     setTimeout(() => this.hintVisible.set(false), 14000);
   }
 
+  /** Distance to the map waypoint, and its bearing relative to the car (radians, 0 = straight ahead). */
+  public wpDistance(): string { const w = this.nav.waypoint(); if (!w) return ''; const d = Math.hypot(w[0] - this.poseX, w[1] - this.poseZ); return d > 1000 ? (d / 1000).toFixed(1) + ' km' : Math.round(d) + ' m'; }
+  public wpAngle(): number { const w = this.nav.waypoint(); if (!w) return 0; const b = Math.atan2(w[0] - this.poseX, w[1] - this.poseZ); let a = b - this.poseYaw; while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
+
   public fire(id: string): void {
     switch (id) {
       case 'cars': this.openCars.emit(); break;
@@ -232,9 +249,8 @@ export class HudComponent {
     ctx.clearRect(0, 0, W, W);
     ctx.save();
     ctx.beginPath(); ctx.arc(cx, W / 2, W / 2 - 2, 0, Math.PI * 2); ctx.clip();
-    const g = ctx.createRadialGradient(cx, W / 2, 10, cx, W / 2, W / 2);
-    g.addColorStop(0, '#1f2a24'); g.addColorStop(1, '#0b100d');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, W, W);
+    const night = this.drive.headlights() > 0 ? 0.55 : 1;
+    ctx.fillStyle = night < 1 ? '#6f7a80' : '#d6cfb9'; ctx.fillRect(0, 0, W, W);
     ctx.translate(cx, cy);
     ctx.rotate(-this.poseYaw); // sim forward (+Z when yaw=0) points up the map
     ctx.scale(scale, scale);
@@ -242,8 +258,9 @@ export class HudComponent {
     if (this.world?.ready && Math.hypot(this.poseX - this.nearX, this.poseZ - this.nearZ) > 40) {
       this.near = this.world.nearbyRoads(this.poseX, this.poseZ, 420); this.nearX = this.poseX; this.nearZ = this.poseZ;
     }
-    const WID = [20, 16, 15, 14, 12, 9, 6, 6, 3, 5];
-    const COL = ['#fbbf24', '#fbbf24', '#f59e0b', '#e5e7eb', '#d4d4d8', '#a1a1aa', '#71717a', '#78716c', '#52525b', '#38bdf8'];
+    const WID = [20, 16, 15, 14, 12, 9, 6, 6, 3, 8];
+    const COL = ['#f6c945', '#f6c945', '#fbe9a0', '#fbe9a0', '#ffffff', '#ffffff', '#f4f1e6', '#cbb892', '#e9e4d2', '#8db8d0'];
+    const CASE = ['#8a6a12', '#8a6a12', '#9d9580', '#9d9580', '#9d9580', '#a8a18c', '#a8a18c', '#a8a18c', '#b8b29c', '#8db8d0'];
     const order = [...this.near].sort((a, b) => b.c - a.c);
     for (const pass of [0, 1]) {
       for (const r of order) {
@@ -252,16 +269,30 @@ export class HudComponent {
           const x = r.pts[i] / 10 - this.poseX, z = r.pts[i + 1] / 10 - this.poseZ;
           if (i) ctx.lineTo(x, -z); else ctx.moveTo(x, -z);
         }
-        if (pass === 0) { ctx.strokeStyle = 'rgba(0,0,0,.75)'; ctx.lineWidth = WID[r.c] + 6; }
+        if (pass === 0) { if (r.c === 9) continue; ctx.strokeStyle = CASE[r.c]; ctx.lineWidth = WID[r.c] + 5; }
         else { ctx.strokeStyle = COL[r.c]; ctx.lineWidth = WID[r.c]; }
         ctx.stroke();
       }
     }
+    // blips (nearby key POIs) + waypoint clamped to the radar edge, drawn in the rotated metre space
+    const Rm = (W * 0.36) / scale, KEY: Record<string, string> = { hospital: '#e11d48', police: '#2563eb', fuel: '#f97316', mall: '#a855f7' };
+    if (this.world?.ready) for (const poi of this.world.meta.pois) {
+      const col = KEY[poi.k]; if (!col) continue; const px = poi.p[0] - this.poseX, pz = -(poi.p[1] - this.poseZ); if (Math.abs(px) > Rm || Math.abs(pz) > Rm || Math.hypot(px, pz) > Rm) continue;
+      ctx.fillStyle = col; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2 / scale; ctx.beginPath(); ctx.arc(px, pz, 6 / scale, 0, 7); ctx.fill(); ctx.stroke();
+    }
+    const wp = this.nav.waypoint();
+    if (wp) {
+      let px = wp[0] - this.poseX, pz = -(wp[1] - this.poseZ); const d = Math.hypot(px, pz), cl = d > Rm; if (cl) { px *= Rm / d; pz *= Rm / d; }
+      ctx.fillStyle = '#d946ef'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5 / scale; ctx.beginPath(); ctx.arc(px, pz, (cl ? 8 : 11) / scale, 0, 7); ctx.fill(); ctx.stroke();
+    }
     ctx.restore();
     ctx.fillStyle = '#38bdf8'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.moveTo(cx, cy - 20); ctx.lineTo(cx - 13, cy + 14); ctx.lineTo(cx, cy + 6); ctx.lineTo(cx + 13, cy + 14); ctx.closePath(); ctx.fill(); ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(20,24,28,.85)'; ctx.lineWidth = 5;
     ctx.beginPath(); ctx.arc(cx, W / 2, W / 2 - 3, 0, Math.PI * 2); ctx.stroke();
+    // north marker rides the ring
+    { const rx = cx + Math.sin(this.poseYaw) * (W / 2 - 14), ry = W / 2 + Math.cos(this.poseYaw) * (W / 2 - 14);
+      ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(rx, ry, 11, 0, 7); ctx.fill(); ctx.fillStyle = '#fff'; ctx.font = '800 14px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('N', rx, ry + 1); }
   }
 
   /** Circular RPM arc with redline, ticks and speed ring. */

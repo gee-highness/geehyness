@@ -25,3 +25,15 @@ python3 -I scripts/build_world.py /tmp/osm data/dem.json public/assets/world /tm
 `build_world.py` treats the 5th argument as optional; everything below is skipped when it is absent. The game already renders it:
 real street lamps (procedural lamps defer to them), stop/give-way/warning sign plates, bus stops, cliffs/ridges/embankments
 (rock slabs with collision), and real river/stream/canal/drain widths. `meta.addr` (house numbers) is emitted but not drawn yet.
+
+## Everything-in-OSM fetch for Termux
+```
+pkg install -y git python
+git clone <this repo> && cd geehyness
+bash scripts/termux_osm.sh                       # all categories, resumable (re-run if interrupted)
+bash scripts/termux_osm.sh points3,cliffs3,hydro3  # just what build_world.py consumes (about 20-40 min)
+```
+`scripts/fetch_osm_all.py` is stdlib-only, tiles each category, spools to `~/osm_all/*.jsonl` (so memory stays small) and writes
+`<category>.json` when all tiles of that category are done. `points3/cliffs3/hydro3` feed `build_world.py` directly; the other
+categories (`roads_all`, `buildings_all`, `landuse_all`, `pois_all`, `furniture_all`, `power_all`, `rail_all`, `boundaries_all`,
+`places_all`, `routes_all`) are the full raw dumps for future converters. Move the zip to your PC / back into this repo to rebuild.

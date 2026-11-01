@@ -59,6 +59,8 @@ export class WorldBuilder {
   public collision = new CollisionWorld();
   public meta!: WorldMeta;
   public roadWays: RoadWay[] = [];
+  /** Lake/pond outlines (decimetres) for the map. */
+  public waterPolys: number[][] = [];
   private readyCbs: (() => void)[] = [];
   private dem!: Float32Array;
   private groundCls!: Uint8Array;
@@ -215,7 +217,7 @@ export class WorldBuilder {
   /** Visible road surface sits this far above the terrain (per road class). */
   private static readonly ROAD_LIFT = [0.16, 0.16, 0.15, 0.14, 0.13, 0.12, 0.1, 0.1, 0.08, -0.3];
 
-  private groundClassAt(x: number, z: number): number {
+  public groundClassAt(x: number, z: number): number {
     if (!this.groundCls) return 1;
     const m = this.meta;
     const ix = Math.floor((x - m.bounds[0]) / m.px), iz = Math.floor((z - m.bounds[2]) / m.px);
@@ -378,6 +380,7 @@ export class WorldBuilder {
     this.indexRoads();
     this.buildTerrain(scene, groundTex);
     this.buildRoads(scene);
+    this.waterPolys = (roads.water as { p: number[] }[]).map((q) => q.p);
     this.buildWater(scene, roads.water);
     this.city = new CityBuilder(this);
     this.city.build(scene, blds.b, blds.signs ?? []);

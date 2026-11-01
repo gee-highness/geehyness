@@ -17,6 +17,18 @@ export class CameraRig {
   public photoPhi = Math.PI / 4;
   public photoFov = 50;
 
+  // Free-look (right stick / mouse drag): yaw about the car, pitch up/down; eases back to centre when released.
+  public lookYaw = 0; public lookPitch = 0; private lookIdle = 0;
+  /** x,y in -1..1 (stick) per frame. */
+  public look(x: number, y: number, dt: number): void {
+    if (Math.abs(x) > 0.001 || Math.abs(y) > 0.001) {
+      this.lookIdle = 0;
+      this.lookYaw = THREE.MathUtils.clamp(this.lookYaw - x * 2.8 * dt, -Math.PI, Math.PI);
+      this.lookPitch = THREE.MathUtils.clamp(this.lookPitch - y * 1.5 * dt, -0.35, 0.85);
+    } else { this.lookIdle += dt; if (this.lookIdle > 1.4) { this.lookYaw = THREE.MathUtils.damp(this.lookYaw, 0, 3.5, dt); this.lookPitch = THREE.MathUtils.damp(this.lookPitch, 0, 3.5, dt); } }
+  }
+  public recentreLook(): void { this.lookYaw = 0; this.lookPitch = 0; this.lookIdle = 99; }
+
   constructor(aspect: number) {
     this.camera = new THREE.PerspectiveCamera(65, aspect, 0.3, 4500);
     this.camera.position.copy(this.currentPos);
@@ -61,6 +73,8 @@ export class CameraRig {
     if (isLookingBack) {
       forward.negate();
     }
+    if (this.lookYaw !== 0) forward.applyAxisAngle(up, this.lookYaw);
+    const pitchLift = Math.sin(this.lookPitch);
 
     let targetPos = new THREE.Vector3();
     let lookTarget = vehiclePos.clone().add(new THREE.Vector3(0, 0.7, 0));
@@ -74,7 +88,7 @@ export class CameraRig {
         // 5.5m behind, 1.8m above, looking 4m ahead of car
         targetPos = vehiclePos.clone()
           .sub(forward.clone().multiplyScalar(5.5))
-          .add(up.clone().multiplyScalar(1.8));
+          .add(up.clone().multiplyScalar(1.8 + pitchLift * 4.5));
         lookTarget = vehiclePos.clone().add(forward.clone().multiplyScalar(4.0)).add(new THREE.Vector3(0, 0.8, 0));
         desiredFov = 65 + fovBonus;
         break;
@@ -83,7 +97,7 @@ export class CameraRig {
         // 8.5m behind, 2.8m above
         targetPos = vehiclePos.clone()
           .sub(forward.clone().multiplyScalar(8.5))
-          .add(up.clone().multiplyScalar(2.8));
+          .add(up.clone().multiplyScalar(2.8 + pitchLift * 6));
         lookTarget = vehiclePos.clone().add(forward.clone().multiplyScalar(5.0)).add(new THREE.Vector3(0, 1.0, 0));
         desiredFov = 68 + fovBonus;
         break;
@@ -92,7 +106,7 @@ export class CameraRig {
         // Inside cockpit at driver eye height (Right-Hand Drive for Eswatini: x +0.28, y +0.75, z +0.1)
         const cockpitOffset = new THREE.Vector3(0.28, 0.75, 0.1).applyQuaternion(vehicleQuat);
         targetPos = vehiclePos.clone().add(cockpitOffset);
-        lookTarget = targetPos.clone().add(forward.clone().multiplyScalar(15.0));
+        lookTarget = targetPos.clone().add(forward.clone().multiplyScalar(15.0)).add(up.clone().multiplyScalar(Math.tan(this.lookPitch) * 15));
         desiredFov = 74 + fovBonus * 0.5;
         break;
       }
@@ -101,7 +115,7 @@ export class CameraRig {
         // Low on front bumper
         const bumperOffset = new THREE.Vector3(0, 0.35, 1.95).applyQuaternion(vehicleQuat);
         targetPos = vehiclePos.clone().add(bumperOffset);
-        lookTarget = targetPos.clone().add(forward.clone().multiplyScalar(20.0));
+        lookTarget = targetPos.clone().add(forward.clone().multiplyScalar(20.0)).add(up.clone().multiplyScalar(Math.tan(this.lookPitch) * 20));
         desiredFov = 80 + fovBonus;
         break;
       }

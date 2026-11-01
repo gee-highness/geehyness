@@ -18,6 +18,9 @@ import * as THREE from 'three';
 import { GamepadService } from './services/gamepad.service';
 import { HapticsService } from './services/haptics.service';
 import { SettingsService } from './services/settings.service';
+import { DriveStateService } from './services/drive-state.service';
+import { HelpComponent } from './components/help/help.component';
+import { NavigationService } from './services/navigation.service';
 import { AudioService } from './services/audio.service';
 import { TuningService } from './services/tuning.service';
 import { TelemetryService } from './services/telemetry.service';
@@ -44,7 +47,7 @@ import { TouchControlsComponent } from './components/touch-controls/touch-contro
 
 @Component({
   selector: 'app-root',
-  imports: [
+  imports: [HelpComponent, 
     CommonModule,
     MatIconModule,
     HudComponent,
@@ -68,6 +71,11 @@ export class App implements AfterViewInit, OnDestroy {
   public gamepadService = inject(GamepadService);
   public hapticsService = inject(HapticsService);
   public settings = inject(SettingsService);
+  public drive = inject(DriveStateService);
+  public nav = inject(NavigationService);
+  readonly showHelp = signal<boolean>(false);
+  private pad = this.gamepadService.pollControls();
+  private mouseLook = false; private mlx = 0; private mly = 0;
   public audioService = inject(AudioService);
   public tuningService = inject(TuningService);
   public telemetryService = inject(TelemetryService);
@@ -129,6 +137,7 @@ export class App implements AfterViewInit, OnDestroy {
   private touchHandbrake = false;
 
   ngAfterViewInit(): void {
+    this.drive.onTick = (on) => this.audioService.playIndicatorTick(on);
     if (isPlatformBrowser(this.platformId)) {
       this.initGame();
     }
@@ -217,6 +226,8 @@ export class App implements AfterViewInit, OnDestroy {
     let tp = performance.now();
     const frameDelta = Math.min((now - this.lastTime) / 1000, 0.1);
     this.lastTime = now;
+    this.pad = this.gamepadService.pollControls();
+    this.handlePad(this.pad);
 
     if (!this.isPhotoMode()) {
       this.physicsAccumulator += frameDelta;
@@ -234,6 +245,7 @@ export class App implements AfterViewInit, OnDestroy {
       if (this.envAccum > 0.25) { // 4 Hz is plenty for the sun and fog
         this.envService.tickDayNight(this.envAccum);
         this.sceneManager.updateEnvironment(this.envService.envState());
+        { const h = this.envService.envState().timeOfDayHours; this.nightFactor = h < 5.5 || h > 19 ? 0 : h < 6.5 || h > 18 ? 0.5 : 1; this.drive.autoLights(this.nightFactor < 0.6 || this.envService.weather() === 'TROPICAL_RAIN'); }
         this.envAccum = 0;
       }
 
@@ -274,7 +286,12 @@ export class App implements AfterViewInit, OnDestroy {
       );
 
       // Update Camera & Visuals
-      const pad = this.gamepadService.pollControls();
+      const pad = this.pad;
+      this.sceneManager.cameraRig.look(pad.lookX + this.mlx, pad.lookY + this.mly, frameDelta); this.mlx = this.mly = 0;
+      this.sceneManager.setWaypoint(this.nav.waypoint());
+      this.drive.tick(frameDelta, this.vehicle.steerInput);
+      this.audioService.setHorn(this.drive.horn());
+      this.sceneManager.setLights(this.drive.headlights(), this.drive.leftOn, this.drive.rightOn, this.vehicle.brake > 0.15 || this.vehicle.handbrake, false, this.nightFactor);
       this.sceneManager.cameraRig.update(
         frameDelta,
         this.vehicle.position,
@@ -291,6 +308,7 @@ export class App implements AfterViewInit, OnDestroy {
       if (this.hudComponent) {
         this.hudComponent.world = this.sceneManager.worldBuilder;
         const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(this.vehicle.quaternion);
+        const np = this.nav.pose; np.x = this.vehicle.position.x; np.z = this.vehicle.position.z; np.yaw = Math.atan2(fwd.x, fwd.z); np.speedKmh = telem.speedKmh;
         this.hudComponent.updateDistrictAndGps(this.vehicle.position.x, this.vehicle.position.z, Math.atan2(fwd.x, fwd.z));
       }
     } else {
@@ -314,9 +332,38 @@ export class App implements AfterViewInit, OnDestroy {
     this.animFrameId = requestAnimationFrame(this.loop);
   };
 
+  private nightFactor = 1;
+  /** One-shot controller actions (edge triggers), handled once per rendered frame. */
+  private handlePad(pad: ReturnType<GamepadService['pollControls']>): void {
+    if (!pad.connected || !this.started()) return;
+    if (pad.cycleCamera) this.onCycleCamera();
+    if (pad.toggleTelemetry) this.telemetryService.toggleTelemetry();
+    if (pad.toggleMap) this.showMap.update((m) => !m);
+    if (pad.togglePhoto) this.togglePhotoMode();
+    if (pad.resetCar) this.resetCarUpright();
+    if (pad.shiftUp && this.vehicle.currentGear < 6) { this.vehicle.currentGear++; this.audioService.playGearShift(); }
+    if (pad.shiftDown && this.vehicle.currentGear > 1) { this.vehicle.currentGear--; this.audioService.playGearShift(); }
+    if (pad.indicateLeft) this.drive.toggleLeft();
+    if (pad.indicateRight) this.drive.toggleRight();
+    if (pad.hazards) this.drive.toggleHazards();
+    if (pad.headlights) this.drive.cycleHeadlights();
+    this.drive.setHorn(pad.horn || this.keyHorn);
+    if (pad.recentreLook) this.sceneManager.cameraRig.recentreLook();
+    if (pad.cycleWeather) this.envService.cycleWeather();
+    if (pad.cycleQuality) this.settings.cycleQuality();
+    if (pad.toggleCars) this.showCars.update((v) => !v);
+    if (pad.toggleFps) this.hudComponent?.showFps.update((v) => !v);
+    if (pad.toggleHaptics) this.hapticsService.setEnabled(!this.hapticsService.enabled());
+    if (pad.toggleMute) this.audioService.isMuted.update((m) => !m);
+    if (pad.garage) this.showTuning.update((v) => !v);
+    if (pad.worldTools) this.showPipeline.update((v) => !v);
+    if (pad.toggleHelp) this.showHelp.update((v) => !v);
+  }
+  private keyHorn = false;
+
   private stepPhysics(dt: number): void {
     // 1. Poll Controller inputs (DS4 priority > Touch > Keyboard)
-    const pad = this.gamepadService.pollControls();
+    const pad = this.pad;
 
     let steer = 0;
     let throttle = 0;
@@ -329,20 +376,7 @@ export class App implements AfterViewInit, OnDestroy {
       brake = pad.brake;
       handbrake = pad.handbrake;
 
-      if (pad.cycleCamera) this.onCycleCamera();
-      if (pad.toggleTelemetry) this.telemetryService.toggleTelemetry();
-      if (pad.toggleMap) this.showMap.update(m => !m);
-      if (pad.togglePhoto) this.togglePhotoMode();
-      if (pad.resetCar) this.resetCarUpright();
-      if (pad.shiftUp && this.vehicle.currentGear < 6) {
-        this.vehicle.currentGear++;
-        this.audioService.playGearShift();
-      }
-      if (pad.shiftDown && this.vehicle.currentGear > 1) {
-        this.vehicle.currentGear--;
-        this.audioService.playGearShift();
-      }
-    } else if (this.showTouchControls()) {
+        } else if (this.showTouchControls()) {
       steer = this.touchSteer;
       throttle = this.touchThrottle;
       brake = this.touchBrake;
@@ -436,6 +470,13 @@ export class App implements AfterViewInit, OnDestroy {
     if (event.code === 'KeyQ') { this.settings.cycleQuality(); return; }
     if (event.code === 'KeyG') { this.envService.cycleWeather(); return; }
     if (event.code === 'KeyH') { this.hapticsService.setEnabled(!this.hapticsService.enabled()); return; }
+    if (event.code === 'Comma') { this.drive.toggleLeft(); return; }
+    if (event.code === 'Period') { this.drive.toggleRight(); return; }
+    if (event.code === 'KeyX') { this.drive.toggleHazards(); return; }
+    if (event.code === 'KeyL') { this.drive.cycleHeadlights(); return; }
+    if (event.code === 'KeyB') { this.keyHorn = true; this.drive.setHorn(true); return; }
+    if (event.code === 'KeyK') { this.sceneManager.cameraRig.recentreLook(); return; }
+    if (event.code === 'F1' || event.code === 'Slash' || event.code === 'KeyI') { event.preventDefault(); this.showHelp.update((v) => !v); return; }
     if (event.code === 'KeyV') { this.showCars.update((v) => !v); return; }
     switch (event.code) {
       case 'ArrowLeft':
@@ -480,6 +521,7 @@ export class App implements AfterViewInit, OnDestroy {
 
   @HostListener('window:keyup', ['$event'])
   onKeyUp(event: KeyboardEvent): void {
+    if (event.code === 'KeyB') { this.keyHorn = false; this.drive.setHorn(false); }
     switch (event.code) {
       case 'ArrowLeft':
       case 'KeyA':
@@ -502,6 +544,11 @@ export class App implements AfterViewInit, OnDestroy {
         break;
     }
   }
+
+  @HostListener('window:mousedown', ['$event']) onMouseDown(e: MouseEvent): void { if (e.button === 2) this.mouseLook = true; }
+  @HostListener('window:mouseup', ['$event']) onMouseUp(e: MouseEvent): void { if (e.button === 2) this.mouseLook = false; }
+  @HostListener('window:contextmenu', ['$event']) onCtx(e: Event): void { if (this.started()) e.preventDefault(); }
+  @HostListener('window:mousemove', ['$event']) onMouseMove(e: MouseEvent): void { if (this.mouseLook) { this.mlx += e.movementX * 0.012; this.mly += e.movementY * 0.012; } }
 
   public resetCarUpright(): void {
     if (!this.vehicle) return;
