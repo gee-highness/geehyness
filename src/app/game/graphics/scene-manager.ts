@@ -122,7 +122,7 @@ export class SceneManager {
     this.scene.add(this.sunLight);
 
     // African distance fog blending mountains into the sky
-    this.scene.fog = new THREE.FogExp2(0xb9d3e6, 0.00035);
+    this.scene.fog = new THREE.FogExp2(0xcdd8dc, 0.00022);
   }
 
   public spawnVehicle(config: VehicleArchetypeConfig, visuals: VisualCustomization, def: CarDef = CAR_CATALOG[0]): void {
@@ -152,7 +152,7 @@ export class SceneManager {
     this.scene.backgroundIntensity = daylight;
     this.scene.environmentIntensity = daylight;
     if (this.scene.fog) {
-      (this.scene.fog as THREE.FogExp2).color = skyCol;
+      (this.scene.fog as THREE.FogExp2).color = skyCol.clone().lerp(new THREE.Color(0xdbe5e8), 0.8).multiplyScalar(Math.max(0.05, daylight));
       (this.scene.fog as THREE.FogExp2).density = env.fogDensity;
     }
 

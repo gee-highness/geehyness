@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import type { CarDef } from '../cars';
 import type { WorldBuilder } from './world-builder';
 
 /** Loads real CC0/CC-BY glTF models (see public/assets/CREDITS.txt) and dresses the world with them. */
 export class AssetLibrary {
-  private static loader = new GLTFLoader();
+  private static loader = (() => { const l = new GLTFLoader(); const d = new DRACOLoader(); d.setDecoderPath('assets/draco/'); l.setDRACOLoader(d); return l; })();
   private static cache = new Map<string, Promise<THREE.Group>>();
   /** Loading progress for the splash screen. */
   public static total = 0;

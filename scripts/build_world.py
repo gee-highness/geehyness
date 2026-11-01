@@ -60,15 +60,15 @@ print("roads", len(roads), "water", len(water_polys))
 
 # ---------------- ground colour + class rasters (25 m)
 W, H = (X1 - X0) // PX, (Z1 - Z0) // PX
-col = Image.new("RGB", (W, H), (150, 140, 96)); cls = Image.new("L", (W, H), 1)
+col = Image.new("RGB", (W, H), (112, 120, 72)); cls = Image.new("L", (W, H), 1)
 dc, dk = ImageDraw.Draw(col), ImageDraw.Draw(cls)
 # kind -> (rgb, class id)  ids follow the game's ground classes
-STYLE = {"residential": ((142, 138, 112), 8), "commercial": ((150, 148, 140), 8), "retail": ((150, 148, 140), 8),
-         "industrial": ((128, 120, 108), 9), "farmland": ((168, 150, 96), 4), "farmyard": ((160, 140, 100), 4),
+STYLE = {"residential": ((116, 124, 88), 8), "commercial": ((138, 138, 130), 8), "retail": ((138, 138, 130), 8),
+         "industrial": ((128, 120, 108), 9), "farmland": ((150, 148, 84), 4), "farmyard": ((140, 132, 92), 4),
          "orchard": ((92, 130, 70), 4), "vineyard": ((92, 130, 70), 4), "plant_nursery": ((92, 130, 70), 4),
          "meadow": ((118, 140, 80), 2), "grass": ((112, 142, 84), 2), "recreation_ground": ((104, 146, 84), 2),
          "park": ((98, 146, 84), 2), "pitch": ((104, 146, 84), 2), "forest": ((52, 92, 54), 5), "wood": ((52, 92, 54), 5),
-         "scrub": ((106, 120, 70), 1), "heath": ((130, 128, 84), 1), "grassland": ((118, 138, 82), 2), "wetland": ((84, 122, 96), 12),
+         "scrub": ((92, 112, 62), 1), "heath": ((118, 122, 72), 1), "grassland": ((118, 138, 82), 2), "wetland": ((84, 122, 96), 12),
          "water": ((52, 96, 128), 12), "reservoir": ((52, 96, 128), 12), "cemetery": ((110, 130, 96), 2), "quarry": ((156, 138, 118), 6),
          "bare_rock": ((150, 142, 130), 6), "sand": ((196, 180, 140), 10), "construction": ((170, 150, 120), 7),
          "brownfield": ((170, 150, 120), 7), "religious": ((120, 130, 96), 2), "military": ((120, 128, 90), 2), "garages": ((140, 138, 130), 8)}
@@ -113,7 +113,7 @@ def add_b(e, tags, g):
     if g[0] == g[-1]: g = g[:-1]
     bl.append([ty, dm(h), [dm(v) for pt in g for v in pt]])
     pts = [((x - X0) / PX, (z - Z0) / PX) for x, z in g]
-    dc.polygon(pts, fill=(118, 112, 100))
+    dc.polygon(pts, fill=(104, 104, 96))
 seen = set()
 for n in ("bld_manzini", "bld_ezulwini"):
     for e in load(n):
