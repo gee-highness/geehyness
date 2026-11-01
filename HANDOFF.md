@@ -1,0 +1,85 @@
+# SHESHA — session handoff
+
+Open-world racing game on the real **Manzini → Matsapha → Lobamba → Ezulwini → Mbabane** MR3 corridor (Eswatini).
+Angular 21 + three.js, wrapped for Android with Capacitor. Branch: `ccr-cac88f1d-gkebu8`.
+
+## State at handoff
+Everything below is committed and pushed. Last commit: *"Ground everything … typed-array geometry buffers"*.
+
+**Built and visually checked (headless Chromium screenshots):** real OSM world, 66k buildings with inferred uses, signs,
+pavements/kerbs, parking lanes + bays, street trees, utility poles + wires, parked cars (streamed, box LOD), 29 drivable cars + garage,
+AI traffic on real roads, overpasses (layer-solved elevation, ramps, decks, parapets, piers), railway + level crossings, bus shelters,
+speed-limit signs + HUD limit, roundabout islands, rough roads, viewpoints, barriers, real trees, pylons + wires, solar, pitches, pools,
+parking lots, tanks/silos, speed humps, HUD/intro/car-select UI, haptics fixes, collisions, physics.
+
+**NOT yet verified (do these first):**
+1. Slope-grounding fix (walls/fences/hedges, pylon legs, tank rims, props on true surface, AI cars) — code is in, render check not seen.
+2. Performance numbers after the last two optimisation commits. Previous measure (headless, slow CPU): heap 624 MB (was 1.28 GB),
+   physics 1.0 ms, but "sync" 15 ms from building-generation spikes. Fix applied (typed-array `GeoBuf`, skip <14 m² buildings, 1.6 ms stream budget) — re-measure.
+3. APK has not been rebuilt since the *second OSM batch* + optimisation + grounding work. Rebuild and send.
+4. The "under the deck" bug fix (car snapping onto a bridge from below) was made but not re-rendered.
+5. Real-device behaviour (60 fps, rumble, controller feel) has never been tested — only headless software-GL.
+
+## Where things are
+| What | Where |
+|---|---|
+| World data (generated) | `public/assets/world/` (`roads.json`, `buildings.json`, `features.json`, `meta.json`, `height.bin`, `groundcolor.png`, `groundclass.png`, `trees.bin`) |
+| Converter (OSM → game data) | `scripts/build_world.py` (args: `<osm_dir> <dem.json> <out_dir> [osm2_dir]`) |
+| Elevation fetch | `scripts/fetch_dem.py` → `/tmp/dem.json` (AWS terrain tiles, 250 m grid) |
+| Texture shrink | `scripts/optimize_textures.py` |
+| Ferrari decimation | `scripts/decimate_ferrari.py` (needs `pip install --target /tmp/pylib DracoPy trimesh fast-simplification pygltflib`) |
+| Physics benchmark | `scripts/physics_test.mjs` (build cmd in its header) |
+| World builder / terrain / roads / physics queries | `src/app/game/graphics/world-builder.ts` |
+| Buildings (uses → walls/roofs/windows/signs, lazy chunk streaming) | `city-builder.ts` |
+| Pavements, bays, poles, signals, parked cars, clouds | `street-builder.ts` |
+| Overpass structures | `bridge-builder.ts` |
+| Rail, shelters, speed signs, roundabouts, viewpoints | `extras-builder.ts` |
+| Barriers, trees, power, pitches, pools, parking, tanks, humps | `features-builder.ts` |
+| Shared geometry buffer + `slab()` terrain-following walls | `geo-buf.ts` |
+| Vehicle physics / collisions | `src/app/game/physics/raycast-vehicle.ts`, `collision.ts` |
+| Car catalogue / AI traffic | `src/app/game/cars.ts`, `road-traffic.ts` |
+| UI | `components/hud`, `intro`, `car-select`, `map-modal`, … |
+| Credits | `public/assets/CREDITS.txt` |
+
+World coordinates: metres, **x east, z south**, origin Manzini (−26.4966, 31.3826). Heights in decimetres in the JSON.
+
+## Raw data the converter needs (NOT in the repo — re-upload to rebuild the world)
+- `eswatini-osm.zip` → `roads.json, bld_manzini.json, bld_ezulwini.json, points.json` (Overpass, from Termux).
+- `eswatini-osm2.zip` → `barriers, trees, power, leisure, misc, bld_lobamba, bld_malkerns, bld_matsapha1/2, bld_mbabane1/2`.
+- Rebuild: `fetch_dem.py` then `python3 -I scripts/build_world.py <osm> /tmp/dem.json public/assets/world <osm2>` (takes ~3–5 min; run in background).
+The generated files in `public/assets/world/` are already committed, so the game runs without them.
+
+## Run / test / build
+```
+npm install --legacy-peer-deps
+npx ng build                         # → dist/app/browser
+python3 -m http.server 4300 --directory dist/app/browser &
+```
+Headless checks use Playwright (preinstalled): launch with `--use-gl=swiftshader --enable-unsafe-swiftshader`, wait for `button.go:not([disabled])`,
+press Enter. Debug hooks on `window.__shesha`: `info()`, `breakdown()`, `perf()`, `tp(x,z,yaw)`, `tpRoad(x,z)`, `tpBay(x,z)`, `tpOver(x,z,under)`.
+In-game: **F** = FPS/resolution readout, **V** = car select, **H** = vibration, **M** map, **C** camera, **P** photo.
+
+**APK**: needs Java 21 + Android SDK (not preinstalled):
+```
+mkdir -p /opt/android-sdk/cmdline-tools && curl -O https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip   # unzip → /opt/android-sdk/cmdline-tools/latest
+yes | sdkmanager --licenses; sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+echo "sdk.dir=/opt/android-sdk" > android/local.properties
+```
+Maven Central rate-limits (HTTP 429) through the proxy — add `~/.gradle/init.d/mirror.gradle` rewriting `repo.maven.apache.org`
+to `https://maven-central.storage-download.googleapis.com/maven2/`. Then `npx ng build && npx cap sync android && cd android && ./gradlew assembleDebug --no-daemon`.
+APK → `android/app/build/outputs/apk/debug/app-debug.apk` (~93 MB). Send with the file tool.
+
+## Gotchas learned
+- **Never `pkill/pgrep -f` a pattern that also appears in your own command line** — it kills the shell. Use `[x]pattern` tricks or PIDs.
+- The user interrupts long foreground commands: run anything >2 min with `nohup … &` and a Monitor.
+- `urllib` default User-Agent is blocked by some hosts; use curl with a UA.
+- Draco: the original `ferrari.glb` is Draco-compressed (decoder in `public/assets/draco/`); the game uses `ferrari-lod.glb` (decimated, no Draco).
+- Terrain height used by *everything* is `calculateRawTerrainHeight` (piecewise-linear on the 80 m mesh) — never use another height function or things float/sink.
+- Anything placed on a road/pavement should use `groundHeightAt(x,z[,y])`, not terrain height.
+- `GeoBuf.pos.length / 3` is the "next vertex index" idiom (compat getter).
+
+## Ideas not done yet
+- Third OSM fetch: `highway=street_lamp/traffic_sign/stop` nodes for the whole corridor, `addr:*`, cliffs/ridges, hydrology widths, more building areas (Matsapha↔Manzini gap, Malagwane Hill).
+- Pedestrians; building collisions are 2-D footprints only; no rain/weather visuals beyond fog/wetness; no real-device profiling.
+- Quality tiers menu (Auto/High/Med/Low); window shader could be baked to a texture for cheaper fragments.
+- Android package id is still `sz.toycircuit.racing` (app name is SHESHA).
