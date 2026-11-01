@@ -89,6 +89,13 @@ APK → `android/app/build/outputs/apk/debug/app-debug.apk` (~93 MB). Send with 
 - Parked-car detail radius cut 230 -> 100 m (was ~469k of ~1M triangles). `__shesha.wb` exposes the WorldBuilder.
 - Third OSM fetch pipeline written (`scripts/fetch_osm3.py`, `build_world.py` 5th arg, game consumers) but **data not fetched** (Overpass blocked in the sandbox) - see `data/README.md`.
 
+## Added in the third session
+- GTA-Atlas-style full-screen GPS map (`map-modal`): land-use tint from the ground raster, yellow/white roads, blue place names, POI blips, speed traps, click/A waypoint + GPS line + world beacon, fast-travel list. Radar restyled to match (blips, waypoint on the rim, north marker).
+- Full controller layer (`gamepad.service.ts` header documents the map): right-stick look (`CameraRig.look`), R3 recentre, L3 horn, D-pad indicators/headlights/hazards, Share modifier layer, Home = photo. Edges are now polled once per frame in `App.handlePad` (they were being swallowed before). Help screen on I / F1 / Share+Options.
+- `DriveStateService` (indicators auto-cancel, hazards, headlights auto at night/rain), `SceneManager.setLights` lamp rig + beam, horn + relay tick audio.
+- Termux: `scripts/termux_osm.sh` -> `scripts/fetch_osm_all.py` (all categories, resumable). Run it, then rebuild the world per `data/README.md`.
+- *.apk is git-ignored (an APK was accidentally committed in 6a49cb5 and removed in the next commit; it still sits in history).
+
 ## Ideas not done yet
 - Draw house numbers from `meta.addr`; pedestrian crossings use; building collision with real roof ramps.
 - Real-device profiling (60 fps, rumble, controller feel) - never done.
