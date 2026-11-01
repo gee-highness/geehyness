@@ -91,7 +91,6 @@ export class BridgeBuilder {
 
   finish(): void {
     const mat = this.w.pbr('concrete_wall_007', 3, 0.85); mat.vertexColors = true; mat.side = THREE.DoubleSide;
-    for (const t of [mat.map!, mat.normalMap!]) t.repeat.set(1, 1);
     this.bufs.forEach((buf, key) => {
       if (buf.empty) return; const [ix, iz] = key.split(',').map(Number);
       const mesh = new THREE.Mesh(buf.toGeometry(true, false), mat); mesh.name = 'bridge'; mesh.castShadow = true; mesh.receiveShadow = true;

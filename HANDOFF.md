@@ -102,6 +102,9 @@ APK → `android/app/build/outputs/apk/debug/app-debug.apk` (~93 MB). Send with 
 - Road graph + GPS (`game/road-graph.ts`, `NavigationService`): A* over OSM ways, turn-by-turn guidance on the HUD, route drawn on map + radar, auto re-route. Debug: `__shesha.nav`.
 - Neo-Eswatini (futuristic procedural theme) is designed but NOT started; traffic lights/lane AI not started; textures not compressed (no KTX2 tool in sandbox).
 
+## Fifth session
+- Full roadmap and status: `docs/PLAN.md`. Stylized world-space procedural materials (`stylized.ts`, no image textures), satellite-derived roof palette, procedural infill houses (`CityBuilder.infill`), overhead debug camera `__shesha.top(x,z,h)`.
+
 ## Ideas not done yet
 - Draw house numbers from `meta.addr`; pedestrian crossings use; building collision with real roof ramps.
 - Real-device profiling (60 fps, rumble, controller feel) - never done.

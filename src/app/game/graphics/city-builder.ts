@@ -9,13 +9,18 @@ const CH = 800;
 const rnd = (a: number): number => { const s = Math.sin(a * 12.9898) * 43758.5453; return s - Math.floor(s); };
 const pick = <T>(arr: T[], r: number): T => arr[Math.floor(r * arr.length) % arr.length];
 
-const HOUSE: number[][] = [[0.96, 0.95, 0.92], [0.97, 0.92, 0.8], [0.96, 0.84, 0.72], [0.8, 0.88, 0.95], [0.82, 0.92, 0.8], [0.98, 0.92, 0.66], [0.92, 0.76, 0.64], [0.9, 0.9, 0.9], [0.95, 0.8, 0.82], [0.75, 0.86, 0.86]];
+const HOUSE: number[][] = [[0.9, 0.93, 0.97], [0.96, 0.86, 0.7], [0.97, 0.66, 0.56], [0.62, 0.82, 0.95], [0.6, 0.88, 0.78], [0.98, 0.84, 0.46], [0.9, 0.6, 0.5], [0.8, 0.84, 0.9], [0.92, 0.62, 0.72], [0.45, 0.78, 0.82]];
 const CIVIC: number[][] = [[0.98, 0.94, 0.78], [0.96, 0.96, 0.94], [0.92, 0.86, 0.7]];
 const CONCRETE: number[][] = [[0.86, 0.86, 0.86], [0.95, 0.93, 0.88], [0.76, 0.79, 0.82], [0.92, 0.84, 0.72], [0.7, 0.72, 0.74]];
 const BRICK: number[][] = [[1, 0.88, 0.8], [0.9, 0.7, 0.6], [1, 0.95, 0.9], [0.8, 0.65, 0.55]];
 const METAL: number[][] = [[0.7, 0.72, 0.75], [0.55, 0.65, 0.58], [0.6, 0.66, 0.78], [0.82, 0.82, 0.8], [0.78, 0.6, 0.52]];
-const ROOFS: number[][] = [[0.78, 0.78, 0.8], [0.78, 0.34, 0.28], [0.36, 0.55, 0.42], [0.52, 0.2, 0.18], [0.9, 0.9, 0.92], [0.4, 0.45, 0.62], [0.58, 0.48, 0.42], [0.45, 0.47, 0.5]];
+const ROOFS: number[][] = [[0.62, 0.66, 0.74], [0.86, 0.38, 0.24], [0.14, 0.58, 0.6], [0.7, 0.24, 0.2], [0.9, 0.92, 0.96], [0.3, 0.38, 0.78], [0.82, 0.56, 0.36], [0.26, 0.29, 0.38]];
 const AWNING: number[][] = [[0.8, 0.16, 0.16], [0.14, 0.32, 0.7], [0.1, 0.5, 0.25], [0.95, 0.7, 0.1], [0.9, 0.9, 0.88], [0.9, 0.4, 0.1]];
+
+/** Roof colour drawn from the distribution seen in the satellite imagery (rust / brick-red tin dominate small houses). */
+const houseRoof = (r: number): number[] => r < 0.38 ? ROOFS[1] : r < 0.58 ? ROOFS[3] : r < 0.72 ? ROOFS[0] : r < 0.8 ? ROOFS[5] : r < 0.88 ? ROOFS[6] : r < 0.94 ? ROOFS[2] : ROOFS[4];
+const tileRoof = (r: number): number[] => r < 0.45 ? ROOFS[1] : r < 0.75 ? ROOFS[6] : r < 0.9 ? ROOFS[3] : ROOFS[0];
+const sheetRoof = (r: number): number[] => r < 0.4 ? ROOFS[0] : r < 0.7 ? ROOFS[4] : r < 0.9 ? ROOFS[5] : ROOFS[7];
 
 interface Style { wall: 'plaster' | 'brick' | 'concrete' | 'ironw'; tint: number[]; win: number; roof: 'hip' | 'gable' | 'flat' | 'lowgable' | 'canopy'; rtint: number[]; props: boolean; awn: boolean; sign: 'door' | 'big' | 'top' | 'none'; pitch: number }
 
@@ -73,7 +78,6 @@ export class CityBuilder {
     for (const m of [plaster, brick, concrete, ironw]) this.windowize(m);
     for (const m of [plaster, brick, concrete, ironw, roof]) {
       m.vertexColors = true;
-      for (const t of [m.map!, m.normalMap!]) t.repeat.set(1, 1);
     }
     const props = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0.1, side: THREE.DoubleSide });
     roof.side = THREE.DoubleSide;
@@ -99,12 +103,14 @@ export class CityBuilder {
   /** Procedural windows/doors/glazing in the shader, lit at night, over the real photographic wall textures. */
   private windowize(m: THREE.MeshStandardMaterial): void {
     const night = this.night, neoU = this.neo;
-    m.onBeforeCompile = (sh) => {
+    const prev = m.onBeforeCompile;
+    m.onBeforeCompile = (sh, r) => {
+      prev?.call(m, sh, r);
       sh.uniforms['uNight'] = night; sh.uniforms['uNeo'] = neoU; sh.uniforms['uWinAtlas'] = { value: windowAtlas() };
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aWin; varying float vWin; varying vec2 vWUv;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWin = aWin; vWUv = uv;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vWin; varying vec2 vWUv; uniform float uNight; uniform float uNeo; uniform sampler2D uWinAtlas;\nfloat h11(float n){return fract(sin(n*12.9898)*43758.5453);}')
-        .replace('#include <map_fragment>', `#include <map_fragment>
+        .replace(sh.fragmentShader.includes('/*STYLE_DONE*/') ? '/*STYLE_DONE*/' : '#include <map_fragment>', `${sh.fragmentShader.includes('/*STYLE_DONE*/') ? '/*STYLE_DONE*/' : '#include <map_fragment>'}
           float st = min(floor(vWin + 0.001), 7.0), sd = fract(vWin);
           float bay = fract(vWUv.x), flr = fract(vWUv.y), fl = floor(vWUv.y), bi = floor(vWUv.x);
           float win = 0.0, door = 0.0, mull = 0.0, glass = 0.0;
@@ -152,9 +158,54 @@ export class CityBuilder {
       cx /= n * 10; cz /= n * 10; const area = Math.abs(A) / 200;
       if (area < 14 && b[0] !== 12) continue;
       this.w.addFootprint(cx, cz, Math.sqrt(area) * 0.6 + 1.5);
+      { const gk = Math.floor(cx / 150) * 100003 + Math.floor(cz / 150); this.realGrid.set(gk, (this.realGrid.get(gk) ?? 0) + 1); }
       const key = `${Math.floor(cx / CH)},${Math.floor(cz / CH)}`; let l = this.pending.get(key); if (!l) { l = []; this.pending.set(key, l); } l.push(b);
     }
+    this.infill();
     void scene;
+  }
+
+  // ------------------------------------------------------------------ procedural infill
+  private realGrid = new Map<number, number>();
+  /**
+   * Where OSM has streets but (almost) no mapped buildings, line the street with deterministic houses so the
+   * world is not empty. It looks only at the data actually loaded, so it fades away wherever real buildings exist.
+   */
+  private infill(): void {
+    const w = this.w; const MAX = 32000; let made = 0;
+    const real = (x: number, z: number): number => { let n = 0; for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) n += this.realGrid.get((Math.floor(x / 150) + a) * 100003 + Math.floor(z / 150) + b) ?? 0; return n; };
+    for (const way of w.roadWays) {
+      if (way.c < 4 || way.c > 6 || way.u || way.dz || way.br || way.w < 3) continue;
+      const p = way.p; let carry = 0;
+      for (let i = 0; i + 3 < p.length && made < MAX; i += 2) {
+        const ax = p[i] / 10, az = p[i + 1] / 10, bx = p[i + 2] / 10, bz = p[i + 3] / 10, L = Math.hypot(bx - ax, bz - az); if (L < 1) continue;
+        const tx = (bx - ax) / L, tz = (bz - az) / L, nx = -tz, nz = tx;
+        for (let s = carry; s < L; s += 13 + rnd(ax + s) * 7) {
+          const x = ax + tx * s, z = az + tz * s;
+          const zone = 0.5 + 0.5 * Math.sin(x * 0.0101 + 1.3) * Math.sin(z * 0.0127 + 0.7), dens = 0.28 + 0.62 * zone;
+          const nearReal = real(x, z); if (nearReal > 14) continue;                                  // already mapped: leave it to the data
+          if (!way.n && nearReal < 2) continue;                                                       // unnamed track in the middle of nowhere
+          for (const side of [-1, 1]) {
+            if (rnd(x * 0.73 + z * 1.31 + side * 7.7) > dens) continue;
+            const wd = 5.5 + rnd(x + z * 3.1 + side) * 3, dp = 7 + rnd(x * 2.3 + z + side) * 4.5, off = way.w / 2 + (way.sw ?? 0) + 4.5 + dp / 2 + rnd(x * 1.7 - z) * 4;
+            const px = x + nx * off * side, pz = z + nz * off * side;
+            if (w.roadAt(px, pz) || w.distToRoad(px, pz, 6) < dp / 2 + 2.2 || w.nearBuildingPublic(px, pz)) continue;
+            const cl = w.groundClassAt(px, pz); if (cl === 5 || cl === 6 || cl === 10 || cl === 11 || cl === 12) continue;
+            const h0 = w.calculateRawTerrainHeight(px - 4, pz), h1 = w.calculateRawTerrainHeight(px + 4, pz), h2 = w.calculateRawTerrainHeight(px, pz - 4), h3 = w.calculateRawTerrainHeight(px, pz + 4);
+            if (Math.abs(h1 - h0) > 2.6 || Math.abs(h3 - h2) > 2.6) continue;                            // too steep
+            const c4 = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [Math.round((px + tx * a * wd / 2 + nx * b * dp / 2) * 10), Math.round((pz + tz * a * wd / 2 + nz * b * dp / 2) * 10)]);
+            const seed = Math.floor(rnd(px * 12.9 + pz * 7.1) * 999);
+            const bld: Bld = [18, 27 + Math.floor(rnd(px + pz * 5) * 8), c4.flat(), 0, seed];
+            w.addFootprint(px, pz, Math.sqrt(wd * dp) * 0.6 + 1.5);
+            const key = `${Math.floor(px / CH)},${Math.floor(pz / CH)}`; let l = this.pending.get(key); if (!l) { l = []; this.pending.set(key, l); } l.push(bld); made++;
+            if (rnd(px * 3.3 + pz * 9.9) < 0.6) { const back = dp / 2 + 3 + rnd(px - pz) * 3; w.extraTrees.push({ x: px + nx * back * side * 0.9 + tx * (rnd(px) - 0.5) * 8, z: pz + nz * back * side * 0.9 + tz * (rnd(pz) - 0.5) * 8, c: rnd(px * 5 + pz) < 0.3 ? 10 : 9 }); }
+          }
+          carry = s + 1e-3 - L > 0 ? s - L : 0;
+        }
+        carry = Math.max(0, carry - L);
+      }
+    }
+    console.info(`[infill] ${made} procedural houses`);
   }
 
   /** Build the area around the start synchronously so it is ready before the intro ends (after barriers/features exist). */
@@ -208,23 +259,24 @@ export class CityBuilder {
   private style(use: number, r: number, area: number, n: number): Style {
     const small = area < 230 && n <= 8;
     switch (use) {
-      case 0: return { wall: r < 0.3 ? 'brick' : 'plaster', tint: r < 0.3 ? pick(BRICK, r * 7) : pick(HOUSE, r * 3.7), win: 1, roof: small ? (r < 0.55 ? 'hip' : 'gable') : 'gable', rtint: pick(ROOFS, r * 11), props: false, awn: false, sign: 'none', pitch: 0.5 };
-      case 1: return { wall: 'plaster', tint: pick(HOUSE, r * 5.3), win: 1, roof: r < 0.5 ? 'hip' : 'gable', rtint: pick(ROOFS.slice(1, 6), r * 9), props: false, awn: false, sign: 'none', pitch: 0.55 };
+      case 0: return { wall: r < 0.3 ? 'brick' : 'plaster', tint: r < 0.3 ? pick(BRICK, r * 7) : pick(HOUSE, r * 3.7), win: 1, roof: small ? (r < 0.55 ? 'hip' : 'gable') : 'gable', rtint: houseRoof(r * 7.13 % 1), props: false, awn: false, sign: 'none', pitch: 0.5 };
+      case 1: return { wall: 'plaster', tint: pick(HOUSE, r * 5.3), win: 1, roof: r < 0.5 ? 'hip' : 'gable', rtint: tileRoof(r * 9.7 % 1), props: false, awn: false, sign: 'none', pitch: 0.55 };
       case 2: return { wall: r < 0.45 ? 'brick' : 'plaster', tint: r < 0.45 ? pick(BRICK, r * 5) : pick(HOUSE, r * 2.9), win: 1, roof: 'flat', rtint: [0.62, 0.62, 0.62], props: true, awn: false, sign: 'none', pitch: 0 };
       case 3: return { wall: r < 0.5 ? 'plaster' : 'concrete', tint: r < 0.5 ? pick(HOUSE, r * 4.1) : pick(CONCRETE, r * 6.3), win: 2, roof: r < 0.75 ? 'flat' : 'lowgable', rtint: pick(ROOFS.slice(0, 1).concat(ROOFS.slice(4)), r * 3), props: true, awn: true, sign: 'door', pitch: 0.2 };
       case 4: return { wall: 'concrete', tint: pick(CONCRETE, r * 5.1), win: 2, roof: 'flat', rtint: [0.6, 0.6, 0.6], props: true, awn: true, sign: 'big', pitch: 0 };
       case 5: return { wall: 'concrete', tint: pick(CONCRETE.slice(0, 4), r * 4.7), win: 2, roof: 'flat', rtint: [0.58, 0.58, 0.6], props: true, awn: false, sign: 'big', pitch: 0 };
       case 6: return { wall: 'concrete', tint: pick(CONCRETE, r * 3.3), win: 3, roof: 'flat', rtint: [0.5, 0.52, 0.55], props: true, awn: false, sign: 'top', pitch: 0 };
-      case 7: return { wall: 'ironw', tint: pick(METAL, r * 5.9), win: 4, roof: 'lowgable', rtint: pick([ROOFS[0], ROOFS[4], ROOFS[2], ROOFS[7]], r * 4), props: false, awn: false, sign: 'none', pitch: 0.16 };
-      case 8: return { wall: r < 0.5 ? 'ironw' : 'concrete', tint: r < 0.5 ? pick(METAL, r * 7.7) : pick(CONCRETE, r * 3), win: 0, roof: r < 0.6 ? 'lowgable' : 'flat', rtint: pick(ROOFS, r * 13), props: false, awn: false, sign: 'none', pitch: 0.22 };
+      case 7: return { wall: 'ironw', tint: pick(METAL, r * 5.9), win: 4, roof: 'lowgable', rtint: sheetRoof(r * 4.9 % 1), props: false, awn: false, sign: 'none', pitch: 0.16 };
+      case 8: return { wall: r < 0.5 ? 'ironw' : 'concrete', tint: r < 0.5 ? pick(METAL, r * 7.7) : pick(CONCRETE, r * 3), win: 0, roof: r < 0.6 ? 'lowgable' : 'flat', rtint: sheetRoof(r * 13.3 % 1), props: false, awn: false, sign: 'none', pitch: 0.22 };
       case 9: return { wall: 'plaster', tint: pick(CIVIC, r * 3), win: 5, roof: 'gable', rtint: [0.7, 0.24, 0.2], props: false, awn: false, sign: 'top', pitch: 0.32 };
       case 10: return { wall: 'plaster', tint: [0.97, 0.96, 0.93], win: 6, roof: 'gable', rtint: pick([ROOFS[3], ROOFS[7], ROOFS[5]], r * 3), props: true, awn: false, sign: 'none', pitch: 0.75 };
       case 11: return { wall: 'plaster', tint: [0.97, 0.97, 0.97], win: 7, roof: 'flat', rtint: [0.7, 0.7, 0.72], props: true, awn: false, sign: 'top', pitch: 0 };
       case 12: return { wall: 'concrete', tint: [0.93, 0.93, 0.9], win: 2, roof: 'flat', rtint: [0.7, 0.7, 0.7], props: true, awn: false, sign: 'door', pitch: 0 };
-      case 13: return { wall: 'plaster', tint: pick(HOUSE, r * 6.1), win: 7, roof: 'hip', rtint: pick(ROOFS.slice(1, 6), r * 4), props: false, awn: false, sign: 'door', pitch: 0.5 };
+      case 13: return { wall: 'plaster', tint: pick(HOUSE, r * 6.1), win: 7, roof: 'hip', rtint: tileRoof(r * 4.4 % 1), props: false, awn: false, sign: 'door', pitch: 0.5 };
       case 14: return { wall: 'plaster', tint: pick(CIVIC, r * 2.2), win: 7, roof: r < 0.5 ? 'hip' : 'flat', rtint: [0.62, 0.3, 0.26], props: true, awn: false, sign: 'door', pitch: 0.4 };
       case 15: return { wall: 'plaster', tint: pick(HOUSE, r * 8.1), win: 2, roof: 'flat', rtint: [0.6, 0.6, 0.6], props: true, awn: true, sign: 'door', pitch: 0 };
       case 16: return { wall: 'ironw', tint: pick(METAL, r * 3.3), win: 0, roof: 'lowgable', rtint: pick(ROOFS, r * 6), props: false, awn: false, sign: 'none', pitch: 0.3 };
+      case 18: return { wall: r < 0.3 ? 'brick' : 'plaster', tint: r < 0.3 ? pick(BRICK, r * 6.1) : pick(HOUSE, r * 5.9), win: 1, roof: area > 78 && r > 0.6 ? 'hip' : 'gable', rtint: houseRoof(r * 8.3 % 1), props: false, awn: false, sign: 'none', pitch: 0.26 };
       default: return { wall: 'plaster', tint: pick(HOUSE, r), win: 0, roof: 'canopy', rtint: [0.7, 0.7, 0.72], props: false, awn: false, sign: 'none', pitch: 0 };
     }
   }
@@ -241,7 +293,7 @@ export class CityBuilder {
     n = pts.length; const area = A / 2, r = seed / 1000, w = this.w;
     let maxH = -1e9; const hs = pts.map((p) => { const h = w.calculateRawTerrainHeight(p[0], p[1]); maxH = Math.max(maxH, h); return h; });
     const st = this.style(use, r, area, n);
-    const boost = st.wall === 'plaster' ? 1.5 : st.wall === 'concrete' ? 1.45 : st.wall === 'brick' ? 1.35 : 1.9;
+    const boost = st.wall === 'plaster' ? 1.0 : st.wall === 'concrete' ? 0.98 : st.wall === 'brick' ? 1.05 : 1.15;
     st.tint = st.tint.map((v) => v * boost);
     const h = (hdm / 10) * this.neoHeight(cx, cz, area); const top = maxH + h;
     const wallBuf = this.buf(cx, cz, st.wall);

@@ -229,7 +229,6 @@ export class ExtrasBuilder {
   private flush(): void {
     const w = this.w;
     const ballast = w.pbr('gravel_road', 4, 0.95); ballast.polygonOffset = true; ballast.polygonOffsetFactor = -1; ballast.polygonOffsetUnits = -1;
-    for (const t of [ballast.map!, ballast.normalMap!]) t.repeat.set(1 / 4, 1 / 4);
     const plain = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0.2, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
     this.bufs.forEach((buf, key) => {
       if (buf.empty) return; const [szs, rest, mat] = key.split(':'); const sz = Number(szs); const [ix, iz] = rest.split(',').map(Number);

@@ -105,7 +105,7 @@ export class SceneManager {
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.18;
+    this.renderer.toneMappingExposure = 0.92;
 
     this.renderer.shadowMap.enabled = !this.isSoftwareGl && !this.isMobile;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -130,7 +130,7 @@ export class SceneManager {
     });
 
     // Warm African sunlight
-    this.hemiLight = new THREE.HemisphereLight(0xbae6fd, 0x854d0e, 1.25);
+    this.hemiLight = new THREE.HemisphereLight(0xbae6fd, 0x854d0e, 0.9);
     this.scene.add(this.hemiLight);
 
     // Sun directional light with soft shadows

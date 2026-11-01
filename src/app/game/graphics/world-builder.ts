@@ -27,6 +27,7 @@ interface Surf { way: RoadWay; h: number; elev: boolean; px: number; pz: number;
 interface RoadWay { c: number; w: number; u: number; o: number; n: string; p: number[]; sw?: number; bay?: number; dz?: number[]; br?: number; bk?: number; ms?: number; rg?: number; rb?: number }
 
 import { GeoBuf } from './geo-buf';
+import { styledMaterial, StyleKind, STYLE_FUNCS } from './stylized';
 import { CityBuilder } from './city-builder';
 import { StreetBuilder } from './street-builder';
 import { BridgeBuilder } from './bridge-builder';
@@ -62,6 +63,8 @@ export class WorldBuilder {
   public markMat?: THREE.MeshStandardMaterial; public asphMat?: THREE.MeshStandardMaterial;
   /** Lake/pond outlines (decimetres) for the map. */
   public waterPolys: number[][] = [];
+  /** Garden trees produced by the procedural infill (merged into the tree pass). */
+  public extraTrees: { x: number; z: number; c: number }[] = [];
   private readyCbs: (() => void)[] = [];
   private dem!: Float32Array;
   private groundCls!: Uint8Array;
@@ -457,10 +460,14 @@ export class WorldBuilder {
   }
 
   /** Real photographic PBR set tiled in world space (uv = metres / tileM). */
+  /** Stylized procedural stand-ins for the old tiled photo textures (kept by name so callers did not change). */
   public pbr(name: string, tile: number, rough = 0.9): THREE.MeshStandardMaterial {
-    const map = WorldBuilder.loadTiled(`assets/tex/${name}_diff.jpg`, 1, 1, true);
-    const nrm = WorldBuilder.loadTiled(`assets/tex/${name}_nor_gl.jpg`, 1, 1, false);
-    const m = new THREE.MeshStandardMaterial({ map, normalMap: nrm, roughness: rough, metalness: 0.02 });
+    const map: Record<string, [StyleKind, number, number]> = { // name -> [kind, base colour, bump]
+      asphalt_02: ['asphalt', 0x2c3140, 1.0], gravel_road: ['gravel', 0x8a7a68, 1.2], white_plaster_rough_01: ['panel', 0xffffff, 0.7], concrete_wall_007: ['panel', 0xe6e9ef, 0.7],
+      brick_wall_02: ['tile', 0xffffff, 1.0], corrugated_iron: ['metal', 0xffffff, 1.0], herringbone_pavement_03: ['slab', 0xdcd8d0, 0.9], concrete_pavement: ['slab', 0xe4e6ea, 0.9],
+    };
+    const [kind, col, bump] = map[name] ?? ['plate', 0xffffff, 0.8];
+    const m = styledMaterial(kind, { color: col, rough, bump });
     m.userData['tile'] = tile;
     return m;
   }
@@ -468,19 +475,20 @@ export class WorldBuilder {
   // ------------------------------------------------------------------ terrain
   private buildTerrain(scene: THREE.Scene, groundTex: THREE.Texture): void {
     const detail0 = 0; void detail0;
-    const detail = WorldBuilder.loadTiled('assets/tex/leafy_grass_diff.jpg', 1, 1, true);
     const mat = new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95, metalness: 0 });
     mat.onBeforeCompile = (sh) => {
-      sh.uniforms['detailTex'] = { value: detail };
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vW;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvW = (modelMatrix * vec4(transformed,1.0)).xyz;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vW; uniform sampler2D detailTex;')
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vW;\n' + STYLE_FUNCS)
         .replace('#include <map_fragment>', `#include <map_fragment>
-          float l1 = dot(texture2D(detailTex, vW.xz*0.16).rgb, vec3(0.333)), l2 = dot(texture2D(detailTex, vW.xz*0.0113+7.0).rgb, vec3(0.333));
+          float l1 = 0.12 + 0.5 * sfbm(vW.xz*0.21 + 3.0), l2 = sfbm(vW.xz*0.0113 + 7.0);
           float sat = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)) - min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b));
           float urban = 1.0 - smoothstep(0.03, 0.12, sat);
           float lum = mix(l1, 0.6 + (l1 - 0.35) * 0.45, urban);
-          diffuseColor.rgb *= (0.45 + lum * 1.35) * (0.7 + l2 * 0.8);`);
+          diffuseColor.rgb *= (0.45 + lum * 1.35) * (0.7 + l2 * 0.8);
+          float lg = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
+          diffuseColor.rgb = mix(vec3(lg), diffuseColor.rgb, 1.28) * mix(vec3(0.84, 0.92, 0.86), vec3(1.0), urban);
+          diffuseColor.rgb = clamp(diffuseColor.rgb, 0.0, 1.0);`);
     };
     this.buildTerrainTiles(scene, mat);
   }
@@ -563,8 +571,6 @@ export class WorldBuilder {
     const asph = this.pbr('asphalt_02', 5, 0.88), dirt = this.pbr('gravel_road', 4, 0.95);
     for (const m of [asph, dirt]) {
       m.polygonOffset = true; m.polygonOffsetFactor = -2; m.polygonOffsetUnits = -2;
-      const tile = m.userData['tile'];
-      for (const t of [m.map!, m.normalMap!]) { t.repeat.set(1 / tile, 1 / tile); }
     }
     // world-space UVs => repeat is 1/tile on uv=metres
     const markTex = () => {
@@ -628,7 +634,6 @@ export class WorldBuilder {
     this.bridges.finish();
     this.emit(map, mats, false, false, 1900, false, (m) => { if (m.material === asph) this.roadMeshes.push(m); }, RC);
     // Planar UV: uv = metres, textures repeat 1/tile
-    for (const m of [asph, dirt]) for (const t of [m.map!, m.normalMap!]) t.repeat.set(1 / m.userData['tile'], 1 / m.userData['tile']);
     { const t = (mats['mark'] as THREE.MeshStandardMaterial).map!; t.repeat.set(1, 1); }
   }
 
@@ -663,7 +668,7 @@ export class WorldBuilder {
     const geo = mergeGeometries([paint(trunk, new THREE.Color(0x4a3524)), paint(mkCanopy(2.4, 4.4), new THREE.Color(0xffffff)), paint(mkCanopy(1.7, 5.8), new THREE.Color(0xffffff))].map((g) => { g.deleteAttribute('uv'); return g; }))!;
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, flatShading: true });
     const byChunk = new Map<string, { x: number; z: number; c: number }[]>();
-    const all: { x: number; z: number; c: number }[] = this.streets.streetTrees.slice();
+    const all: { x: number; z: number; c: number }[] = this.streets.streetTrees.concat(this.extraTrees);
     for (let i = 0; i < n; i++) all.push({ x: dv.getFloat32(i * 9, true), z: dv.getFloat32(i * 9 + 4, true), c: dv.getUint8(i * 9 + 8) });
     for (const { x, z, c } of all) {
       if (this.roadAt(x, z)) continue;

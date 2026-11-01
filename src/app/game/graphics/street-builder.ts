@@ -34,7 +34,7 @@ export class StreetBuilder {
   build(scene: THREE.Scene): void {
     const w = this.w;
     const pave1 = w.pbr('herringbone_pavement_03', 2.4, 0.85), pave2 = w.pbr('concrete_pavement', 3, 0.9);
-    for (const m of [pave1, pave2]) { m.polygonOffset = true; m.polygonOffsetFactor = -3; m.polygonOffsetUnits = -3; const t = m.userData['tile']; for (const tx of [m.map!, m.normalMap!]) tx.repeat.set(1 / t, 1 / t); }
+    for (const m of [pave1, pave2]) { m.polygonOffset = true; m.polygonOffsetFactor = -3; m.polygonOffsetUnits = -3;  }
     const curb = new THREE.MeshStandardMaterial({ color: 0x9a9a98, roughness: 0.85, vertexColors: false });
     const props = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.15, side: THREE.DoubleSide });
     const decal = new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 });
