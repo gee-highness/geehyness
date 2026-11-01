@@ -18,7 +18,7 @@ export class CameraRig {
   public photoFov = 50;
 
   constructor(aspect: number) {
-    this.camera = new THREE.PerspectiveCamera(65, aspect, 0.15, 6000);
+    this.camera = new THREE.PerspectiveCamera(65, aspect, 0.3, 4500);
     this.camera.position.copy(this.currentPos);
   }
 

@@ -1,4 +1,5 @@
 // Headless physics benchmark. Build + run:
+import * as THREE from 'three';
 // Build + run: npx esbuild src/app/game/physics/raycast-vehicle.ts src/app/game/physics/collision.ts src/app/services/tuning.service.ts --bundle --platform=node --format=esm --outdir=.phys --tsconfig-raw='{"compilerOptions":{"experimentalDecorators":true}}' --external:@angular/core --external:three && node scripts/physics_test.mjs
 
 
@@ -68,3 +69,21 @@ crash('tree trunk 70 km/h', (cw, v) => { cw.addCircle(0, 25, 0.38); v.velocity.s
 crash('slow bump (11 km/h) into wall', (cw, v) => { cw.addPolygon(box(-5, 5, 5, 9)); v.velocity.set(0, 0, 3.0); }, 200);
 crash('car ahead at 20 km/h, we do 80', (cw, v, dyn) => { v.velocity.set(0, 0, 22.2); dyn.push({ x: 0, z: 30, r: 1, vx: 0, vz: 5.5, mass: 1500, id: 1 }, { x: 0, z: 31.3, r: 1, vx: 0, vz: 5.5, mass: 1500, id: 1 }); }, 120);
 crash('start INSIDE a building (eject)', (cw, v) => { cw.addPolygon(box(-6, -6, 6, 6)); }, 60);
+
+// ---------------- ground-floor guarantee on hostile terrain
+console.log('\n== never under ground');
+for (const [label, hf] of [['steep sine hills (6 m amplitude, 40 m period)', (x, z) => 6 * Math.sin(z / 6.4)], ['2 m cliff step', (x, z) => (z > 60 ? 2 : 0)], ['pothole field', (x, z) => -0.8 * Math.max(0, Math.sin(z / 3) * Math.sin(x / 2))]]) {
+  const gq = (x, z) => { const e = 0.5, h = hf(x, z); return { height: h, normal: new THREE.Vector3(hf(x - e, z) - hf(x + e, z), 2 * e, hf(x, z - e) - hf(x, z + e)).normalize(), surfaceClass: 11 }; };
+  for (const id of ['AWD_GRIP', 'HEAVY_CRUISER']) {
+    const v = mk(id); v.position.set(0, hf(0, 0) + 0.6, 0); v.throttle = 1; let minClear = 9, flip = false;
+    for (let i = 0; i < 12 / DT; i++) {
+      v.updatePhysics(DT, gq);
+      const hl = v.config.wheelBaseM / 2 + 0.85, hw = v.config.trackWidthM / 2;
+      for (const [ox, oy, oz] of [[-hw, -0.26, hl], [hw, -0.26, hl], [-hw, -0.26, -hl], [hw, -0.26, -hl], [0, 0, 0]]) {
+        const p = new THREE.Vector3(ox, oy, oz).applyQuaternion(v.quaternion).add(v.position); minClear = Math.min(minClear, p.y - gq(p.x, p.z).height);
+      }
+      if (new THREE.Vector3(0, 1, 0).applyQuaternion(v.quaternion).y < -0.2) flip = true;
+    }
+    console.log('%s / %s: min clearance of body points %s m  %s  ended z=%s', label, id, minClear.toFixed(3), minClear >= -0.001 ? 'OK (never below ground)' : 'PENETRATED', v.position.z.toFixed(0));
+  }
+}

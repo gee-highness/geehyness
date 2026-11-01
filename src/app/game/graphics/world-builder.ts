@@ -166,6 +166,12 @@ export class WorldBuilder {
     return this.groundClassAt(x, z);
   }
 
+  /** Height of the drivable surface (terrain + road lift) at a point. */
+  public groundHeightAt(x: number, z: number): number {
+    const road = this.roadAt(x, z);
+    return this.calculateRawTerrainHeight(x, z) + (road ? WorldBuilder.ROAD_LIFT[road.c] : 0);
+  }
+
   public queryGround(x: number, z: number): GroundQueryResult {
     const road = this.roadAt(x, z);
     const height = this.calculateRawTerrainHeight(x, z) + (road ? WorldBuilder.ROAD_LIFT[road.c] : 0);

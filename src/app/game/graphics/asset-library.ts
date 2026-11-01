@@ -53,7 +53,7 @@ export class AssetLibrary {
   /** Wraps any catalogue car model around the physics rig. Returns wheel nodes (FL, FR, RL, RR) for animation. */
   public static async attachPlayerCar(
     root: THREE.Group, def: CarDef, wheelBase: number, bodyColor: string
-  ): Promise<{ wheels: THREE.Object3D[]; tail: THREE.MeshStandardMaterial | null; spinSign: number; radius: number } | null> {
+  ): Promise<{ wheels: THREE.Object3D[]; tail: THREE.MeshStandardMaterial | null; spinSign: number; radius: number; holder: THREE.Group; wheelCentreY: number } | null> {
     try {
       const car = (await this.load(def.file)).clone(true);
       let tail: THREE.MeshStandardMaterial | null = null;
@@ -86,7 +86,7 @@ export class AssetLibrary {
         const m = o as THREE.Mesh;
         if (m.isMesh && !holder.getObjectById(m.id)) m.visible = false;
       });
-      return { wheels, tail, spinSign: def.flip ? -1 : 1, radius };
+      return { wheels, tail, spinSign: def.flip ? -1 : 1, radius, holder, wheelCentreY: wy * s };
     } catch { return null; }
   }
 }

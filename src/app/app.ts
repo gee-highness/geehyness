@@ -191,8 +191,12 @@ export class App implements AfterViewInit, OnDestroy {
       }
 
       // Day-Night environment tick
-      this.envService.tickDayNight(frameDelta);
-      this.sceneManager.updateEnvironment(this.envService.envState());
+      this.envAccum += frameDelta;
+      if (this.envAccum > 0.25) { // 4 Hz is plenty for the sun and fog
+        this.envService.tickDayNight(this.envAccum);
+        this.sceneManager.updateEnvironment(this.envService.envState());
+        this.envAccum = 0;
+      }
 
       // Audio engine update
       const telem = this.vehicle.getTelemetry();
@@ -250,7 +254,7 @@ export class App implements AfterViewInit, OnDestroy {
     }
 
     // Render Scene
-    this.sceneManager.render();
+    this.sceneManager.render(frameDelta * 1000);
 
     this.animFrameId = requestAnimationFrame(this.loop);
   };
@@ -322,6 +326,7 @@ export class App implements AfterViewInit, OnDestroy {
   }
 
   private lastCrashRumble = 0;
+  private envAccum = 1;
   private updateHaptics(telem: ReturnType<RaycastVehicle['getTelemetry']>, now: number): void {
     const h = this.hapticsService;
     // Engine: silent at idle, a faint hum only when revving hard under throttle

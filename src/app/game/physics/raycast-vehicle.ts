@@ -258,6 +258,8 @@ export class RaycastVehicle {
       this.quaternion.normalize();
     }
 
+    this.enforceGround(groundQuery);
+
     // Keep car upright stabilization if flipped
     const roll = this._up.dot(new THREE.Vector3(0, 1, 0));
     if (roll < 0.3) {
@@ -277,6 +279,37 @@ export class RaycastVehicle {
     this.isDrifting = this.driftAngleDeg > 14 && speedKmh > 30;
     if (this.isDrifting) {
       this.driftScore += Math.round(this.driftAngleDeg * speedKmh * dt * 0.5);
+    }
+  }
+
+  /**
+   * Hard constraint: no wheel mount or underbody/bumper point may ever sit below the terrain.
+   * Suspension normally prevents this; this catches hard landings, steep crests and teleports.
+   */
+  private _pts = [
+    new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(),
+    new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(),
+  ];
+  private enforceGround(groundQuery: (x: number, z: number) => { height: number; normal: THREE.Vector3; surfaceClass: number }): void {
+    const hl = this.config.wheelBaseM / 2 + 0.85, hw = this.config.trackWidthM / 2 + 0.05, low = -0.26;
+    const offs = [
+      [-hw, -0.05, this.config.wheelBaseM / 2], [hw, -0.05, this.config.wheelBaseM / 2], [-hw, -0.05, -this.config.wheelBaseM / 2], [hw, -0.05, -this.config.wheelBaseM / 2],
+      [-hw, low, hl], [hw, low, hl], [-hw, low, -hl], [hw, low, -hl],
+    ];
+    let lift = 0;
+    for (let i = 0; i < 8; i++) {
+      const p = this._pts[i].set(offs[i][0], offs[i][1], offs[i][2]).applyQuaternion(this.quaternion).add(this.position);
+      const g = groundQuery(p.x, p.z).height;
+      const floor = i < 4 ? g + 0.06 : g + 0.03; // wheel mounts keep a little more air than the bumper corners
+      lift = Math.max(lift, floor - p.y);
+    }
+    // centre of mass too, and a deep-void safety net (bad teleport / NaN recovery)
+    const gc = groundQuery(this.position.x, this.position.z).height;
+    lift = Math.max(lift, gc + 0.2 - this.position.y);
+    if (!isFinite(this.position.y) || this.position.y < gc - 3) { this.position.y = gc + 1; this.velocity.y = 0; return; }
+    if (lift > 0) {
+      this.position.y += lift;
+      if (this.velocity.y < 0) this.velocity.y *= 0.2; // absorb the impact, no tunnelling
     }
   }
 

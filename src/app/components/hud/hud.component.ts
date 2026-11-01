@@ -25,7 +25,7 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
   imports: [CommonModule, MatIconModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styles: [`
-    .hud-card{background:linear-gradient(160deg,rgba(24,24,27,.72),rgba(9,9,11,.6));backdrop-filter:blur(14px) saturate(1.3);border:1px solid rgba(255,255,255,.12);border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.08)}
+    .hud-card{background:linear-gradient(160deg,rgba(28,28,32,.82),rgba(9,9,11,.74));border:1px solid rgba(255,255,255,.12);border-radius:16px;box-shadow:0 6px 16px rgba(0,0,0,.35)}
     .rail-btn{position:relative;width:44px;height:44px;border-radius:12px;display:grid;place-items:center;cursor:pointer;transition:background .15s,transform .15s}
     .rail-btn:hover{background:rgba(255,255,255,.12);transform:scale(1.06)}
     .rail-btn:focus-visible{outline:2px solid #fbbf24}
@@ -51,7 +51,7 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
       </div>
 
       <!-- Top-right: time / weather / input -->
-      <div class="absolute top-3 right-3 sm:top-4 sm:right-4 pointer-events-auto hud-card px-3 sm:px-4 py-2 sm:py-2.5 flex items-center gap-3 sm:gap-4 text-xs">
+      <div class="absolute top-3 sm:top-4 pointer-events-auto hud-card px-3 sm:px-4 py-2 sm:py-2.5 flex items-center gap-3 sm:gap-4 text-xs" [ngClass]="compact() ? 'right-[64px]' : 'right-3 sm:right-4'">
         <div class="flex items-center gap-1.5"><mat-icon class="text-amber-300 !text-base">schedule</mat-icon><span class="font-mono font-semibold">{{ formatTimeOfDay() }}</span></div>
         <div class="flex items-center gap-1.5"><mat-icon class="text-sky-300 !text-base">{{ getWeatherIcon() }}</mat-icon><span class="capitalize" [class.hidden]="compact()">{{ envService.weather().toLowerCase().replace('_', ' ') }}</span></div>
         <div class="hidden md:flex items-center gap-1.5" [class.text-emerald-300]="gamepadService.isConnected()" [class.text-zinc-500]="!gamepadService.isConnected()">
@@ -97,15 +97,15 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
 
       <!-- Bottom-left: live rotating minimap -->
       <div class="absolute pointer-events-auto hud-card p-1.5" [ngClass]="compact() ? 'top-[68px] left-3 w-[96px]' : 'bottom-5 left-5 w-[168px] max-sm:w-[120px]'">
-        <canvas #minimapCanvas width="288" height="288" class="w-full aspect-square rounded-xl"></canvas>
+        <canvas #minimapCanvas width="224" height="224" class="w-full aspect-square rounded-xl"></canvas>
       </div>
 
       <!-- Bottom-right: gauge cluster -->
-      <div class="absolute pointer-events-none" [ngClass]="compact() ? 'bottom-2 left-1/2 -translate-x-1/2' : 'bottom-5 right-20 max-sm:right-16'">
-        <div class="relative" [ngClass]="compact() ? 'w-[150px] h-[150px]' : 'w-[250px] h-[250px] max-sm:w-[190px] max-sm:h-[190px]'">
-          <canvas #gaugeCanvas width="500" height="500" class="absolute inset-0 w-full h-full"></canvas>
+      <div class="absolute pointer-events-none" [ngClass]="compact() ? 'top-[72px] right-3' : 'bottom-5 right-20 max-sm:right-16'">
+        <div class="relative" [ngClass]="compact() ? 'w-[128px] h-[128px]' : 'w-[250px] h-[250px] max-sm:w-[190px] max-sm:h-[190px]'">
+          <canvas #gaugeCanvas width="320" height="320" class="absolute inset-0 w-full h-full"></canvas>
           <div class="absolute inset-0 flex flex-col items-center justify-center">
-            <div class="text-[64px] max-sm:text-[46px] leading-none font-black tabular-nums tracking-tight drop-shadow-[0_2px_12px_rgba(0,0,0,.6)]" [class.!text-[38px]]="compact()">{{ telemetryService.speedKmh() }}</div>
+            <div class="text-[64px] max-sm:text-[46px] leading-none font-black tabular-nums tracking-tight drop-shadow-[0_2px_12px_rgba(0,0,0,.6)]" [class.!text-[32px]]="compact()">{{ telemetryService.speedKmh() }}</div>
             <div class="text-[11px] font-bold tracking-[0.3em] text-zinc-300 -mt-0.5">KM/H</div>
             <div class="mt-2 flex items-baseline gap-1"><span class="text-3xl max-sm:text-xl font-black text-amber-300">{{ telemetryService.currentGear() }}</span><span class="text-[10px] text-zinc-400 font-bold">GEAR</span></div>
             <div class="text-[10px] text-emerald-300 font-semibold mt-1 max-w-[120px] truncate">{{ telemetryService.currentSurface() }}</div>
@@ -164,6 +164,7 @@ export class HudComponent {
   private nearX = 1e9; private nearZ = 1e9;
   private poseX = 0; private poseZ = 0; private poseYaw = 0;
   private smoothRpm = 0;
+  private lastMap = 0; private lastGauge = 0;
 
   constructor() {
     setTimeout(() => this.hintVisible.set(false), 14000);
@@ -190,8 +191,9 @@ export class HudComponent {
     const d = this.world?.ready ? this.world.districtAt(x, z) : 'Manzini';
     if (d !== this.currentDistrictName()) this.currentDistrictName.set(d);
 
-    this.drawMinimap();
-    this.drawGauge();
+    const t = performance.now();
+    if (t - this.lastMap > 90) { this.lastMap = t; this.drawMinimap(); }
+    if (t - this.lastGauge > 50) { this.lastGauge = t; this.drawGauge(); }
   }
 
   /** Heading-up minimap: real MR3 route, player fixed at the centre-bottom. */
@@ -200,7 +202,7 @@ export class HudComponent {
     const c = this.minimapCanvasRef.nativeElement;
     const ctx = c.getContext('2d');
     if (!ctx) return;
-    const W = c.width, cx = W / 2, cy = W * 0.62, scale = 0.42; // px per metre
+    const W = c.width, cx = W / 2, cy = W * 0.62, scale = 0.42 * (W / 288); // px per metre
     ctx.clearRect(0, 0, W, W);
     ctx.save();
     ctx.beginPath(); ctx.arc(cx, W / 2, W / 2 - 2, 0, Math.PI * 2); ctx.clip();
@@ -242,7 +244,8 @@ export class HudComponent {
     const c = this.gaugeCanvasRef.nativeElement;
     const ctx = c.getContext('2d');
     if (!ctx) return;
-    const S = c.width, m = S / 2;
+    const S = 500, m = S / 2;
+    ctx.setTransform(c.width / 500, 0, 0, c.width / 500, 0, 0);
     const start = Math.PI * 0.75, sweep = Math.PI * 1.5;
     const rpmT = Math.min(1, this.telemetryService.rpm() / 8500);
     this.smoothRpm += (rpmT - this.smoothRpm) * 0.35;
@@ -254,9 +257,9 @@ export class HudComponent {
     ctx.strokeStyle = 'rgba(239,68,68,.45)'; ctx.beginPath(); ctx.arc(m, m, m - 34, start + sweep * red, start + sweep); ctx.stroke();
     const g = ctx.createLinearGradient(0, S, S, 0);
     g.addColorStop(0, '#22d3ee'); g.addColorStop(0.6, '#fbbf24'); g.addColorStop(1, '#ef4444');
-    ctx.strokeStyle = this.smoothRpm > red ? '#ef4444' : g; ctx.shadowColor = this.smoothRpm > red ? '#ef4444' : '#fbbf24'; ctx.shadowBlur = 18;
+    ctx.strokeStyle = this.smoothRpm > red ? '#ef4444' : g; 
     ctx.beginPath(); ctx.arc(m, m, m - 34, start, start + sweep * Math.max(0.005, this.smoothRpm)); ctx.stroke();
-    ctx.shadowBlur = 0; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,.5)';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,.5)';
     for (let i = 0; i <= 8; i++) {
       const a = start + (sweep * i) / 8;
       ctx.beginPath(); ctx.moveTo(m + Math.cos(a) * (m - 62), m + Math.sin(a) * (m - 62)); ctx.lineTo(m + Math.cos(a) * (m - 54), m + Math.sin(a) * (m - 54)); ctx.stroke();

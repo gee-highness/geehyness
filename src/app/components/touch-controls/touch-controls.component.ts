@@ -14,7 +14,7 @@ import { MatIconModule } from '@angular/material/icon';
         <button
           (touchstart)="onResetTouch($event)"
           (mousedown)="onResetDown()"
-          class="w-12 h-12 bg-black/60 active:bg-amber-500 active:text-black backdrop-blur-md rounded-2xl border border-white/20 text-white flex items-center justify-center shadow-lg transition-transform active:scale-90 cursor-pointer"
+          class="w-12 h-12 bg-black/60 active:bg-amber-500 active:text-black rounded-2xl border border-white/20 text-white flex items-center justify-center shadow-lg transition-transform active:scale-90 cursor-pointer"
           title="Reset Car Upright"
         >
           <mat-icon class="text-sm">restart_alt</mat-icon>
@@ -30,7 +30,7 @@ import { MatIconModule } from '@angular/material/icon';
             (touchend)="stopSteer($event)"
             (mousedown)="startSteer(-1)"
             (mouseup)="stopSteer()"
-            class="w-20 h-20 bg-black/60 active:bg-cyan-500/80 active:text-black backdrop-blur-md rounded-3xl border border-white/20 text-white flex items-center justify-center shadow-2xl transition-transform active:scale-95 cursor-pointer"
+            class="w-20 h-20 bg-black/60 active:bg-cyan-500/80 active:text-black rounded-3xl border border-white/20 text-white flex items-center justify-center shadow-2xl transition-transform active:scale-95 cursor-pointer"
           >
             <mat-icon class="text-3xl">arrow_back</mat-icon>
           </button>
@@ -40,7 +40,7 @@ import { MatIconModule } from '@angular/material/icon';
             (touchend)="stopSteer($event)"
             (mousedown)="startSteer(1)"
             (mouseup)="stopSteer()"
-            class="w-20 h-20 bg-black/60 active:bg-cyan-500/80 active:text-black backdrop-blur-md rounded-3xl border border-white/20 text-white flex items-center justify-center shadow-2xl transition-transform active:scale-95 cursor-pointer"
+            class="w-20 h-20 bg-black/60 active:bg-cyan-500/80 active:text-black rounded-3xl border border-white/20 text-white flex items-center justify-center shadow-2xl transition-transform active:scale-95 cursor-pointer"
           >
             <mat-icon class="text-3xl">arrow_forward</mat-icon>
           </button>
@@ -54,7 +54,7 @@ import { MatIconModule } from '@angular/material/icon';
             (touchend)="stopHandbrake($event)"
             (mousedown)="startHandbrake()"
             (mouseup)="stopHandbrake()"
-            class="w-16 h-16 bg-black/60 active:bg-red-500 active:text-black backdrop-blur-md rounded-2xl border border-white/20 text-white flex flex-col items-center justify-center shadow-2xl transition-transform active:scale-90 cursor-pointer"
+            class="w-16 h-16 bg-black/60 active:bg-red-500 active:text-black rounded-2xl border border-white/20 text-white flex flex-col items-center justify-center shadow-2xl transition-transform active:scale-90 cursor-pointer"
           >
             <span class="text-xs font-black uppercase tracking-tighter">E-BRAKE</span>
           </button>
@@ -65,7 +65,7 @@ import { MatIconModule } from '@angular/material/icon';
             (touchend)="stopBrake($event)"
             (mousedown)="startBrake()"
             (mouseup)="stopBrake()"
-            class="w-20 h-24 bg-red-950/70 active:bg-red-600 active:text-white backdrop-blur-md rounded-3xl border border-red-500/40 text-red-200 flex flex-col items-center justify-center shadow-2xl transition-transform active:scale-95 cursor-pointer"
+            class="w-20 h-24 bg-red-950/70 active:bg-red-600 active:text-white rounded-3xl border border-red-500/40 text-red-200 flex flex-col items-center justify-center shadow-2xl transition-transform active:scale-95 cursor-pointer"
           >
             <mat-icon class="text-2xl">arrow_downward</mat-icon>
             <span class="text-[10px] font-black uppercase mt-1">BRAKE</span>
@@ -77,7 +77,7 @@ import { MatIconModule } from '@angular/material/icon';
             (touchend)="stopGas($event)"
             (mousedown)="startGas()"
             (mouseup)="stopGas()"
-            class="w-20 h-32 bg-emerald-950/70 active:bg-emerald-500 active:text-black backdrop-blur-md rounded-3xl border border-emerald-500/40 text-emerald-200 flex flex-col items-center justify-center shadow-2xl transition-transform active:scale-95 cursor-pointer"
+            class="w-20 h-32 bg-emerald-950/70 active:bg-emerald-500 active:text-black rounded-3xl border border-emerald-500/40 text-emerald-200 flex flex-col items-center justify-center shadow-2xl transition-transform active:scale-95 cursor-pointer"
           >
             <mat-icon class="text-3xl">arrow_upward</mat-icon>
             <span class="text-[11px] font-black uppercase mt-1">GAS</span>

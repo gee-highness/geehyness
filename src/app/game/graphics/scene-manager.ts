@@ -25,6 +25,8 @@ export class SceneManager {
   private modelTail: THREE.MeshStandardMaterial | null = null;
   private modelSpin = 0;
   private modelSpinSign = 1;
+  private modelHolder: THREE.Group | null = null;
+  private modelWheelCy = 0.33;
   private modelRadius = 0.33;
   private roadTraffic?: RoadTraffic;
   private vehicleParts!: ReturnType<typeof CarFactory.createVehicleMesh>;
@@ -35,6 +37,11 @@ export class SceneManager {
 
   // Software GL detection flag
   public isSoftwareGl = false;
+  public isMobile = false;
+  private pixelRatio = 1;
+  private maxPixelRatio = 1;
+  private frameMs = 16;
+  private govTimer = 0;
 
   constructor(private container: HTMLElement) {
     this.scene = new THREE.Scene();
@@ -70,19 +77,22 @@ export class SceneManager {
   }
 
   private initRenderer(): void {
+    const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints ?? 0) > 1;
+    this.isMobile = mobile;
     this.renderer = new THREE.WebGLRenderer({
-      antialias: !this.isSoftwareGl,
+      antialias: !mobile && !this.isSoftwareGl, // MSAA is too costly on phones; resolution scaling + FXAA-free crispness instead
       powerPreference: 'high-performance',
-      logarithmicDepthBuffer: true, // road/terrain/building layers 5-10 cm apart must not z-fight at distance
-      preserveDrawingBuffer: true, // Needed for Photo Mode snapshot export
+      preserveDrawingBuffer: false, // photo mode renders then reads in the same task
     });
+    this.maxPixelRatio = this.isSoftwareGl ? 1 : mobile ? Math.min(window.devicePixelRatio, 1.5) : Math.min(window.devicePixelRatio, 2);
+    this.pixelRatio = mobile ? Math.min(this.maxPixelRatio, 1.0) : this.maxPixelRatio;
+    this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
-    this.renderer.setPixelRatio(this.isSoftwareGl ? 1.0 : Math.min(window.devicePixelRatio, 2.0));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.18;
 
-    this.renderer.shadowMap.enabled = !this.isSoftwareGl;
+    this.renderer.shadowMap.enabled = !this.isSoftwareGl && !this.isMobile;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     // Studio PBR reflections for car paint, chrome, glass, and wet tarmac
@@ -98,7 +108,8 @@ export class SceneManager {
     new RGBELoader().load('assets/hdri/sky.hdr', (hdr) => {
       hdr.mapping = THREE.EquirectangularReflectionMapping;
       this.scene.background = hdr;
-      this.scene.environment = hdr;
+      const pm = new THREE.PMREMGenerator(this.renderer);
+      this.scene.environment = pm.fromEquirectangular(hdr).texture; pm.dispose();
       this.scene.environmentIntensity = 1.0;
     });
 
@@ -109,7 +120,7 @@ export class SceneManager {
     // Sun directional light with soft shadows
     this.sunLight = new THREE.DirectionalLight(0xfef08a, 2.8);
     this.sunLight.position.set(120, 320, 220);
-    this.sunLight.castShadow = !this.isSoftwareGl;
+    this.sunLight.castShadow = !this.isSoftwareGl && !this.isMobile;
     this.sunLight.shadow.mapSize.width = 1024;
     this.sunLight.shadow.mapSize.height = 1024;
     this.sunLight.shadow.camera.near = 10;
@@ -135,9 +146,10 @@ export class SceneManager {
     this.scene.add(this.vehicleMeshGroup);
     this.modelWheels = [];
     this.modelTail = null;
+    this.modelHolder = null;
     const parts = this.vehicleParts;
     AssetLibrary.attachPlayerCar(this.vehicleMeshGroup, def, config.wheelBaseM, visuals.bodyColor).then((r) => {
-      if (r && parts === this.vehicleParts) { this.modelWheels = r.wheels; this.modelTail = r.tail; this.modelSpinSign = r.spinSign; this.modelRadius = r.radius; }
+      if (r && parts === this.vehicleParts) { this.modelWheels = r.wheels; this.modelTail = r.tail; this.modelSpinSign = r.spinSign; this.modelRadius = r.radius; this.modelHolder = r.holder; this.modelWheelCy = r.wheelCentreY; }
     });
   }
 
@@ -223,6 +235,12 @@ export class SceneManager {
       }
     }
 
+    // 2a. Seat the real model on the actual surface: tyres touch the ground whatever the suspension is doing
+    if (this.modelHolder) {
+      const gy = this.worldBuilder.groundHeightAt(vehicle.position.x, vehicle.position.z);
+      this.modelHolder.position.y = (gy + this.modelRadius - vehicle.position.y) - this.modelWheelCy;
+    }
+
     // 2b. Real Ferrari wheels: steer (front) + roll
     if (this.modelWheels.length === 4) {
       const fwd = vehicle.velocity.dot(new THREE.Vector3(0, 0, 1).applyQuaternion(vehicle.quaternion));
@@ -266,7 +284,23 @@ export class SceneManager {
     this.cameraRig.setAspect(w / h);
   }
 
-  public render(): void {
+  /** Dynamic resolution: hold ~50 fps by trading pixel ratio (never below 0.5x, never above the device cap). */
+  private govern(dtMs: number): void {
+    this.frameMs += (dtMs - this.frameMs) * 0.1;
+    this.govTimer += dtMs;
+    if (this.govTimer < 700) return;
+    this.govTimer = 0;
+    let pr = this.pixelRatio;
+    if (this.frameMs > 21.5) pr = Math.max(0.5, pr - (this.frameMs > 30 ? 0.2 : 0.1));
+    else if (this.frameMs < 15.5 && pr < this.maxPixelRatio) pr = Math.min(this.maxPixelRatio, pr + 0.05);
+    if (Math.abs(pr - this.pixelRatio) > 0.001) {
+      this.pixelRatio = pr; this.renderer.setPixelRatio(pr);
+      this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+    }
+  }
+
+  public render(dtMs = 16): void {
+    this.govern(dtMs);
     this.renderer.render(this.scene, this.cameraRig.camera);
   }
 
