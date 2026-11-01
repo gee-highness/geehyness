@@ -160,7 +160,7 @@ export class App implements AfterViewInit, OnDestroy {
       (window as unknown as { __shesha: Record<string, unknown> }).__shesha = {
         ...((window as unknown as { __shesha?: Record<string, unknown> }).__shesha ?? {}),
         tpRoad: (x: number, z: number) => {
-          const wb = this.sceneManager.worldBuilder; const r = wb.nearestRoadSegment(x, z, 3); if (!r) return null;
+          const wb = this.sceneManager.worldBuilder; const r = wb.nearestRoadSegment(x, z, 5); if (!r) return null;
           this.vehicle.position.set(r.px, wb.groundHeightAt(r.px, r.pz) + 1, r.pz); this.vehicle.velocity.set(0, 0, 0);
           this.vehicle.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(r.tx, r.tz)); return [Math.round(r.px), Math.round(r.pz), r.way.n];
         },

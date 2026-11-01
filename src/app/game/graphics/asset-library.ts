@@ -65,6 +65,8 @@ export class AssetLibrary {
           else if (mat.name === 'Taillight_Glass') { tail = mat.clone(); tail.emissive = new THREE.Color(0xff0000); tail.emissiveIntensity = 0.2; m.material = tail; }
         }
       });
+      // The open-top cabin is barely visible from the chase camera: drop the heavy interior meshes (~half the triangles)
+      if (def.flip) car.traverse((o) => { if ((o as THREE.Mesh).isMesh && /interior|leather|carpet|leds|wiper|brake|carbon_fibre_trim/i.test(o.name)) o.visible = false; });
       const wheels: THREE.Object3D[] = [];
       for (const n of def.wheels) { const w = car.getObjectByName(n); if (w) { w.rotation.order = 'YXZ'; wheels.push(w); } }
       car.updateWorldMatrix(true, true);

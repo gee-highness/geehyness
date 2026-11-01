@@ -367,17 +367,21 @@ export class WorldBuilder {
     const detail0 = 0; void detail0;
     const detail = WorldBuilder.loadTiled('assets/tex/leafy_grass_diff.jpg', 1, 1, true);
     const rock = WorldBuilder.loadTiled('assets/tex/red_laterite_soil_stones_diff.jpg', 1, 1, true);
+    const conc = WorldBuilder.loadTiled('assets/tex/concrete_pavement_diff.jpg', 1, 1, true);
     const mat = new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95, metalness: 0 });
     mat.onBeforeCompile = (sh) => {
-      sh.uniforms['detailTex'] = { value: detail }; sh.uniforms['rockTex'] = { value: rock };
+      sh.uniforms['detailTex'] = { value: detail }; sh.uniforms['rockTex'] = { value: rock }; sh.uniforms['concTex'] = { value: conc };
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vW;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvW = (modelMatrix * vec4(transformed,1.0)).xyz;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vW; uniform sampler2D detailTex; uniform sampler2D rockTex;')
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vW; uniform sampler2D detailTex; uniform sampler2D rockTex; uniform sampler2D concTex;')
         .replace('#include <map_fragment>', `#include <map_fragment>
           vec3 d1 = texture2D(detailTex, vW.xz*0.16).rgb; vec3 d2 = texture2D(detailTex, vW.xz*0.0113+7.0).rgb; vec3 r1 = texture2D(rockTex, vW.xz*0.11).rgb;
           float l1 = dot(d1, vec3(0.333)), l2 = dot(d2, vec3(0.333)), lr = dot(r1, vec3(0.333));
           float redness = clamp((diffuseColor.r - diffuseColor.g) * 3.0, 0.0, 1.0);
-          float lum = mix(l1, lr, redness);
+          float lc = dot(texture2D(concTex, vW.xz*0.21).rgb, vec3(0.333)) * 1.25;
+          float sat = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)) - min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b));
+          float urban = 1.0 - smoothstep(0.03, 0.12, sat);
+          float lum = mix(mix(l1, lr, redness), lc, urban);
           diffuseColor.rgb *= (0.45 + lum * 1.35) * (0.7 + l2 * 0.8);`);
     };
     this.buildTerrainTiles(scene, mat);
@@ -436,22 +440,22 @@ export class WorldBuilder {
   }
 
   // ------------------------------------------------------------------ roads
-  private chunkOf(map: Map<string, Map<string, GeoBuf>>, x: number, z: number, mat: string): GeoBuf {
-    const k = `${Math.floor(x / CHUNK)},${Math.floor(z / CHUNK)}`;
+  private chunkOf(map: Map<string, Map<string, GeoBuf>>, x: number, z: number, mat: string, size = CHUNK): GeoBuf {
+    const k = `${Math.floor(x / size)},${Math.floor(z / size)}`;
     let m = map.get(k); if (!m) { m = new Map(); map.set(k, m); }
     let b = m.get(mat); if (!b) { b = new GeoBuf(); m.set(mat, b); }
     return b;
   }
 
-  private emit(map: Map<string, Map<string, GeoBuf>>, mats: Record<string, THREE.Material>, withColor: boolean, withWin: boolean, far: number, shadow: boolean, onMesh?: (m: THREE.Mesh) => void): void {
+  private emit(map: Map<string, Map<string, GeoBuf>>, mats: Record<string, THREE.Material>, withColor: boolean, withWin: boolean, far: number, shadow: boolean, onMesh?: (m: THREE.Mesh) => void, size = CHUNK): void {
     map.forEach((m, key) => {
-      const [cxI, czI] = key.split(',').map(Number); const cx = (cxI + 0.5) * CHUNK, cz = (czI + 0.5) * CHUNK;
+      const [cxI, czI] = key.split(',').map(Number); const cx = (cxI + 0.5) * size, cz = (czI + 0.5) * size;
       m.forEach((buf, mk) => {
         if (buf.empty) return;
         const mesh = new THREE.Mesh(buf.toGeometry(withColor, withWin), mats[mk]);
         mesh.name = 'road:' + mk; mesh.receiveShadow = shadow; mesh.castShadow = shadow; mesh.userData['far'] = far;
         onMesh?.(mesh);
-        this.chunks.push({ obj: mesh, cx, cz, r: CHUNK * 0.75 });
+        this.chunks.push({ obj: mesh, cx, cz, r: size * 0.72 });
         this.landmarksGroup.add(mesh);
       });
     });
@@ -465,18 +469,18 @@ export class WorldBuilder {
       for (const t of [m.map!, m.normalMap!]) { t.repeat.set(1 / tile, 1 / tile); }
     }
     // world-space UVs => repeat is 1/tile on uv=metres
-    const markTex = (dash: boolean) => {
-      const c = document.createElement('canvas'); c.width = 128; c.height = 256; const x = c.getContext('2d')!;
-      x.clearRect(0, 0, 128, 256); x.fillStyle = 'rgba(240,240,235,0.92)';
-      x.fillRect(6, 0, 5, 256); x.fillRect(117, 0, 5, 256);
-      if (dash) { x.fillRect(61, 20, 6, 110); }
+    const markTex = () => {
+      const c = document.createElement('canvas'); c.width = 256; c.height = 256; const x = c.getContext('2d')!;
+      x.clearRect(0, 0, 256, 256); x.fillStyle = 'rgba(240,240,235,0.92)';
+      for (const o of [0, 128]) { x.fillRect(o + 6, 0, 5, 256); x.fillRect(o + 117, 0, 5, 256); }
+      x.fillRect(128 + 61, 20, 6, 110);
       const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
     };
-    const mk = (dash: boolean) => new THREE.MeshStandardMaterial({ map: markTex(dash), transparent: true, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, depthWrite: false });
+    const mk = () => new THREE.MeshStandardMaterial({ map: markTex(), transparent: true, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, depthWrite: false });
     const water = new THREE.MeshStandardMaterial({ color: 0x3b6f8a, roughness: 0.08, metalness: 0.25, transparent: true, opacity: 0.9 });
-    const mats: Record<string, THREE.Material> = { asph, dirt, mark1: mk(false), mark2: mk(true), water };
+    const mats: Record<string, THREE.Material> = { asph, dirt, mark: mk(), water };
     const map = new Map<string, Map<string, GeoBuf>>();
-    const YOFF = WorldBuilder.ROAD_LIFT;
+    const YOFF = WorldBuilder.ROAD_LIFT; const RC = 1600;
 
     for (const w of this.roadWays) {
       // resample to <= 16 m
@@ -501,25 +505,25 @@ export class WorldBuilder {
       for (let i = 0; i + 1 < pts.length; i++) {
         const mx = (pts[i][0] + pts[i + 1][0]) / 2, mz = (pts[i][1] + pts[i + 1][1]) / 2;
         const seg = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
-        const buf = this.chunkOf(map, mx, mz, matKey);
+        const buf = this.chunkOf(map, mx, mz, matKey, RC);
         const q = [L[i], R[i], L[i + 1], R[i + 1]];
         const ids = q.map((p) => buf.vert(p[0], this.calculateRawTerrainHeight(p[0], p[1]) + y0, p[1], 0, 1, 0, p[0], p[1], [1, 1, 1]));
         buf.tri(ids[0], ids[2], ids[1]); buf.tri(ids[1], ids[2], ids[3]);
         if (w.c <= 4 && !isDirt) {
-          const mb = this.chunkOf(map, mx, mz, dash ? 'mark2' : 'mark1');
-          const mid = [mb.vert(L[i][0], this.calculateRawTerrainHeight(L[i][0], L[i][1]) + y0 + 0.02, L[i][1], 0, 1, 0, 0, cum / 12, [1, 1, 1]),
-            mb.vert(R[i][0], this.calculateRawTerrainHeight(R[i][0], R[i][1]) + y0 + 0.02, R[i][1], 0, 1, 0, 1, cum / 12, [1, 1, 1]),
-            mb.vert(L[i + 1][0], this.calculateRawTerrainHeight(L[i + 1][0], L[i + 1][1]) + y0 + 0.02, L[i + 1][1], 0, 1, 0, 0, (cum + seg) / 12, [1, 1, 1]),
-            mb.vert(R[i + 1][0], this.calculateRawTerrainHeight(R[i + 1][0], R[i + 1][1]) + y0 + 0.02, R[i + 1][1], 0, 1, 0, 1, (cum + seg) / 12, [1, 1, 1])];
+          const mb = this.chunkOf(map, mx, mz, 'mark', RC); const uo = dash ? 0.5 : 0;
+          const mid = [mb.vert(L[i][0], this.calculateRawTerrainHeight(L[i][0], L[i][1]) + y0 + 0.02, L[i][1], 0, 1, 0, uo, cum / 12, [1, 1, 1]),
+            mb.vert(R[i][0], this.calculateRawTerrainHeight(R[i][0], R[i][1]) + y0 + 0.02, R[i][1], 0, 1, 0, uo + 0.5, cum / 12, [1, 1, 1]),
+            mb.vert(L[i + 1][0], this.calculateRawTerrainHeight(L[i + 1][0], L[i + 1][1]) + y0 + 0.02, L[i + 1][1], 0, 1, 0, uo, (cum + seg) / 12, [1, 1, 1]),
+            mb.vert(R[i + 1][0], this.calculateRawTerrainHeight(R[i + 1][0], R[i + 1][1]) + y0 + 0.02, R[i + 1][1], 0, 1, 0, uo + 0.5, (cum + seg) / 12, [1, 1, 1])];
           mb.tri(mid[0], mid[2], mid[1]); mb.tri(mid[1], mid[2], mid[3]);
         }
         cum += seg;
       }
     }
-    this.emit(map, mats, false, false, 2600, false, (m) => { if (m.material === asph) this.roadMeshes.push(m); });
+    this.emit(map, mats, false, false, 1900, false, (m) => { if (m.material === asph) this.roadMeshes.push(m); }, RC);
     // Planar UV: uv = metres, textures repeat 1/tile
     for (const m of [asph, dirt]) for (const t of [m.map!, m.normalMap!]) t.repeat.set(1 / m.userData['tile'], 1 / m.userData['tile']);
-    for (const k of ['mark1', 'mark2']) { const t = (mats[k] as THREE.MeshStandardMaterial).map!; t.repeat.set(1, 1); }
+    { const t = (mats['mark'] as THREE.MeshStandardMaterial).map!; t.repeat.set(1, 1); }
   }
 
   private buildWater(scene: THREE.Scene, polys: { p: number[] }[]): void {
@@ -575,7 +579,7 @@ export class WorldBuilder {
         else col.setRGB(0.22 + r * 0.12, 0.42 + r * 0.14, 0.18 + r * 0.06);
         im.setColorAt(i, col);
       });
-      im.userData['far'] = 1100; im.computeBoundingSphere();
+      im.userData['far'] = 650; im.computeBoundingSphere();
       const [cxI, czI] = key.split(',').map(Number);
       this.chunks.push({ obj: im, cx: (cxI + 0.5) * CHUNK, cz: (czI + 0.5) * CHUNK, r: CHUNK * 0.75 });
       this.foliageGroup.add(im);
@@ -636,7 +640,7 @@ export class WorldBuilder {
       const poles = new THREE.InstancedMesh(pole, poleM, list.length), heads = new THREE.InstancedMesh(headG, headM, list.length); poles.name = heads.name = 'lamps';
       list.forEach((s, i) => { q.setFromAxisAngle(up, s.rot); m4.compose(new THREE.Vector3(s.x, this.calculateRawTerrainHeight(s.x, s.z) + (this.onPavement(s.x, s.z) ? 0.3 : 0), s.z), q, new THREE.Vector3(1, 1, 1)); poles.setMatrixAt(i, m4); heads.setMatrixAt(i, m4); });
       poles.computeBoundingSphere(); heads.computeBoundingSphere(); const [ix, iz] = key.split(',').map(Number);
-      for (const o of [poles, heads]) { this.registerChunk(o, (ix + 0.5) * CHUNK, (iz + 0.5) * CHUNK, CHUNK * 0.75, 900); this.roadInfrastructureGroup.add(o); }
+      for (const o of [poles, heads]) { this.registerChunk(o, (ix + 0.5) * CHUNK, (iz + 0.5) * CHUNK, CHUNK * 0.75, 700); this.roadInfrastructureGroup.add(o); }
     });
   }
 

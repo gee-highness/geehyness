@@ -5,7 +5,7 @@ import type { WorldBuilder } from './world-builder';
 /** [use, heightDm, footprint dm..., signIndex, seed] */
 type Bld = [number, number, number[], number, number];
 
-const CH = 600;
+const CH = 800;
 const rnd = (a: number): number => { const s = Math.sin(a * 12.9898) * 43758.5453; return s - Math.floor(s); };
 const pick = <T>(arr: T[], r: number): T => arr[Math.floor(r * arr.length) % arr.length];
 
@@ -118,7 +118,7 @@ export class CityBuilder {
         const isProp = mk === 'props' || mk === 'sign';
         const mesh = new THREE.Mesh(buf.toGeometry(mk !== 'sign', !isProp), this.mats[mk]);
         mesh.name = 'bld:' + mk; mesh.castShadow = !isProp; mesh.receiveShadow = true;
-        this.w.registerChunk(mesh, cx, cz, CH * 0.75, isProp ? 520 : 1350);
+        this.w.registerChunk(mesh, cx, cz, CH * 0.75, isProp ? 430 : 1150);
         this.w.landmarksGroup.add(mesh);
       });
     });
@@ -204,6 +204,9 @@ export class CityBuilder {
     if (use !== 17 && !w.overlapsRoad(pts, cx, cz)) w.collision.addPolygon(pts.flatMap((p) => [p[0], p[1]]));
     w.addFootprint(cx, cz, Math.sqrt(area) * 0.6 + 1.5);
 
+    // walled compound + hedge for houses in town (detail only when close)
+    if ((use === 0 || use === 1 || use === 13) && area > 70 && Math.hypot(cx + 750, cz + 210) < 3400 && r < 0.8) this.compound(cx, cz, ocx, ocz, ux, uz, vx, vz, halfU, halfV, r, hs);
+
     // props + signs (detail only when close)
     if (!st.props && !st.awn && st.sign === 'none') return;
     const pb = this.buf(cx, cz, 'props');
@@ -213,6 +216,36 @@ export class CityBuilder {
     if (st.props && roof === 'flat' && area > 70) this.roofProps(pb, pts, cx, cz, top - 0.45, use, r, area);
     if (use === 10 && front >= 0) this.churchTower(wallBuf, rb, pts, front, hs, top, st.tint, winCode, pb);
     if (use === 12 && front >= 0) this.petrolCanopy(pb, pts, front, hs, cx, cz);
+  }
+
+  // ------------------------------------------------------------------ compound walls
+  private compound(cx: number, cz: number, ocx: number, ocz: number, ux: number, uz: number, vx: number, vz: number, hu: number, hv: number, r: number, hs: number[]): void {
+    const w = this.w; const m = 2.4 + r * 2.4, A = hu + m, B = hv + m; const y = Math.min(...hs);
+    const P = (su: number, sv: number): [number, number] => [ocx + ux * su + vx * sv, ocz + uz * su + vz * sv];
+    const corners = [P(-A, -B), P(A, -B), P(A, B), P(-A, B)];
+    for (const c of corners) if (w.roadAt(c[0], c[1])) return;
+    // front = the side whose midpoint is nearest to a road
+    const sides: [number, number][][] = [[corners[0], corners[1]], [corners[1], corners[2]], [corners[2], corners[3]], [corners[3], corners[0]]];
+    let front = 0, bd = 1e9; sides.forEach((sd, i) => { const d = w.distToRoad((sd[0][0] + sd[1][0]) / 2, (sd[0][1] + sd[1][1]) / 2, 5); if (d < bd) { bd = d; front = i; } });
+    const pb = this.buf(cx, cz, 'props'); const tint = pick(CONCRETE, r * 9.7).map((v) => v * 1.1), cap = [tint[0] * 0.8, tint[1] * 0.8, tint[2] * 0.8];
+    const wall = (a: [number, number], b: [number, number]) => {
+      const dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz); if (len < 0.5) return;
+      const mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2, rot = Math.atan2(dz, dx), yy = w.calculateRawTerrainHeight(mx, mz) - 0.1;
+      this.box(pb, mx, yy, mz, len, 1.75, 0.2, rot, tint); this.box(pb, mx, yy + 1.75, mz, len + 0.1, 0.1, 0.3, rot, cap);
+      const nx = -dz / len * 0.1, nz = dx / len * 0.1, tx = dx / len * len / 2, tz = dz / len * len / 2;
+      w.collision.addPolygon([mx - tx + nx, mz - tz + nz, mx + tx + nx, mz + tz + nz, mx + tx - nx, mz + tz - nz, mx - tx - nx, mz - tz - nz]);
+    };
+    sides.forEach((sd, i) => {
+      if (i !== front) { wall(sd[0], sd[1]); return; }
+      const dx = sd[1][0] - sd[0][0], dz = sd[1][1] - sd[0][1], len = Math.hypot(dx, dz), gap = Math.min(4.2, len * 0.45), g0 = (len - gap) / 2 / len, g1 = 1 - g0;
+      const q = (t: number): [number, number] => [sd[0][0] + dx * t, sd[0][1] + dz * t];
+      wall(sd[0], q(g0)); wall(q(g1), sd[1]);
+      // gate pillars
+      for (const t of [g0, g1]) { const p = q(t); this.box(pb, p[0], w.calculateRawTerrainHeight(p[0], p[1]), p[1], 0.5, 2.1, 0.5, Math.atan2(dz, dx), [tint[0] * 0.85, tint[1] * 0.85, tint[2] * 0.85]); }
+    });
+    // hedge / shrubs just inside the wall
+    const green = [0.18 + r * 0.12, 0.38 + r * 0.14, 0.15];
+    for (let k = 0; k < 3; k++) { const sv = (k - 1) * hv * 0.8, p = P(-A + 1.1, sv); if (!w.roadAt(p[0], p[1])) this.box(pb, p[0], w.calculateRawTerrainHeight(p[0], p[1]), p[1], 1.4, 1.1 + r * 0.5, 1.4, r * 6 + k, green); }
   }
 
   // ------------------------------------------------------------------ roofs

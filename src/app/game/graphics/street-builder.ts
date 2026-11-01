@@ -4,7 +4,7 @@ import { GeoBuf } from './geo-buf';
 import { AssetLibrary } from './asset-library';
 import type { WorldBuilder } from './world-builder';
 
-const CH = 600;
+const CH = 800;
 const rnd = (a: number): number => { const s = Math.sin(a * 12.9898) * 43758.5453; return s - Math.floor(s); };
 const PARKED = ['sedan', 'hatchback-sports', 'suv', 'van', 'taxi', 'delivery', 'sedan', 'suv-luxury', 'truck-flat'];
 
@@ -47,7 +47,7 @@ export class StreetBuilder {
         if (buf.empty) return;
         const mesh = new THREE.Mesh(buf.toGeometry(mk === 'props', false), mats[mk]);
         mesh.name = 'street:' + mk; mesh.receiveShadow = true;
-        w.registerChunk(mesh, cx, cz, CH * 0.75, mk === 'props' ? 650 : mk === 'decal' ? 700 : 900);
+        w.registerChunk(mesh, cx, cz, CH * 0.75, mk === 'props' ? 450 : mk === 'decal' ? 550 : 750);
         w.landmarksGroup.add(mesh);
       });
     });
@@ -55,7 +55,7 @@ export class StreetBuilder {
     this.wires.forEach((pos, key) => {
       const [ix, iz] = key.split(',').map(Number);
       const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeBoundingSphere();
-      const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x1b1b1b })); w.registerChunk(l, (ix + 0.5) * CH, (iz + 0.5) * CH, CH * 0.75, 600); w.landmarksGroup.add(l);
+      const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x1b1b1b })); w.registerChunk(l, (ix + 0.5) * CH, (iz + 0.5) * CH, CH * 0.75, 450); w.landmarksGroup.add(l);
     });
     this.makeClouds(scene);
   }
@@ -213,7 +213,7 @@ export class StreetBuilder {
         }
       }
     }
-    this.placeParked(parked.slice(0, 700));
+    this.placeParked(parked.slice(0, 420));
   }
 
   private async placeParked(list: { m: string; x: number; z: number; rot: number }[]): Promise<void> {
@@ -240,7 +240,7 @@ export class StreetBuilder {
     byChunk.forEach((geos, key) => {
       const g = mergeGeometries(geos); if (!g) return; g.computeBoundingSphere();
       const [ix, iz] = key.split(',').map(Number); const mesh = new THREE.Mesh(g, mat); mesh.name = 'parkedcars'; mesh.castShadow = true;
-      w.registerChunk(mesh, (ix + 0.5) * CH, (iz + 0.5) * CH, CH * 0.75, 700); w.landmarksGroup.add(mesh);
+      w.registerChunk(mesh, (ix + 0.5) * CH, (iz + 0.5) * CH, CH * 0.75, 330); w.landmarksGroup.add(mesh);
     });
   }
 
