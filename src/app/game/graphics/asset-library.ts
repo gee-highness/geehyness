@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { WorldBuilder } from './world-builder';
+import type { WorldBuilder } from './world-builder';
 
 /** Loads real CC0/CC-BY glTF models (see public/assets/CREDITS.txt) and dresses the world with them. */
 export class AssetLibrary {
@@ -45,113 +45,8 @@ export class AssetLibrary {
     return wb.highwayCurve.getPointAt(t);
   }
 
-  /** Replaces procedural props with real models once they have streamed in. */
-  public static async dressWorld(scene: THREE.Scene, wb: WorldBuilder): Promise<void> {
-    const group = new THREE.Group();
-    group.name = 'RealModels';
-    scene.add(group);
-    const base = 'assets/models/';
-    const gltf = (n: string) => `${base}${n}/${n}.gltf`;
-
-    // --- Street lamps (every ~63 m, alternating sides, arm over the carriageway)
-    this.load(gltf('street_lamp_01')).then((lamp) => {
-      const pts = wb.highwayCurve.getSpacedPoints(130);
-      pts.forEach((pt, i) => {
-        if (i < 2 || i % 1 !== 0) return;
-        const side = i % 2 ? 1 : -1;
-        const nxt = pts[Math.min(i + 1, pts.length - 1)], prv = pts[Math.max(i - 1, 0)];
-        const tan = nxt.clone().sub(prv).setY(0).normalize();
-        const nrm = new THREE.Vector3(-tan.z, 0, tan.x);
-        const m = this.fit(lamp.clone(true), 9);
-        m.position.copy(pt).addScaledVector(nrm, side * 13.5);
-        m.rotation.y = Math.atan2(nrm.x * -side, nrm.z * -side);
-        group.add(m);
-      });
-      wb.roadInfrastructureGroup.children.forEach((c) => { if (c.userData['procLamp']) c.visible = false; });
-    }).catch(() => undefined);
-
-    // --- Southern-African scrub/acacia replacements (Searsia)
-    this.load(gltf('searsia_lucida')).then((tree) => {
-      let n = 0;
-      for (const t of wb.acaciaSpots) {
-        if (n++ % 2) continue; // swap half, keep the procedural mix for variety
-        const m = this.fit(tree.clone(true), 5 + Math.random() * 3);
-        m.position.copy(t.position);
-        m.rotation.y = Math.random() * 6.28;
-        group.add(m);
-        t.visible = false;
-      }
-    }).catch(() => undefined);
-
-    // --- Manzini: apartment blocks flanking the approach
-    this.load(gltf('modular_urban_apartments_facade')).then((fac) => {
-      for (const side of [-1, 1]) {
-        let z = 380;
-        while (z > 30) {
-          const m = this.fit(fac.clone(true), 18);
-          const w = (m.userData['size'] as THREE.Vector3).x;
-          const road = this.roadAt(wb, z);
-          m.position.set(road.x + side * 42, wb.calculateRawTerrainHeight(road.x + side * 42, z), z);
-          m.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
-          group.add(m);
-          z -= Math.max(w, 10) * 1.02;
-        }
-      }
-    }).catch(() => undefined);
-
-    // --- Matsapha: factory frontages + chain-link security fence
-    this.load(gltf('modular_factory_facade')).then((fac) => {
-      for (const side of [-1, 1]) {
-        let z = -1050;
-        while (z > -1800) {
-          const m = this.fit(fac.clone(true), 14);
-          const w = (m.userData['size'] as THREE.Vector3).x;
-          const road = this.roadAt(wb, z);
-          const x = road.x + side * 55;
-          m.position.set(x, wb.calculateRawTerrainHeight(x, z), z);
-          m.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
-          group.add(m);
-          z -= Math.max(w, 8) * 1.02;
-        }
-      }
-    }).catch(() => undefined);
-    this.load(gltf('modular_chainlink_fence')).then((fence) => {
-      for (const side of [-1, 1]) {
-        let z = -1000;
-        while (z > -1800) {
-          const m = this.fit(fence.clone(true), 3, true);
-          const road = this.roadAt(wb, z);
-          const x = road.x + side * 20;
-          m.position.set(x, wb.calculateRawTerrainHeight(x, z), z);
-          m.rotation.y = Math.PI / 2;
-          group.add(m);
-          z -= 3;
-        }
-      }
-    }).catch(() => undefined);
-
-    // --- Power-line poles along the Malkerns/Lobamba valley
-    this.load(gltf('modular_electricity_poles')).then((poles) => {
-      for (let z = -2000; z > -3800; z -= 110) {
-        const road = this.roadAt(wb, z);
-        const x = road.x + 30;
-        const m = this.fit(poles.clone(true), 11);
-        m.position.set(x, wb.calculateRawTerrainHeight(x, z), z);
-        group.add(m);
-      }
-    }).catch(() => undefined);
-
-    // --- Parked Cesium milk truck (reads as a roadside kombi/delivery vehicle)
-    this.load(base + 'milktruck.glb').then((truck) => {
-      for (const z of [250, -700, -2500]) {
-        const road = this.roadAt(wb, z);
-        const m = this.fit(truck.clone(true), 2.6);
-        m.position.set(road.x - 17, road.y, z);
-        m.rotation.y = Math.PI;
-        group.add(m);
-      }
-    }).catch(() => undefined);
-  }
+  /** Real-world dressing now comes from OpenStreetMap data (see WorldBuilder). */
+  public static async dressWorld(_scene: THREE.Scene, _wb: WorldBuilder): Promise<void> { return; }
 
   /** Real Ferrari 458 body (CC-BY) wrapped around the physics rig. Returns wheel nodes for animation. */
   public static async attachPlayerCar(

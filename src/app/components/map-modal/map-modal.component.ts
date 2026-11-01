@@ -10,6 +10,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
+import { WORLD } from '../../game/graphics/world-builder';
 import { DISTRICTS, WorldPipelineService } from '../../services/world-pipeline.service';
 import { DistrictInfo } from '../../models/world.types';
 import { SPEED_TRAPS } from '../../services/festival.service';
@@ -243,40 +244,24 @@ export class MapModalComponent implements AfterViewInit {
     ctx.scale(this.zoom, this.zoom);
 
     // Coordinate conversion factor: 1 world metre = 0.08 canvas pixels
-    const scale = 0.08;
+    const scale = 0.0125;
+    ctx.translate(12000 * scale, 7500 * scale); // centre on the Manzini - Mbabane corridor
 
-    // 1. Draw Mzimene River (Blue waterway)
-    ctx.strokeStyle = '#1e3a8a';
-    ctx.lineWidth = 14;
-    ctx.beginPath();
-    ctx.moveTo(-350, -140 * scale);
-    ctx.lineTo(350, -140 * scale);
-    ctx.stroke();
-
-    // 2. Draw MR3 Highway Ribbon
-    const highway = [
-      [0, 400],
-      [0, 0],
-      [0, -140],
-      [-40, -500],
-      [-140, -1100],
-      [-240, -1800],
-      [-180, -2600],
-      [-320, -3400],
-      [-550, -4200],
-      [-680, -5100],
-      [-820, -6000],
-      [-980, -7000],
-    ];
-
-    ctx.strokeStyle = '#f59e0b'; // Amber highway
-    ctx.lineWidth = 7;
-    ctx.beginPath();
-    ctx.moveTo(highway[0][0] * scale, highway[0][1] * scale);
-    for (let i = 1; i < highway.length; i++) {
-      ctx.lineTo(highway[i][0] * scale, highway[i][1] * scale);
+    // 1-2. Real OpenStreetMap rivers + MR3 / primary roads
+    const w = WORLD.current;
+    if (w?.ready) {
+      for (const pass of [9, 3, 2, 1, 0]) {
+        for (const r of w.roadWays) {
+          if (r.c > 3 && r.c !== 9) continue; if (r.c === 9 && (pass !== 9 || r.w < 6)) continue; if (r.c !== 9 && pass === 9) continue;
+          if (r.c !== 9 && r.c > pass && !(pass === 3)) continue;
+          ctx.strokeStyle = r.c === 9 ? '#2b5d86' : (r.c <= 1 ? '#f59e0b' : '#d4d4d8');
+          ctx.lineWidth = r.c === 9 ? 1.4 : (r.c <= 1 ? 2.6 : 1.5);
+          ctx.beginPath();
+          for (let i = 0; i < r.p.length; i += 2) { const px = r.p[i] / 10 * scale, pz = r.p[i + 1] / 10 * scale; if (i) ctx.lineTo(px, pz); else ctx.moveTo(px, pz); }
+          ctx.stroke();
+        }
+      }
     }
-    ctx.stroke();
 
     // 3. Draw District Node Markers & Labels
     for (const d of this.districts) {

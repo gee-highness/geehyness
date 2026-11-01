@@ -164,6 +164,8 @@ export class SceneManager {
   public syncVehicleVisuals(vehicle: RaycastVehicle, dt: number): void {
     if (!this.vehicleMeshGroup || !this.vehicleParts) return;
 
+    this.worldBuilder.update(vehicle.position.x, vehicle.position.z);
+
     // 1. Position and orientation of vehicle body
     this.vehicleMeshGroup.position.copy(vehicle.position);
     this.vehicleMeshGroup.quaternion.copy(vehicle.quaternion);

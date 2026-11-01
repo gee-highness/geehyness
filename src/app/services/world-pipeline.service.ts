@@ -99,8 +99,8 @@ export class WorldPipelineService {
 
   public worldToGps(x: number, z: number): [number, number] {
     // Approximate local conversion from UTM 36S to WGS84 for the corridor
-    const lat = -26.4833 - (z / 111320);
-    const lon = 31.3667 + (x / (111320 * Math.cos(-26.4833 * Math.PI / 180)));
+    const lat = -26.4966 - (z / 110574);
+    const lon = 31.3826 + (x / (111320 * Math.cos(-26.4966 * Math.PI / 180)));
     return [Math.round(lon * 10000) / 10000, Math.round(lat * 10000) / 10000];
   }
 

@@ -14,6 +14,7 @@ import { GamepadService } from '../../services/gamepad.service';
 import { FestivalService } from '../../services/festival.service';
 import { AudioService } from '../../services/audio.service';
 import { EnvironmentService } from '../../services/environment.service';
+import type { WorldBuilder } from '../../game/graphics/world-builder';
 import { WorldPipelineService } from '../../services/world-pipeline.service';
 
 @Component({
@@ -146,7 +147,9 @@ export class HudComponent {
   ];
 
   /** Highway centreline (world x,z) pushed by the app for the live minimap. */
-  public route: { x: number; z: number }[] = [];
+  public world?: WorldBuilder;
+  private near: { c: number; pts: number[] }[] = [];
+  private nearX = 1e9; private nearZ = 1e9;
   private poseX = 0; private poseZ = 0; private poseYaw = 0;
   private smoothRpm = 0;
 
@@ -171,11 +174,7 @@ export class HudComponent {
     const txt = `${gps[0]}° E, ${gps[1]}° S`;
     if (txt !== this.gpsCoordinates()) this.gpsCoordinates.set(txt);
 
-    let d = 'Mbabane & Malagwane Hill';
-    if (z > -800) d = 'Manzini Centre';
-    else if (z > -2600) d = 'Matsapha Industrial';
-    else if (z > -3600) d = 'Lobamba & Malkerns';
-    else if (z > -5800) d = 'Ezulwini Valley of Heaven';
+    const d = this.world?.ready ? this.world.districtAt(x, z) : 'Manzini';
     if (d !== this.currentDistrictName()) this.currentDistrictName.set(d);
 
     this.drawMinimap();
@@ -199,16 +198,24 @@ export class HudComponent {
     ctx.rotate(-this.poseYaw); // sim forward (+Z when yaw=0) points up the map
     ctx.scale(scale, scale);
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    const trace = () => {
-      ctx.beginPath();
-      this.route.forEach((p, i) => {
-        const x = p.x - this.poseX, z = p.z - this.poseZ;
-        if (i) ctx.lineTo(x, -z); else ctx.moveTo(x, -z); // z up the screen is +Z
-      });
-    };
-    ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 34 / 1; trace(); ctx.stroke();
-    ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 22; trace(); ctx.stroke();
-    ctx.strokeStyle = '#3f3f46'; ctx.lineWidth = 14; trace(); ctx.stroke();
+    if (this.world?.ready && Math.hypot(this.poseX - this.nearX, this.poseZ - this.nearZ) > 40) {
+      this.near = this.world.nearbyRoads(this.poseX, this.poseZ, 420); this.nearX = this.poseX; this.nearZ = this.poseZ;
+    }
+    const WID = [20, 16, 15, 14, 12, 9, 6, 6, 3, 5];
+    const COL = ['#fbbf24', '#fbbf24', '#f59e0b', '#e5e7eb', '#d4d4d8', '#a1a1aa', '#71717a', '#78716c', '#52525b', '#38bdf8'];
+    const order = [...this.near].sort((a, b) => b.c - a.c);
+    for (const pass of [0, 1]) {
+      for (const r of order) {
+        ctx.beginPath();
+        for (let i = 0; i < r.pts.length; i += 2) {
+          const x = r.pts[i] / 10 - this.poseX, z = r.pts[i + 1] / 10 - this.poseZ;
+          if (i) ctx.lineTo(x, -z); else ctx.moveTo(x, -z);
+        }
+        if (pass === 0) { ctx.strokeStyle = 'rgba(0,0,0,.75)'; ctx.lineWidth = WID[r.c] + 6; }
+        else { ctx.strokeStyle = COL[r.c]; ctx.lineWidth = WID[r.c]; }
+        ctx.stroke();
+      }
+    }
     ctx.restore();
     ctx.fillStyle = '#38bdf8'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.moveTo(cx, cy - 20); ctx.lineTo(cx - 13, cy + 14); ctx.lineTo(cx, cy + 6); ctx.lineTo(cx + 13, cy + 14); ctx.closePath(); ctx.fill(); ctx.stroke();

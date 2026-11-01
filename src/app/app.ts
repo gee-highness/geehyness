@@ -135,8 +135,17 @@ export class App implements AfterViewInit, OnDestroy {
       // Spawn 3D Vehicle mesh in Three.js
       this.sceneManager.spawnVehicle(config, this.tuningService.visuals());
 
-      // Create Traffic Simulator
+      // Create Traffic Simulator (paused until it follows the real OSM road graph)
       this.trafficSimulator = new TrafficSimulator(this.sceneManager.scene);
+
+      // Drop the car on the real MR3 (Ngwane St, eastbound) once the world has streamed in
+      this.sceneManager.worldBuilder.onReady(() => {
+        const sp = this.sceneManager.worldBuilder.meta.spawn;
+        this.vehicle.position.set(sp.x, this.sceneManager.worldBuilder.calculateRawTerrainHeight(sp.x, sp.z) + 0.9, sp.z);
+        this.vehicle.velocity.set(0, 0, 0);
+        this.vehicle.angularVelocity.set(0, 0, 0);
+        this.vehicle.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), sp.yaw);
+      });
 
       // Auto-detect touch device
       if (typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0)) {
@@ -157,18 +166,11 @@ export class App implements AfterViewInit, OnDestroy {
       this.physicsAccumulator += frameDelta;
 
       // Fixed 60 Hz physics sub-stepping
+      if (!this.sceneManager.worldBuilder.ready) this.physicsAccumulator = 0;
       while (this.physicsAccumulator >= this.FIXED_STEP) {
         this.stepPhysics(this.FIXED_STEP);
         this.physicsAccumulator -= this.FIXED_STEP;
       }
-
-      // Update ambient traffic
-      this.trafficSimulator.update(
-        frameDelta,
-        this.vehicle.position.z,
-        (z) => this.sceneManager.worldBuilder.calculateRawTerrainHeight(0, z) * 0 + this.getCenterlineX(z),
-        (z) => this.sceneManager.worldBuilder.getRoadHeight(z)
-      );
 
       // Day-Night environment tick
       this.envService.tickDayNight(frameDelta);
@@ -213,9 +215,7 @@ export class App implements AfterViewInit, OnDestroy {
       // Push telemetry snapshot to Angular UI at ~20 Hz
       this.telemetryService.pushSnapshot(telem);
       if (this.hudComponent) {
-        if (!this.hudComponent.route.length) {
-          this.hudComponent.route = this.sceneManager.worldBuilder.highwayCurve.getSpacedPoints(260).map(p => ({ x: p.x, z: p.z }));
-        }
+        this.hudComponent.world = this.sceneManager.worldBuilder;
         const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(this.vehicle.quaternion);
         this.hudComponent.updateDistrictAndGps(this.vehicle.position.x, this.vehicle.position.z, Math.atan2(fwd.x, fwd.z));
       }
@@ -236,11 +236,6 @@ export class App implements AfterViewInit, OnDestroy {
 
     this.animFrameId = requestAnimationFrame(this.loop);
   };
-
-  private getCenterlineX(z: number): number {
-    const t = Math.max(0, Math.min(1, (400 - z) / 8000));
-    return this.sceneManager.worldBuilder.highwayCurve.getPointAt(t).x;
-  }
 
   private stepPhysics(dt: number): void {
     // 1. Poll Controller inputs (DS4 priority > Touch > Keyboard)
