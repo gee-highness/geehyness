@@ -22,7 +22,7 @@ interface WorldMeta {
   signals: [number, number][];
   snaps: Record<string, [number, number]>;
 }
-interface RoadWay { c: number; w: number; u: number; o: number; n: string; p: number[]; sw?: number }
+interface RoadWay { c: number; w: number; u: number; o: number; n: string; p: number[]; sw?: number; bay?: number }
 
 import { GeoBuf } from './geo-buf';
 import { CityBuilder } from './city-builder';

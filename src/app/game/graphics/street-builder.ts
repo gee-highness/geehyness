@@ -16,6 +16,7 @@ export class StreetBuilder {
   public static readonly PAVE_LIFT = 0.15; // kerb height above the road surface
   private bufs = new Map<string, Map<string, GeoBuf>>();
   public streetTrees: { x: number; z: number; c: number }[] = [];
+  private parkedList: { m: string; x: number; z: number; rot: number }[] = [];
   private wires = new Map<string, number[]>();
 
   constructor(private w: WorldBuilder) {}
@@ -39,6 +40,7 @@ export class StreetBuilder {
     const mats: Record<string, THREE.Material> = { pave1, pave2, curb, props, decal };
 
     this.sidewalks();
+    this.parkingBays();
     this.poles();
     this.signals();
     this.carsAndTrees();
@@ -114,6 +116,45 @@ export class StreetBuilder {
         }
       }
       if (any) (way as unknown as { sw?: number }).sw = sw;
+    }
+  }
+
+  // ------------------------------------------------------------------ parking bays
+  /** Painted parallel bays in the 2.4 m parking lane on both sides of every town street, with cars in many of them. */
+  private parkingBays(): void {
+    const w = this.w, BAY = 5.6, LANE = 2.4;
+    for (const way of w.roadWays) {
+      if (!way.bay) continue;
+      const pts = this.resample(way.p, 2); if (pts.length < 2) continue; const hw = way.w / 2;
+      for (const side of [1, -1]) {
+        let acc = BAY; let slot = 0;
+        for (let i = 0; i + 1 < pts.length; i++) {
+          const L = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]); if (L < 0.01) continue;
+          const tx = (pts[i + 1][0] - pts[i][0]) / L, tz = (pts[i + 1][1] - pts[i][1]) / L, nx = -tz * side, nz = tx * side;
+          // inner line (every 2 m piece) + a tick every BAY metres
+          const mx = pts[i][0], mz = pts[i][1]; const c0 = (hw - LANE);
+          const ox = mx + nx * c0, oz = mz + nz * c0; if (w.roadAt(ox + nx * 1.2, oz + nz * 1.2) !== way) { acc = BAY; continue; }
+          const db = this.buf(mx, mz, 'decal'); const y = (px: number, pz: number) => w.calculateRawTerrainHeight(px, pz) + w.roadLift(way.c) + 0.03;
+          const line = (ax: number, az: number, bx: number, bz: number, wd: number) => {
+            const dx = bx - ax, dz = bz - az, l = Math.hypot(dx, dz) || 1, px = -dz / l * wd / 2, pz = dx / l * wd / 2;
+            const i0 = db.vert(ax - px, y(ax, az), az - pz, 0, 1, 0, 0, 0, [1, 1, 1]), i1 = db.vert(bx - px, y(bx, bz), bz - pz, 0, 1, 0, 0, 0, [1, 1, 1]), i2 = db.vert(bx + px, y(bx, bz), bz + pz, 0, 1, 0, 0, 0, [1, 1, 1]), i3 = db.vert(ax + px, y(ax, az), az + pz, 0, 1, 0, 0, 0, [1, 1, 1]);
+            db.tri(i0, i2, i1); db.tri(i0, i3, i2);
+          };
+          const ex = pts[i + 1][0] + nx * c0, ez = pts[i + 1][1] + nz * c0;
+          line(ox, oz, ex, ez, 0.13);
+          acc += L;
+          if (acc >= BAY) {
+            acc -= BAY; slot++;
+            line(ox, oz, ox + nx * LANE, oz + nz * LANE, 0.12);
+            // a car in roughly 55% of the bays, parked square in the slot
+            const h = rnd(mx * 1.7 + mz * 0.9 + slot);
+            if (h < 0.55 && this.urban(mx, mz)) {
+              const cx = mx + nx * (c0 + LANE / 2) - tx * BAY * 0.5, cz = mz + nz * (c0 + LANE / 2) - tz * BAY * 0.5;
+              if (!w.nearBuildingPublic(cx, cz) || true) this.parkedList.push({ m: PARKED[Math.floor(rnd(cx * 3.3 + cz) * PARKED.length)], x: cx, z: cz, rot: Math.atan2(tx, tz) + (side > 0 ? 0 : Math.PI) });
+            }
+          }
+        }
+      }
     }
   }
 
@@ -193,7 +234,7 @@ export class StreetBuilder {
 
   // ------------------------------------------------------------------ parked cars + street trees
   private carsAndTrees(): void {
-    const w = this.w; const parked: { m: string; x: number; z: number; rot: number }[] = [];
+    const w = this.w; const parked = this.parkedList;
     for (const way of w.roadWays) {
       if (way.c < 3 || way.c > 6 || way.u) continue;
       const pts = this.resample(way.p, 3); let acc = 0, accT = 0, k = 0;
@@ -207,7 +248,7 @@ export class StreetBuilder {
           if (!w.roadAt(px, pz) && !w.nearBuildingPublic(px, pz) && !this.streetTrees.some((t) => Math.abs(t.x - px) < 4 && Math.abs(t.z - pz) < 4) && Math.hypot(mx + 750, mz + 210) < 3200)
             this.streetTrees.push({ x: px, z: pz, c: rnd(px * 3 + pz) > 0.55 ? 10 : 9 });
         }
-        if (acc >= 14 + rnd(mx + mz * 3) * 16) {
+        if (!way.bay && acc >= 14 + rnd(mx + mz * 3) * 16) {
           acc = 0; if (rnd(mx * 1.3 + mz) > 0.3 || Math.hypot(mx + 750, mz + 210) > 2000 || !this.urban(mx, mz)) continue;
           const side = rnd(mx + mz) > 0.5 ? 1 : -1, off = way.w / 2 - 1.15; const px = mx - tz * off * side, pz = mz + tx * off * side;
           if (w.distToRoad(px, pz, 6) < off - 0.8 - 1 && way.w < 6) continue;
@@ -215,7 +256,7 @@ export class StreetBuilder {
         }
       }
     }
-    this.placeParked(parked.slice(0, 420));
+    this.placeParked(parked.slice(0, 1100));
   }
 
   private async placeParked(list: { m: string; x: number; z: number; rot: number }[]): Promise<void> {

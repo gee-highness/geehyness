@@ -56,7 +56,6 @@ for e in load("roads"):
         kind = t.get("natural") or t.get("landuse") or t.get("leisure")
         if kind and len(g) > 3: ground_polys.append((kind, g, t))
         if t.get("natural") == "water" and len(g) > 3: water_polys.append({"p": [dm(v) for pt in g for v in pt]})
-json.dump({"roads": roads, "water": water_polys}, open(f"{out}/roads.json", "w"), separators=(",", ":"))
 print("roads", len(roads), "water", len(water_polys))
 
 # ---------------- ground colour + class rasters (25 m)
@@ -163,6 +162,16 @@ DH = defaultdict(int)
 for cx, cz in cent: DH[(int(cx // 60), int(cz // 60))] += 1
 def density(cx, cz):
     k = (int(cx // 60), int(cz // 60)); return sum(DH.get((k[0] + a, k[1] + b), 0) for a in (-1, 0, 1) for b in (-1, 0, 1))
+# parking lanes: every town street (not the MR3 trunk/primary, not dirt) gets a 2.4 m lane each side
+def way_density(r):
+    p = r["p"]; vals = [density(p[i] / 10, p[i + 1] / 10) for i in range(0, len(p), 2)]
+    return sum(vals) / max(1, len(vals))
+bays = 0
+for r in roads:
+    if 3 <= r["c"] <= 5 and not r["u"] and not r["b"] and way_density(r) >= 7 and not (r["o"] and r["w"] > 8):
+        r["w"] = round(r["w"] + 4.8, 1); r["bay"] = 1; bays += 1
+json.dump({"roads": roads, "water": water_polys}, open(f"{out}/roads.json", "w"), separators=(",", ":"))
+print("parking-lane streets", bays)
 def pip(g, x, z):
     ins = False
     for i in range(len(g)):
