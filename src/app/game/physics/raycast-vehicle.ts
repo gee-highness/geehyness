@@ -105,7 +105,7 @@ export class RaycastVehicle {
   /**
    * Fixed-step physics update.
    */
-  public updatePhysics(dt: number, groundQuery: (x: number, z: number) => { height: number; normal: THREE.Vector3; surfaceClass: number }): void {
+  public updatePhysics(dt: number, groundQuery: (x: number, z: number) => { height: number; normal: THREE.Vector3; surfaceClass: number; surfaceName?: string }): void {
     this._forward.set(0, 0, 1).applyQuaternion(this.quaternion);
     this._up.set(0, 1, 0).applyQuaternion(this.quaternion);
     this._right.set(1, 0, 0).applyQuaternion(this.quaternion);
@@ -136,6 +136,7 @@ export class RaycastVehicle {
 
       const isContact = rayDist <= restLength && rayDist > -0.5;
       w.surfaceClass = ground.surfaceClass;
+      if (ground.surfaceName) w.surfaceName = ground.surfaceName;
 
       if (isContact) {
         groundedWheels++;
