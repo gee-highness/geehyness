@@ -25,7 +25,7 @@ CATS = {
     "cliffs3": (['way["natural"~"^(cliff|ridge|rock|scree|bare_rock|valley|arete)$"]', 'way["man_made"="embankment"]', 'way["barrier"="retaining_wall"]', 'node["natural"~"^(peak|saddle|cliff|rock|stone)$"]'], 4),
     "hydro3": (['way["waterway"]', 'way["natural"~"^(water|wetland|spring|bay)$"]', 'way["water"]', 'way["landuse"="reservoir"]', 'node["natural"="spring"]', 'node["man_made"~"^(water_tower|water_well|water_tap|water_works|storage_tank)$"]'], 4),
     "roads_all": (['way["highway"]', 'way["bridge"]', 'way["tunnel"]', 'way["junction"]', 'node["highway"]', 'way["aeroway"]', 'node["aeroway"]', 'way["amenity"="parking"]', 'way["service"]'], 5),
-    "buildings_all": (['way["building"]', 'way["building:part"]', 'relation["building"]', 'node["building"]', 'way["roof:shape"]'], 6),
+    "buildings_all": (['way["building"]', 'relation["building"]'], 8),
     "landuse_all": (['way["landuse"]', 'relation["landuse"]', 'way["natural"]', 'relation["natural"]', 'way["leisure"]', 'relation["leisure"]', 'way["surface"="sand"]', 'way["wood"]', 'way["tree_row"]', 'node["natural"="tree"]', 'way["agricultural"]', 'way["crop"]'], 5),
     "pois_all": (['node["amenity"]', 'way["amenity"]', 'node["shop"]', 'way["shop"]', 'node["tourism"]', 'way["tourism"]', 'node["emergency"]', 'node["office"]', 'way["office"]', 'node["craft"]', 'node["healthcare"]', 'way["healthcare"]', 'node["historic"]', 'way["historic"]', 'node["sport"]', 'way["sport"]', 'node["name"]'], 4),
     "furniture_all": (['node["barrier"]', 'way["barrier"]', 'node["man_made"]', 'way["man_made"]', 'node["highway"~"^(street_lamp|bus_stop|crossing|stop|give_way|traffic_signals)$"]', 'node["amenity"~"^(bench|waste_basket|bicycle_parking|post_box|telephone|drinking_water|shelter|toilets|atm)$"]', 'node["information"]', 'node["advertising"]', 'way["advertising"]'], 4),
@@ -36,18 +36,40 @@ CATS = {
     "routes_all": (['relation["route"]', 'relation["type"="route_master"]', 'relation["type"="restriction"]'], 3),
 }
 
-def post(q):
+def post(q, attempts=3):
     data = urllib.parse.urlencode({"data": q}).encode()
-    for attempt in range(8):
+    for attempt in range(attempts):
         ep = ENDPOINTS[attempt % len(ENDPOINTS)]
         try:
-            req = urllib.request.Request(ep, data, {"User-Agent": "shesha-osm-fetch/2.0 (termux; project owner)"})
-            return json.load(urllib.request.urlopen(req, timeout=400))["elements"]
+            req = urllib.request.Request(ep, data, {"User-Agent": "shesha-osm-fetch/2.1 (termux; project owner)"})
+            return json.load(urllib.request.urlopen(req, timeout=240))["elements"]
         except Exception as ex:
-            wait = min(120, 8 * (attempt + 1)); print(f"  retry {attempt + 1} ({type(ex).__name__}: {str(ex)[:60]}) in {wait}s", flush=True); time.sleep(wait)
+            wait = 5 + 5 * attempt; print(f"  retry {attempt + 1} ({type(ex).__name__}: {str(ex)[:50]}) in {wait}s", flush=True); time.sleep(wait)
     return None
 
 done_file = os.path.join(OUT, ".done"); done = set(open(done_file).read().split()) if os.path.exists(done_file) else set()
+
+def fetch_tile(name, sels, s, w, n, e, tag, depth, out, seen):
+    """Fetch one tile; if the server keeps failing, split it into four and recurse (up to 3 levels, ~1/64 of the size)."""
+    if tag in done: return True
+    q = "[out:json][timeout:180];(" + "".join(f"{sel}({s:.5f},{w:.5f},{n:.5f},{e:.5f});" for sel in sels) + ");out geom;"
+    els = post(q)
+    if els is None:
+        if depth >= 3: print(f"  tile {tag} still failing at depth {depth}; skipping (re-run later)", flush=True); return False
+        print(f"  splitting {tag} into 4 smaller tiles", flush=True)
+        ms, mw = (s + n) / 2, (w + e) / 2; ok = True
+        for k, (s2, n2, w2, e2) in enumerate([(s, ms, w, mw), (s, ms, mw, e), (ms, n, w, mw), (ms, n, mw, e)]):
+            ok = fetch_tile(name, sels, s2, w2, n2, e2, f"{tag}.{k}", depth + 1, out, seen) and ok
+        if ok: done.add(tag); open(done_file, "a").write(tag + "\n")
+        return ok
+    new = 0
+    for el in els:
+        k = (el["type"][0], el["id"])
+        if k in seen: continue
+        seen.add(k); out.write(json.dumps(el, separators=(",", ":")) + "\n"); new += 1
+    out.flush(); done.add(tag); open(done_file, "a").write(tag + "\n"); print(f"  +{new} elements", flush=True); time.sleep(2)
+    return True
+
 for name, (sels, n) in CATS.items():
     if ONLY and name not in ONLY: continue
     n = TILES or n
@@ -57,27 +79,17 @@ for name, (sels, n) in CATS.items():
             for line in f:
                 try: o = json.loads(line); seen.add((o["type"][0], o["id"]))
                 except Exception: pass
-    out = open(spool, "a")
-    total = n * n
+    out = open(spool, "a"); total = n * n; complete = True
     for i in range(n):
         for j in range(n):
             tag = f"{name}:{n}:{i}:{j}"
             if tag in done: continue
-            s, nn = S + (N - S) * i / n, S + (N - S) * (i + 1) / n; w, e = W + (E - W) * j / n, W + (E - W) * (j + 1) / n
-            q = "[out:json][timeout:360];(" + "".join(f"{sel}({s:.5f},{w:.5f},{nn:.5f},{e:.5f});" for sel in sels) + ");out geom;"
             print(f"[{name}] tile {i * n + j + 1}/{total} ...", flush=True)
-            els = post(q)
-            if els is None: print("  giving up on this tile; re-run later to resume"); continue
-            new = 0
-            for el in els:
-                k = (el["type"][0], el["id"])
-                if k in seen: continue
-                seen.add(k); out.write(json.dumps(el, separators=(",", ":")) + "\n"); new += 1
-            out.flush(); done.add(tag); open(done_file, "a").write(tag + "\n")
-            print(f"  +{new} elements", flush=True); time.sleep(3)
+            s, nn = S + (N - S) * i / n, S + (N - S) * (i + 1) / n; w, e = W + (E - W) * j / n, W + (E - W) * (j + 1) / n
+            complete = fetch_tile(name, sels, s, w, nn, e, tag, 0, out, seen) and complete
     out.close()
     # stream the spool into the final {"elements":[...]} file without holding it in memory
-    if all(f"{name}:{n}:{i}:{j}" in done for i in range(n) for j in range(n)):
+    if complete:
         with open(spool) as src, open(os.path.join(OUT, f"{name}.json"), "w") as dst:
             dst.write('{"elements":['); first = True
             for line in src:
@@ -86,4 +98,5 @@ for name, (sels, n) in CATS.items():
                 dst.write(("" if first else ",") + line); first = False
             dst.write("]}")
         print(f"[{name}] complete -> {name}.json ({len(seen)} elements)", flush=True)
+    else: print(f"[{name}] incomplete: re-run to retry the skipped tiles", flush=True)
 print("done. Zip with:  cd", OUT, "&& zip -q ../eswatini-osm-full.zip *.json")
