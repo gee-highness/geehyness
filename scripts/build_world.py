@@ -89,7 +89,7 @@ types = {"house": 0, "detached": 0, "semidetached_house": 0, "terrace": 0, "bung
          "apartments": 4, "dormitory": 4, "hotel": 4, "office": 4, "commercial": 2, "retail": 2, "supermarket": 2, "kiosk": 2,
          "industrial": 3, "warehouse": 3, "hangar": 3, "factory": 3, "service": 3, "farm_auxiliary": 3, "barn": 3, "storage_tank": 3,
          "school": 5, "hospital": 5, "church": 5, "mosque": 5, "public": 5, "civic": 5, "government": 5, "university": 5, "college": 5,
-         "carport": 6, "garage": 6, "garages": 6, "roof": 6, "shed": 6}
+         "carport": 7, "roof": 7, "garage": 6, "garages": 6, "shed": 6}
 def add_b(e, tags, g):
     if len(g) < 4: return
     bt = tags.get("building", "yes")
@@ -103,7 +103,7 @@ def add_b(e, tags, g):
     if not h:
         if lv: h = lv * 3.2 + 0.6
         elif ty == 0: h = 3.4 + random.random() * 1.6
-        elif ty == 6: h = 2.6
+        elif ty in (6, 7): h = 2.6
         elif ty == 3: h = 6 + random.random() * 3
         elif ty == 2: h = 4.2 + random.random() * 2.5
         elif ty == 4: h = 9 + random.random() * 6

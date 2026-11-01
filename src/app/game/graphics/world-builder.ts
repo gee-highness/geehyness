@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { AssetLibrary } from './asset-library';
+import { CollisionWorld } from '../physics/collision';
 import { DISTRICTS } from '../../services/world-pipeline.service';
 import { SPEED_TRAPS, DRIFT_ZONES, DANGER_SIGNS } from '../../services/festival.service';
 
@@ -68,6 +69,7 @@ export class WorldBuilder {
   public highwayCurve = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -100)]);
 
   public ready = false;
+  public collision = new CollisionWorld();
   public meta!: WorldMeta;
   public roadWays: RoadWay[] = [];
   private readyCbs: (() => void)[] = [];
@@ -443,10 +445,10 @@ export class WorldBuilder {
       const area = A / 2; let maxH = -1e9, minH = 1e9; const hs = pts.map((p) => { const h = this.calculateRawTerrainHeight(p[0], p[1]); maxH = Math.max(maxH, h); minH = Math.min(minH, h); return h; });
       const h = hdm / 10; const top = maxH + h;
       const seed = WorldBuilder.hash(cx, cz);
-      const concreteWall = ty === 2 || ty === 3 || ty === 6;
+      const concreteWall = ty === 2 || ty === 3 || ty === 6 || ty === 7;
       const wallKey = concreteWall ? 'concrete' : 'plaster';
       const tint = concreteWall ? CONCRETE_TINTS[Math.floor(seed * CONCRETE_TINTS.length) % CONCRETE_TINTS.length] : HOUSE_TINTS[Math.floor(seed * HOUSE_TINTS.length) % HOUSE_TINTS.length];
-      const winV = ty === 3 || ty === 6 ? 0 : 1;
+      const winV = ty === 3 || ty === 6 || ty === 7 ? 0 : 1;
       const wb = this.chunkOf(map, cx, cz, wallKey);
       let u = 0;
       for (let i = 0; i < n; i++) {
@@ -461,6 +463,8 @@ export class WorldBuilder {
         const i3 = wb.vert(a[0], top, a[1], nx, 0, nz, u0, v0a, tint, winV);
         wb.tri(i0, i2, i1); wb.tri(i0, i3, i2);
       }
+      // solid footprint for the physics (skip open canopies and outlines that overlap a drawn road)
+      if (ty !== 7 && !this.overlapsRoad(pts, cx, cz)) this.collision.addPolygon(pts.flatMap((p) => [p[0], p[1]]));
       // roof
       const pitched = (ty === 0 || ty === 1) && area < 230 && n <= 8;
       const rt = ROOF_TINTS[Math.floor(WorldBuilder.hash(cz, cx) * ROOF_TINTS.length) % ROOF_TINTS.length];
@@ -526,6 +530,7 @@ export class WorldBuilder {
       const x = dv.getFloat32(i * 9, true), z = dv.getFloat32(i * 9 + 4, true), c = dv.getUint8(i * 9 + 8);
       if (this.roadAt(x, z)) continue;
       if (this.nearBuilding(x, z)) continue;
+      this.collision.addCircle(x, z, 0.38);
       const k = `${Math.floor(x / CHUNK)},${Math.floor(z / CHUNK)}`; let l = byChunk.get(k); if (!l) { l = []; byChunk.set(k, l); } l.push({ x, z, c });
     }
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color();
@@ -547,6 +552,15 @@ export class WorldBuilder {
       this.chunks.push({ obj: im, cx: (cxI + 0.5) * CHUNK, cz: (czI + 0.5) * CHUNK, r: CHUNK * 0.75 });
       this.foliageGroup.add(im);
     });
+  }
+
+  private overlapsRoad(pts: [number, number][], cx: number, cz: number): boolean {
+    if (this.roadAt(cx, cz)) return true;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      if (this.roadAt(a[0], a[1]) || this.roadAt((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)) return true;
+    }
+    return false;
   }
 
   private nearBuilding(x: number, z: number): boolean {
@@ -586,6 +600,7 @@ export class WorldBuilder {
       }
     }
     this.lampSpots = spots.slice(0, 2500);
+    for (const l of this.lampSpots) this.collision.addCircle(l.x, l.z, 0.28);
     const poles = new THREE.InstancedMesh(pole, poleM, this.lampSpots.length), heads = new THREE.InstancedMesh(headG, headM, this.lampSpots.length);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
     this.lampSpots.forEach((s, i) => {

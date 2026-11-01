@@ -254,6 +254,9 @@ export class SceneManager {
     this.particleSystem.update(dt);
   }
 
+  public trafficColliders() { return this.roadTraffic?.colliders() ?? []; }
+  public hitTraffic(id: number, impact: number): void { this.roadTraffic?.hit(id, impact); }
+
   public resize(): void {
     if (!this.container || !this.renderer) return;
     const w = this.container.clientWidth;

@@ -309,6 +309,17 @@ export class App implements AfterViewInit, OnDestroy {
     this.vehicle.updatePhysics(dt, (x, z) => {
       return this.sceneManager.worldBuilder.queryGround(x, z);
     });
+
+    // Solid world: buildings, trees, poles and other cars
+    const wb = this.sceneManager.worldBuilder;
+    if (wb.ready) {
+      const hit = wb.collision.resolve(this.vehicle, this.sceneManager.trafficColliders(), dt);
+      if (hit.impactSpeed > 1.2) {
+        if (hit.hitKind === 'car') this.sceneManager.hitTraffic(hit.hitId, hit.impactSpeed);
+        const f = Math.min(1, hit.impactSpeed / 14);
+        this.hapticsService.triggerImpulse('landing', f, f, 120 + f * 280);
+      }
+    }
   }
 
   private updateHaptics(telem: ReturnType<RaycastVehicle['getTelemetry']>, now: number): void {
