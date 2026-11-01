@@ -28,6 +28,7 @@ interface RoadWay { c: number; w: number; u: number; o: number; n: string; p: nu
 
 import { GeoBuf } from './geo-buf';
 import { styledMaterial, StyleKind, STYLE_FUNCS } from './stylized';
+import { addLampLight, LAMP } from './lamp-light';
 import { CityBuilder } from './city-builder';
 import { StreetBuilder } from './street-builder';
 import { BridgeBuilder } from './bridge-builder';
@@ -347,6 +348,7 @@ export class WorldBuilder {
   /** Streams chunks in/out by distance. Visibility only re-evaluates after moving ~12 m or 250 ms; new chunks force a refresh. */
   public update(px: number, pz: number): void {
     this.city?.update(px, pz);
+    this.updateLampLight(px, pz);
     this.streets?.updateCars(px, pz);
     const now = performance.now();
     if (!this.visDirty && Math.hypot(px - this.visX, pz - this.visZ) < 12 && now - this.visT < 250) return;
@@ -476,6 +478,7 @@ export class WorldBuilder {
   private buildTerrain(scene: THREE.Scene, groundTex: THREE.Texture): void {
     const detail0 = 0; void detail0;
     const mat = new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95, metalness: 0 });
+    const tPrevKey = 'terrain-style';
     mat.onBeforeCompile = (sh) => {
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vW;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvW = (modelMatrix * vec4(transformed,1.0)).xyz;');
@@ -490,6 +493,7 @@ export class WorldBuilder {
           diffuseColor.rgb = mix(vec3(lg), diffuseColor.rgb, 1.28) * mix(vec3(0.84, 0.92, 0.86), vec3(1.0), urban);
           diffuseColor.rgb = clamp(diffuseColor.rgb, 0.0, 1.0);`);
     };
+    mat.customProgramCacheKey = () => tPrevKey; addLampLight(mat);
     this.buildTerrainTiles(scene, mat);
   }
 
@@ -583,7 +587,7 @@ export class WorldBuilder {
     const mk = () => new THREE.MeshStandardMaterial({ map: markTex(), transparent: true, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, depthWrite: false });
     const water = new THREE.MeshStandardMaterial({ color: 0x3b6f8a, roughness: 0.08, metalness: 0.25, transparent: true, opacity: 0.9 });
     const mats: Record<string, THREE.Material> = { asph, dirt, mark: mk(), water };
-    this.markMat = mats['mark'] as THREE.MeshStandardMaterial; this.asphMat = asph as THREE.MeshStandardMaterial;
+    addLampLight(mats['mark']); this.markMat = mats['mark'] as THREE.MeshStandardMaterial; this.asphMat = asph as THREE.MeshStandardMaterial;
     const map = new Map<string, Map<string, GeoBuf>>();
     const YOFF = WorldBuilder.ROAD_LIFT; const RC = 1600;
 
@@ -716,6 +720,17 @@ export class WorldBuilder {
   }
 
   // ------------------------------------------------------------------ lamps, signals
+  private lampGrid = new Map<number, number[]>(); private lampT = 0; private lampX = 1e9; private lampZ = 1e9;
+  /** Feed the 16 nearest lamps to the shader (throttled; moves with the player). */
+  private updateLampLight(px: number, pz: number): void {
+    if (LAMP.uLampOn.value < 0.01) return; const now = performance.now();
+    if (now - this.lampT < 160 && Math.hypot(px - this.lampX, pz - this.lampZ) < 6) return; this.lampT = now; this.lampX = px; this.lampZ = pz;
+    if (!this.lampGrid.size) this.lampSpots.forEach((l, i) => { const k = Math.floor(l.x / 60) * 100003 + Math.floor(l.z / 60); let a = this.lampGrid.get(k); if (!a) { a = []; this.lampGrid.set(k, a); } a.push(i); });
+    const cx = Math.floor(px / 60), cz = Math.floor(pz / 60), cand: { d: number; i: number }[] = [];
+    for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) { const l = this.lampGrid.get((cx + a) * 100003 + (cz + b)); if (l) for (const i of l) { const s = this.lampSpots[i], hx = s.x + Math.cos(s.rot) * 2.5, hz = s.z - Math.sin(s.rot) * 2.5; cand.push({ d: Math.hypot(hx - px, hz - pz), i }); } }
+    cand.sort((p, q) => p.d - q.d); const u = LAMP.uLamp.value;
+    for (let k = 0; k < 16; k++) { const c = cand[k]; if (!c || c.d > 110) { u[k].set(0, -9999, 0, 0); continue; } const s = this.lampSpots[c.i], hx = s.x + Math.cos(s.rot) * 2.5, hz = s.z - Math.sin(s.rot) * 2.5; u[k].set(hx, this.groundHeightAt(s.x, s.z) + 8.9, hz, 38); }
+  }
   private glowMat?: THREE.MeshBasicMaterial; private static _glowGeo?: THREE.BufferGeometry;
   private static glowGeo(): THREE.BufferGeometry { return (WorldBuilder._glowGeo ??= new THREE.CircleGeometry(7, 20).rotateX(-Math.PI / 2)); }
   private makeGlowMat(): THREE.MeshBasicMaterial {
@@ -725,7 +740,7 @@ export class WorldBuilder {
     return new THREE.MeshBasicMaterial({ map: t, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 });
   }
   /** 0..1 night factor from the scene: fades the lamp light pools in and out. */
-  public setNightGlow(n: number): void { if (this.glowMat) this.glowMat.opacity = Math.max(0, (n - 0.15) / 0.85) * 0.9; }
+  public setNightGlow(n: number): void { const k = Math.max(0, (n - 0.15) / 0.85); LAMP.uLampOn.value = k; if (this.glowMat) this.glowMat.opacity = k * 0.9; }
   public lampSpots: { x: number; z: number; rot: number }[] = [];
   private buildStreetFurniture(scene: THREE.Scene): void {
     const poleG = new THREE.CylinderGeometry(0.1, 0.16, 9, 6); poleG.translate(0, 4.5, 0);

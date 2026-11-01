@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { addLampLight } from './lamp-light';
 import { GeoBuf, slab } from './geo-buf';
 import type { WorldBuilder } from './world-builder';
 
@@ -281,7 +282,7 @@ export class FeaturesBuilder {
   private flush(): void {
     const w = this.w;
     const plain = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0.1, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
-    const steel = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.5, side: THREE.DoubleSide });
+    const steel = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.5, side: THREE.DoubleSide }); addLampLight(plain); addLampLight(steel);
     const water = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.04, metalness: 0.25, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
     const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d')!; g.strokeStyle = 'rgba(255,255,255,0.95)'; g.lineWidth = 3;
     g.beginPath(); for (let i = -64; i < 128; i += 16) { g.moveTo(i, 0); g.lineTo(i + 64, 64); g.moveTo(i + 64, 0); g.lineTo(i, 64); } g.stroke();

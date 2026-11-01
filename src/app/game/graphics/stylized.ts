@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { addLampLight } from './lamp-light';
 
 /**
  * Stylized procedural materials: every pattern is computed in the fragment shader from world position with hashed per-cell
@@ -109,5 +110,6 @@ export function styledMaterial(kind: StyleKind, o: StyleOpts = {}): THREE.MeshSt
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += sm.em;');
   };
   m.customProgramCacheKey = () => 'styled-' + kind;
+  addLampLight(m);
   return m;
 }

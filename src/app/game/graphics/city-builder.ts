@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { addLampLight } from './lamp-light';
 import { GeoBuf, slab } from './geo-buf';
 import type { WorldBuilder } from './world-builder';
 
@@ -79,7 +80,7 @@ export class CityBuilder {
     for (const m of [plaster, brick, concrete, ironw, roof]) {
       m.vertexColors = true;
     }
-    const props = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0.1, side: THREE.DoubleSide });
+    const props = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0.1, side: THREE.DoubleSide }); addLampLight(props);
     roof.side = THREE.DoubleSide;
     // sign atlas: 4 columns x N rows of 512x128 plates
     this.signRows = Math.max(1, Math.ceil(signs.length / this.signCols));
@@ -103,7 +104,7 @@ export class CityBuilder {
   /** Procedural windows/doors/glazing in the shader, lit at night, over the real photographic wall textures. */
   private windowize(m: THREE.MeshStandardMaterial): void {
     const night = this.night, neoU = this.neo;
-    const prev = m.onBeforeCompile;
+    const prev = m.onBeforeCompile, k0 = m.customProgramCacheKey; m.customProgramCacheKey = () => (k0 ? k0.call(m) : '') + '|win';
     m.onBeforeCompile = (sh, r) => {
       prev?.call(m, sh, r);
       sh.uniforms['uNight'] = night; sh.uniforms['uNeo'] = neoU; sh.uniforms['uWinAtlas'] = { value: windowAtlas() };

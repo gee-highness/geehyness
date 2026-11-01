@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { addLampLight } from './lamp-light';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GeoBuf } from './geo-buf';
 import { AssetLibrary } from './asset-library';
@@ -38,6 +39,7 @@ export class StreetBuilder {
     const curb = new THREE.MeshStandardMaterial({ color: 0x9a9a98, roughness: 0.85, vertexColors: false });
     const props = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.15, side: THREE.DoubleSide });
     const decal = new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 });
+    for (const m of [curb, props, decal]) addLampLight(m);
     const mats: Record<string, THREE.Material> = { pave1, pave2, curb, props, decal };
 
     this.sidewalks();
@@ -264,7 +266,7 @@ export class StreetBuilder {
   private carMeshes = new Map<string, THREE.Mesh>();
   private carParts = new Map<string, THREE.BufferGeometry[]>();
   private carMat?: THREE.Material;
-  private lodMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.35 });
+  private lodMat = (() => { const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.35 }); addLampLight(m); return m; })();
   private carLodCells = new Map<string, THREE.Mesh>();
   private bodyT = new THREE.BoxGeometry(1.8, 0.8, 4.3).translate(0, 0.78, 0);
   private cabinT = new THREE.BoxGeometry(1.55, 0.62, 2.3).translate(0, 1.5, -0.15);
