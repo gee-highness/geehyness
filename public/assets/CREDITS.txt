@@ -1,1 +1,3 @@
 CC0 assets from Poly Haven (polyhaven.com): asphalt_02, red_laterite_soil_stones, leafy_grass, qwantani_afternoon_puresky.
+Poly Haven CC0 models: street_lamp_01, jacaranda_tree, island_tree_01, searsia_lucida, modular_electricity_poles, modular_urban_apartments_facade, modular_factory_facade, modular_chainlink_fence.
+ferrari.glb: Ferrari 458 Italia by vicent091036, CC-BY 4.0 (via three.js examples). milktruck.glb: Cesium Milk Truck, CC-BY 4.0 (Khronos glTF-Sample-Assets).

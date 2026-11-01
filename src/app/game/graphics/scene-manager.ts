@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CameraRig } from './camera-rig';
 import { WorldBuilder } from './world-builder';
 import { ParticleSystem } from './particle-system';
+import { AssetLibrary } from './asset-library';
 import { CarFactory } from './car-factory';
 import { RaycastVehicle } from '../physics/raycast-vehicle';
 import { VehicleArchetypeConfig, VisualCustomization } from '../../models/vehicle.types';
@@ -18,6 +19,9 @@ export class SceneManager {
   public particleSystem!: ParticleSystem;
 
   public vehicleMeshGroup!: THREE.Group;
+  private modelWheels: THREE.Object3D[] = [];
+  private modelTail: THREE.MeshStandardMaterial | null = null;
+  private modelSpin = 0;
   private vehicleParts!: ReturnType<typeof CarFactory.createVehicleMesh>;
 
   // Lighting & Sky
@@ -38,6 +42,7 @@ export class SceneManager {
     this.worldBuilder.buildWorld(this.scene);
 
     this.particleSystem = new ParticleSystem(this.scene);
+    AssetLibrary.dressWorld(this.scene, this.worldBuilder);
   }
 
   private detectSoftwareGl(): void {
@@ -122,6 +127,12 @@ export class SceneManager {
     this.vehicleParts = CarFactory.createVehicleMesh(config, visuals);
     this.vehicleMeshGroup = this.vehicleParts.root;
     this.scene.add(this.vehicleMeshGroup);
+    this.modelWheels = [];
+    this.modelTail = null;
+    const parts = this.vehicleParts;
+    AssetLibrary.attachPlayerCar(this.vehicleMeshGroup, config.wheelBaseM, visuals.bodyColor).then((r) => {
+      if (r && parts === this.vehicleParts) { this.modelWheels = r.wheels; this.modelTail = r.tail; }
+    });
   }
 
   public updateEnvironment(env: WorldEnvironmentState): void {
@@ -202,6 +213,17 @@ export class SceneManager {
         this.particleSystem.emitTireSmoke(contactPos, isWet, isDirt);
       }
     }
+
+    // 2b. Real Ferrari wheels: steer (front) + roll
+    if (this.modelWheels.length === 4) {
+      const fwd = vehicle.velocity.dot(new THREE.Vector3(0, 0, 1).applyQuaternion(vehicle.quaternion));
+      this.modelSpin -= (fwd / 0.358) * dt;
+      this.modelWheels.forEach((w, i) => {
+        w.rotation.x = this.modelSpin;
+        w.rotation.y = i < 2 ? -vehicle.steerInput * THREE.MathUtils.degToRad(30) : 0;
+      });
+    }
+    if (this.modelTail) this.modelTail.emissiveIntensity = (vehicle.brake > 0.1 || vehicle.handbrake) ? 4 : 0.2;
 
     // 3. Active Aero Spoiler tilt
     this.vehicleParts.spoiler.rotation.x = THREE.MathUtils.degToRad(vehicle.activeAeroAngleDeg);

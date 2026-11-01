@@ -31,6 +31,7 @@ import { RaycastVehicle } from './game/physics/raycast-vehicle';
 import { TrafficSimulator } from './services/traffic.service';
 
 // Components
+import { IntroComponent } from './components/intro/intro.component';
 import { HudComponent } from './components/hud/hud.component';
 import { TelemetryComponent } from './components/telemetry/telemetry.component';
 import { TuningComponent } from './components/tuning-dialog/tuning.component';
@@ -45,6 +46,7 @@ import { TouchControlsComponent } from './components/touch-controls/touch-contro
     CommonModule,
     MatIconModule,
     HudComponent,
+    IntroComponent,
     TelemetryComponent,
     TuningComponent,
     PhotoModeComponent,
@@ -79,6 +81,8 @@ export class App implements AfterViewInit, OnDestroy {
   readonly showTuning = signal<boolean>(false);
   readonly showPipeline = signal<boolean>(false);
   readonly isPhotoMode = signal<boolean>(false);
+  readonly started = signal<boolean>(false);
+  public begin(): void { this.audioService.unlockAudio(); this.started.set(true); }
   readonly showTouchControls = signal<boolean>(false);
 
   // Core Game Loop & Physics
@@ -209,7 +213,11 @@ export class App implements AfterViewInit, OnDestroy {
       // Push telemetry snapshot to Angular UI at ~20 Hz
       this.telemetryService.pushSnapshot(telem);
       if (this.hudComponent) {
-        this.hudComponent.updateDistrictAndGps(this.vehicle.position.x, this.vehicle.position.z);
+        if (!this.hudComponent.route.length) {
+          this.hudComponent.route = this.sceneManager.worldBuilder.highwayCurve.getSpacedPoints(260).map(p => ({ x: p.x, z: p.z }));
+        }
+        const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(this.vehicle.quaternion);
+        this.hudComponent.updateDistrictAndGps(this.vehicle.position.x, this.vehicle.position.z, Math.atan2(fwd.x, fwd.z));
       }
     } else {
       // In Photo Mode: orbit camera around car
@@ -328,6 +336,7 @@ export class App implements AfterViewInit, OnDestroy {
   @HostListener('window:keydown', ['$event'])
   onKeyDown(event: KeyboardEvent): void {
     this.audioService.unlockAudio();
+    if (!this.started()) { if (event.code === 'Enter') this.begin(); return; }
 
     switch (event.code) {
       case 'ArrowLeft':

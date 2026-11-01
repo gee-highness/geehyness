@@ -19,6 +19,7 @@ export class WorldBuilder {
   public foliageGroup = new THREE.Group();
   public mountainBackdropGroup = new THREE.Group();
   public roadInfrastructureGroup = new THREE.Group();
+  public acaciaSpots: THREE.Group[] = [];
 
   // Terrain bounds: 1400m east-west, 7600m north-south (Manzini to Ezulwini & Malagwane)
   private readonly WIDTH_X = 1400;
@@ -463,6 +464,7 @@ export class WorldBuilder {
       bulbR.position.set(1.6, 8.85, 0);
       poleGroup.add(bulbL, bulbR);
 
+      poleGroup.userData['procLamp'] = true;
       this.roadInfrastructureGroup.add(poleGroup);
     }
   }
@@ -966,6 +968,7 @@ export class WorldBuilder {
           tree.add(pineCone);
         }
       } else {
+        this.acaciaSpots.push(tree);
         // Umbrella Acacia Tree (Vachellia tortilis)
         const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.48, 5.5, 6), trunkMat);
         trunk.position.y = 2.75;

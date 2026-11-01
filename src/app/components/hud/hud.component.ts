@@ -3,7 +3,6 @@ import {
   Component,
   ElementRef,
   ViewChild,
-  effect,
   inject,
   output,
   signal
@@ -22,184 +21,95 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
   standalone: true,
   imports: [CommonModule, MatIconModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: [`
+    .hud-card{background:linear-gradient(160deg,rgba(24,24,27,.72),rgba(9,9,11,.6));backdrop-filter:blur(14px) saturate(1.3);border:1px solid rgba(255,255,255,.12);border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.08)}
+    .rail-btn{position:relative;width:44px;height:44px;border-radius:12px;display:grid;place-items:center;cursor:pointer;transition:background .15s,transform .15s}
+    .rail-btn:hover{background:rgba(255,255,255,.12);transform:scale(1.06)}
+    .rail-btn:focus-visible{outline:2px solid #fbbf24}
+    .rail-tip{position:absolute;right:54px;white-space:nowrap;background:rgba(9,9,11,.92);border:1px solid rgba(255,255,255,.12);padding:6px 10px;border-radius:8px;font-size:11px;font-weight:600;opacity:0;transform:translateX(6px);pointer-events:none;transition:.15s}
+    .rail-btn:hover .rail-tip,.rail-btn:focus-visible .rail-tip{opacity:1;transform:none}
+    kbd{display:inline-block;margin:0 2px;padding:1px 6px;border-radius:5px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);font:600 10px ui-monospace,monospace;color:#fde68a}
+    .banner-in{animation:bin .45s cubic-bezier(.2,1.4,.4,1)}
+    @keyframes bin{from{opacity:0;transform:translate(-50%,-14px) scale(.9)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
+    .hint-fade{animation:hf 14s forwards}
+    @keyframes hf{0%,80%{opacity:1}100%{opacity:0}}
+  `],
   template: `
-    <div class="absolute inset-0 pointer-events-none select-none overflow-hidden font-sans">
-      <!-- Top Bar: Game Title, District Name & Environmental Conditions -->
-      <header class="absolute top-3 left-4 right-4 flex items-center justify-between text-white pointer-events-auto">
-        <div class="flex items-center gap-3 bg-black/60 backdrop-blur-md px-3.5 py-2 rounded-xl border border-white/10 shadow-lg">
-          <div class="flex items-center gap-2">
-            <span class="text-amber-500 font-black text-lg tracking-wider">SD</span>
-            <span class="text-xs font-semibold text-zinc-300 tracking-wide uppercase">Slow Down</span>
-          </div>
-          <span class="text-zinc-600">|</span>
-          <div class="flex items-center gap-1.5 text-xs text-zinc-300">
-            <mat-icon class="text-amber-400 text-sm">location_on</mat-icon>
-            <span class="font-medium text-white">{{ currentDistrictName() }}</span>
-            <span class="text-zinc-500 font-mono text-[11px]">({{ gpsCoordinates() }})</span>
-          </div>
+    <div class="absolute inset-0 pointer-events-none select-none overflow-hidden font-sans text-white">
+      <!-- Top-left: location card -->
+      <div class="absolute top-4 left-4 pointer-events-auto hud-card px-4 py-2.5 flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-amber-400 to-orange-600 grid place-items-center font-black text-zinc-950 text-sm shadow-lg">SD</div>
+        <div class="leading-tight">
+          <div class="text-[10px] uppercase tracking-[0.2em] text-amber-300/90 font-bold">{{ currentDistrictName() }}</div>
+          <div class="text-[11px] text-zinc-400 font-mono">{{ gpsCoordinates() }}</div>
         </div>
+      </div>
 
-        <!-- Center Notification Banner for Speed Traps & Drift Records -->
-        @if (festivalService.activeNotification(); as notif) {
-          <div class="absolute left-1/2 -translate-x-1/2 top-1 bg-amber-500/95 text-zinc-950 px-6 py-2 rounded-xl shadow-2xl border border-amber-300 font-black text-center animate-bounce">
-            <div class="text-[10px] tracking-widest uppercase opacity-80">{{ notif.title }}</div>
-            <div class="text-xl font-black tracking-tight">{{ notif.scoreText }}</div>
-            <div class="text-[11px] font-bold">{{ notif.subText }}</div>
-          </div>
-        }
-
-        <!-- Top Right: Time of Day, Weather, and Controller Status -->
-        <div class="flex items-center gap-2 bg-black/60 backdrop-blur-md px-3.5 py-2 rounded-xl border border-white/10 shadow-lg">
-          <div class="flex items-center gap-1 text-xs text-zinc-300">
-            <mat-icon class="text-amber-400 text-sm">schedule</mat-icon>
-            <span class="font-mono text-white">{{ formatTimeOfDay() }}</span>
-          </div>
-          <span class="text-zinc-600">·</span>
-          <div class="flex items-center gap-1 text-xs text-zinc-300">
-            <mat-icon class="text-sky-400 text-sm">{{ getWeatherIcon() }}</mat-icon>
-            <span class="text-white capitalize">{{ envService.weather().toLowerCase().replace('_', ' ') }}</span>
-          </div>
-          <span class="text-zinc-600">·</span>
-          <!-- Controller indicator -->
-          <div class="flex items-center gap-1.5 text-xs" [class.text-emerald-400]="gamepadService.isConnected()" [class.text-zinc-500]="!gamepadService.isConnected()">
-            <mat-icon class="text-sm">sports_esports</mat-icon>
-            <span class="hidden sm:inline font-medium">
-              {{ gamepadService.isConnected() ? (gamepadService.isDualShock() ? 'DualShock 4' : 'Controller') : 'Keyboard/Touch' }}
-            </span>
-          </div>
+      <!-- Top-right: time / weather / input -->
+      <div class="absolute top-4 right-4 pointer-events-auto hud-card px-4 py-2.5 flex items-center gap-4 text-xs">
+        <div class="flex items-center gap-1.5"><mat-icon class="text-amber-300 !text-base">schedule</mat-icon><span class="font-mono font-semibold">{{ formatTimeOfDay() }}</span></div>
+        <div class="flex items-center gap-1.5"><mat-icon class="text-sky-300 !text-base">{{ getWeatherIcon() }}</mat-icon><span class="capitalize">{{ envService.weather().toLowerCase().replace('_', ' ') }}</span></div>
+        <div class="hidden md:flex items-center gap-1.5" [class.text-emerald-300]="gamepadService.isConnected()" [class.text-zinc-500]="!gamepadService.isConnected()">
+          <mat-icon class="!text-base">sports_esports</mat-icon>
+          <span>{{ gamepadService.isConnected() ? (gamepadService.isDualShock() ? 'DualShock 4' : 'Controller') : 'Keyboard' }}</span>
         </div>
-      </header>
+      </div>
 
-      <!-- Active Drift Score Pill (Center Top) -->
-      @if (telemetryService.telemetry().isDrifting || festivalService.inDriftZone()) {
-        <div class="absolute top-20 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-auto">
-          <div class="bg-gradient-to-r from-cyan-600 to-blue-600 text-white px-5 py-1.5 rounded-full font-black text-center shadow-lg border border-cyan-300">
-            <div class="text-[10px] tracking-wider uppercase text-cyan-200">
-              {{ festivalService.inDriftZone() ? 'DRIFT ZONE' : 'DRIFT' }} · {{ telemetryService.telemetry().driftAngleDeg }}°
-            </div>
-            <div class="text-2xl font-black font-mono tracking-tight text-white">
-              {{ (festivalService.inDriftZone() ? festivalService.currentDriftZoneScore() : telemetryService.telemetry().driftScoreSession) | number:'1.0-0' }} PTS
-            </div>
-          </div>
+      <!-- Event banner -->
+      @if (festivalService.activeNotification(); as notif) {
+        <div class="absolute left-1/2 -translate-x-1/2 top-5 banner-in px-8 py-2.5 rounded-2xl text-center text-zinc-950 bg-gradient-to-r from-amber-300 via-amber-400 to-orange-400 shadow-[0_10px_40px_rgba(251,146,60,.5)]">
+          <div class="text-[10px] tracking-[0.25em] uppercase font-bold opacity-70">{{ notif.title }}</div>
+          <div class="text-2xl font-black tracking-tight leading-none my-0.5">{{ notif.scoreText }}</div>
+          <div class="text-[11px] font-semibold">{{ notif.subText }}</div>
         </div>
       }
 
-      <!-- Bottom-Left: Live Mini-Map Canvas -->
-      <div class="absolute bottom-6 left-6 pointer-events-auto">
-        <div class="relative w-40 h-40 rounded-2xl overflow-hidden border border-white/20 bg-black/70 backdrop-blur-md shadow-2xl p-2 flex flex-col items-center justify-center">
-          <canvas #minimapCanvas width="144" height="144" class="w-full h-full rounded-xl"></canvas>
-          <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[10px] text-zinc-400 px-1 font-mono">
-            <span>MR3 HIGHWAY</span>
-            <span class="text-amber-400 font-bold">1:1 SCALE</span>
+      <!-- Drift pill -->
+      @if (telemetryService.telemetry().isDrifting || festivalService.inDriftZone()) {
+        <div class="absolute top-24 left-1/2 -translate-x-1/2 banner-in px-6 py-2 rounded-full text-center bg-gradient-to-r from-cyan-500 to-blue-600 border border-cyan-200/60 shadow-[0_8px_30px_rgba(34,211,238,.45)]">
+          <div class="text-[10px] tracking-[0.2em] uppercase text-cyan-100 font-bold">{{ festivalService.inDriftZone() ? 'Drift zone' : 'Drift' }} · {{ telemetryService.telemetry().driftAngleDeg }}°</div>
+          <div class="text-2xl font-black font-mono tabular-nums">{{ (festivalService.inDriftZone() ? festivalService.currentDriftZoneScore() : telemetryService.telemetry().driftScoreSession) | number:'1.0-0' }} <span class="text-sm">PTS</span></div>
+        </div>
+      }
+
+      <!-- Right rail: actions -->
+      <nav class="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-auto hud-card p-1.5 flex flex-col gap-1" aria-label="Game menu">
+        @for (b of actions; track b.id) {
+          <button (click)="fire(b.id)" class="rail-btn group" [attr.aria-label]="b.label">
+            <mat-icon [class]="b.color + ' !text-[22px]'">{{ b.icon }}</mat-icon>
+            <span class="rail-tip">{{ b.label }} <kbd>{{ b.key }}</kbd></span>
+          </button>
+        }
+        <button (click)="toggleAudio()" class="rail-btn group" aria-label="Toggle sound">
+          <mat-icon class="!text-[22px]" [class.text-red-400]="audioService.isMuted()" [class.text-zinc-300]="!audioService.isMuted()">{{ audioService.isMuted() ? 'volume_off' : 'volume_up' }}</mat-icon>
+          <span class="rail-tip">{{ audioService.isMuted() ? 'Unmute' : 'Mute' }} <kbd>N</kbd></span>
+        </button>
+      </nav>
+
+      <!-- Bottom-left: live rotating minimap -->
+      <div class="absolute bottom-5 left-5 pointer-events-auto hud-card p-1.5 w-[168px] max-sm:w-[120px]">
+        <canvas #minimapCanvas width="288" height="288" class="w-full aspect-square rounded-xl"></canvas>
+      </div>
+
+      <!-- Bottom-right: gauge cluster -->
+      <div class="absolute bottom-5 right-20 max-sm:right-16 pointer-events-none">
+        <div class="relative w-[250px] h-[250px] max-sm:w-[190px] max-sm:h-[190px]">
+          <canvas #gaugeCanvas width="500" height="500" class="absolute inset-0 w-full h-full"></canvas>
+          <div class="absolute inset-0 flex flex-col items-center justify-center">
+            <div class="text-[64px] max-sm:text-[46px] leading-none font-black tabular-nums tracking-tight drop-shadow-[0_2px_12px_rgba(0,0,0,.6)]">{{ telemetryService.speedKmh() }}</div>
+            <div class="text-[11px] font-bold tracking-[0.3em] text-zinc-300 -mt-0.5">KM/H</div>
+            <div class="mt-2 flex items-baseline gap-1"><span class="text-3xl max-sm:text-xl font-black text-amber-300">{{ telemetryService.currentGear() }}</span><span class="text-[10px] text-zinc-400 font-bold">GEAR</span></div>
+            <div class="text-[10px] text-emerald-300 font-semibold mt-1 max-w-[120px] truncate">{{ telemetryService.currentSurface() }}</div>
           </div>
         </div>
       </div>
 
-      <!-- Bottom-Right: Forza Speedometer & Tachometer Cluster -->
-      <div class="absolute bottom-6 right-6 pointer-events-auto flex items-end gap-3">
-        <!-- Digital Cluster -->
-        <div class="bg-black/75 backdrop-blur-md border border-white/15 rounded-2xl p-4 shadow-2xl text-right min-w-[190px]">
-          <!-- Gear & Tachometer Bar -->
-          <div class="flex items-center justify-between mb-1">
-            <span class="text-xs uppercase font-bold text-zinc-400">GEAR</span>
-            <div class="flex items-baseline gap-1">
-              <span class="text-4xl font-black text-amber-400 font-mono">{{ telemetryService.currentGear() }}</span>
-              <span class="text-[10px] font-bold text-zinc-500">/ 6</span>
-            </div>
-          </div>
-
-          <!-- Speedometer in KM/H -->
-          <div class="flex items-baseline justify-end gap-1.5">
-            <span class="text-6xl font-black text-white font-mono tracking-tight tabular-nums">
-              {{ telemetryService.speedKmh() }}
-            </span>
-            <span class="text-xs font-bold text-zinc-400 tracking-wider">KM/H</span>
-          </div>
-
-          <!-- RPM Gauge Bar -->
-          <div class="mt-2 w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
-            <div
-              class="h-full transition-all duration-75 rounded-full"
-              [style.width.%]="(telemetryService.rpm() / 8500) * 100"
-              [class.bg-amber-400]="telemetryService.rpm() < 7200"
-              [class.bg-red-500]="telemetryService.rpm() >= 7200"
-            ></div>
-          </div>
-
-          <!-- RPM readout & Road Surface Tag -->
-          <div class="flex items-center justify-between text-[11px] font-mono text-zinc-400 mt-1.5">
-            <span>{{ telemetryService.rpm() }} RPM</span>
-            <span class="text-emerald-400 font-medium truncate max-w-[100px]">{{ telemetryService.currentSurface() }}</span>
-          </div>
+      <!-- Bottom-centre: contextual hint (fades) -->
+      @if (hintVisible()) {
+        <div class="absolute bottom-5 left-1/2 -translate-x-1/2 hint-fade hud-card px-4 py-2 text-[11px] text-zinc-300 flex items-center gap-3 max-md:hidden">
+          <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span><span><kbd>Space</kbd> handbrake</span><span><kbd>C</kbd> camera</span><span><kbd>R</kbd> reset</span><span><kbd>M</kbd> map</span>
         </div>
-      </div>
-
-      <!-- Unified Ergonomic Bottom Dock (Center Bottom - Collapsible) -->
-      <div class="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto flex items-center gap-1.5 bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-2xl border border-white/10 shadow-2xl">
-        <button
-          (click)="openMap.emit()"
-          class="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
-          title="Open Corridor Vector Map (M / Options)"
-        >
-          <mat-icon class="text-amber-400 text-sm">map</mat-icon>
-          <span class="hidden sm:inline">Map</span>
-        </button>
-
-        <button
-          (click)="openTuning.emit()"
-          class="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
-          title="Garage Tuning & Dyno"
-        >
-          <mat-icon class="text-cyan-400 text-sm">tune</mat-icon>
-          <span class="hidden sm:inline">Garage</span>
-        </button>
-
-        <button
-          (click)="toggleTelemetry.emit()"
-          class="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
-          title="Toggle Forza Telemetry (T / D-Pad Up)"
-        >
-          <mat-icon class="text-emerald-400 text-sm">query_stats</mat-icon>
-          <span class="hidden sm:inline">Telemetry</span>
-        </button>
-
-        <button
-          (click)="openPhotoMode.emit()"
-          class="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
-          title="Enter Photo Mode (P / D-Pad Down)"
-        >
-          <mat-icon class="text-purple-400 text-sm">photo_camera</mat-icon>
-          <span class="hidden sm:inline">Photo</span>
-        </button>
-
-        <button
-          (click)="cycleCamera.emit()"
-          class="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
-          title="Cycle Camera View (C / Square)"
-        >
-          <mat-icon class="text-zinc-300 text-sm">videocam</mat-icon>
-          <span class="hidden sm:inline">Cam</span>
-        </button>
-
-        <button
-          (click)="openPipeline.emit()"
-          class="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-zinc-200 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
-          title="World Compiler Pipeline Tools"
-        >
-          <mat-icon class="text-yellow-400 text-sm">account_tree</mat-icon>
-          <span class="hidden sm:inline">Pipeline</span>
-        </button>
-
-        <button
-          (click)="toggleAudio()"
-          class="flex items-center gap-1.5 px-2.5 py-2 text-xs font-semibold text-zinc-200 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
-          [title]="audioService.isMuted() ? 'Unmute Audio' : 'Mute Audio'"
-        >
-          <mat-icon class="text-sm" [class.text-red-400]="audioService.isMuted()" [class.text-zinc-300]="!audioService.isMuted()">
-            {{ audioService.isMuted() ? 'volume_off' : 'volume_up' }}
-          </mat-icon>
-        </button>
-      </div>
+      }
     </div>
   `
 })
@@ -223,67 +133,114 @@ export class HudComponent {
 
   readonly currentDistrictName = signal<string>('Manzini Centre');
   readonly gpsCoordinates = signal<string>('31.36° E, -26.48° S');
+  readonly hintVisible = signal<boolean>(true);
+  @ViewChild('gaugeCanvas', { static: false }) gaugeCanvasRef!: ElementRef<HTMLCanvasElement>;
+
+  readonly actions = [
+    { id: 'map', label: 'Map', key: 'M', icon: 'map', color: 'text-amber-300' },
+    { id: 'garage', label: 'Garage', key: 'G', icon: 'tune', color: 'text-cyan-300' },
+    { id: 'telemetry', label: 'Telemetry', key: 'T', icon: 'query_stats', color: 'text-emerald-300' },
+    { id: 'photo', label: 'Photo mode', key: 'P', icon: 'photo_camera', color: 'text-fuchsia-300' },
+    { id: 'cam', label: 'Camera', key: 'C', icon: 'videocam', color: 'text-zinc-200' },
+    { id: 'pipeline', label: 'World tools', key: 'O', icon: 'account_tree', color: 'text-yellow-300' },
+  ];
+
+  /** Highway centreline (world x,z) pushed by the app for the live minimap. */
+  public route: { x: number; z: number }[] = [];
+  private poseX = 0; private poseZ = 0; private poseYaw = 0;
+  private smoothRpm = 0;
 
   constructor() {
-    effect(() => {
-      // Whenever telemetry updates, update district & minimap
-      this.drawMinimap();
-    });
+    setTimeout(() => this.hintVisible.set(false), 14000);
   }
 
-  public updateDistrictAndGps(x: number, z: number): void {
+  public fire(id: string): void {
+    switch (id) {
+      case 'map': this.openMap.emit(); break;
+      case 'garage': this.openTuning.emit(); break;
+      case 'telemetry': this.toggleTelemetry.emit(); break;
+      case 'photo': this.openPhotoMode.emit(); break;
+      case 'cam': this.cycleCamera.emit(); break;
+      case 'pipeline': this.openPipeline.emit(); break;
+    }
+  }
+
+  public updateDistrictAndGps(x: number, z: number, yaw = 0): void {
+    this.poseX = x; this.poseZ = z; this.poseYaw = yaw;
     const gps = this.worldPipeline.worldToGps(x, z);
-    this.gpsCoordinates.set(`${gps[0]}° E, ${gps[1]}° S`);
+    const txt = `${gps[0]}° E, ${gps[1]}° S`;
+    if (txt !== this.gpsCoordinates()) this.gpsCoordinates.set(txt);
 
-    if (z > -800) this.currentDistrictName.set('Manzini Centre');
-    else if (z > -2600) this.currentDistrictName.set('Matsapha Industrial');
-    else if (z > -3600) this.currentDistrictName.set('Lobamba & Malkerns');
-    else if (z > -5800) this.currentDistrictName.set('Ezulwini Valley of Heaven');
-    else this.currentDistrictName.set('Mbabane & Malagwane Hill');
+    let d = 'Mbabane & Malagwane Hill';
+    if (z > -800) d = 'Manzini Centre';
+    else if (z > -2600) d = 'Matsapha Industrial';
+    else if (z > -3600) d = 'Lobamba & Malkerns';
+    else if (z > -5800) d = 'Ezulwini Valley of Heaven';
+    if (d !== this.currentDistrictName()) this.currentDistrictName.set(d);
+
+    this.drawMinimap();
+    this.drawGauge();
   }
 
+  /** Heading-up minimap: real MR3 route, player fixed at the centre-bottom. */
   public drawMinimap(): void {
     if (!this.minimapCanvasRef) return;
-    const canvas = this.minimapCanvasRef.nativeElement;
-    const ctx = canvas.getContext('2d');
+    const c = this.minimapCanvasRef.nativeElement;
+    const ctx = c.getContext('2d');
     if (!ctx) return;
+    const W = c.width, cx = W / 2, cy = W * 0.62, scale = 0.42; // px per metre
+    ctx.clearRect(0, 0, W, W);
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, W / 2, W / 2 - 2, 0, Math.PI * 2); ctx.clip();
+    const g = ctx.createRadialGradient(cx, W / 2, 10, cx, W / 2, W / 2);
+    g.addColorStop(0, '#1f2a24'); g.addColorStop(1, '#0b100d');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, W);
+    ctx.translate(cx, cy);
+    ctx.rotate(-this.poseYaw); // sim forward (+Z when yaw=0) points up the map
+    ctx.scale(scale, scale);
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    const trace = () => {
+      ctx.beginPath();
+      this.route.forEach((p, i) => {
+        const x = p.x - this.poseX, z = p.z - this.poseZ;
+        if (i) ctx.lineTo(x, -z); else ctx.moveTo(x, -z); // z up the screen is +Z
+      });
+    };
+    ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 34 / 1; trace(); ctx.stroke();
+    ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 22; trace(); ctx.stroke();
+    ctx.strokeStyle = '#3f3f46'; ctx.lineWidth = 14; trace(); ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = '#38bdf8'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(cx, cy - 20); ctx.lineTo(cx - 13, cy + 14); ctx.lineTo(cx, cy + 6); ctx.lineTo(cx + 13, cy + 14); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(cx, W / 2, W / 2 - 3, 0, Math.PI * 2); ctx.stroke();
+  }
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Dark radar background
-    ctx.fillStyle = '#09090b';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Draw radar grid rings
-    ctx.strokeStyle = '#27272a';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(72, 72, 30, 0, Math.PI * 2);
-    ctx.arc(72, 72, 60, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // Draw Highway curve segment relative to player
-    ctx.strokeStyle = '#f59e0b';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(72, 140);
-    ctx.lineTo(72, 4);
-    ctx.stroke();
-
-    // Speed camera trap blips
-    ctx.fillStyle = '#ef4444';
-    ctx.beginPath();
-    ctx.arc(72, 35, 4, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Player position (centered triangle)
-    ctx.fillStyle = '#38bdf8';
-    ctx.beginPath();
-    ctx.moveTo(72, 64);
-    ctx.lineTo(66, 78);
-    ctx.lineTo(78, 78);
-    ctx.closePath();
-    ctx.fill();
+  /** Circular RPM arc with redline, ticks and speed ring. */
+  public drawGauge(): void {
+    if (!this.gaugeCanvasRef) return;
+    const c = this.gaugeCanvasRef.nativeElement;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    const S = c.width, m = S / 2;
+    const start = Math.PI * 0.75, sweep = Math.PI * 1.5;
+    const rpmT = Math.min(1, this.telemetryService.rpm() / 8500);
+    this.smoothRpm += (rpmT - this.smoothRpm) * 0.35;
+    ctx.clearRect(0, 0, S, S);
+    ctx.fillStyle = 'rgba(9,9,11,.55)'; ctx.beginPath(); ctx.arc(m, m, m - 22, 0, Math.PI * 2); ctx.fill();
+    ctx.lineCap = 'round'; ctx.lineWidth = 22;
+    ctx.strokeStyle = 'rgba(255,255,255,.1)'; ctx.beginPath(); ctx.arc(m, m, m - 34, start, start + sweep); ctx.stroke();
+    const red = 7200 / 8500;
+    ctx.strokeStyle = 'rgba(239,68,68,.45)'; ctx.beginPath(); ctx.arc(m, m, m - 34, start + sweep * red, start + sweep); ctx.stroke();
+    const g = ctx.createLinearGradient(0, S, S, 0);
+    g.addColorStop(0, '#22d3ee'); g.addColorStop(0.6, '#fbbf24'); g.addColorStop(1, '#ef4444');
+    ctx.strokeStyle = this.smoothRpm > red ? '#ef4444' : g; ctx.shadowColor = this.smoothRpm > red ? '#ef4444' : '#fbbf24'; ctx.shadowBlur = 18;
+    ctx.beginPath(); ctx.arc(m, m, m - 34, start, start + sweep * Math.max(0.005, this.smoothRpm)); ctx.stroke();
+    ctx.shadowBlur = 0; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,.5)';
+    for (let i = 0; i <= 8; i++) {
+      const a = start + (sweep * i) / 8;
+      ctx.beginPath(); ctx.moveTo(m + Math.cos(a) * (m - 62), m + Math.sin(a) * (m - 62)); ctx.lineTo(m + Math.cos(a) * (m - 54), m + Math.sin(a) * (m - 54)); ctx.stroke();
+    }
   }
 
   public formatTimeOfDay(): string {

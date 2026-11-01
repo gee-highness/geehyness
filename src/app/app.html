@@ -53,4 +53,8 @@
       (capturePhoto)="captureHighResPhoto()"
     ></app-photo-mode>
   }
+
+  @if (!started()) {
+    <app-intro (start)="begin()"></app-intro>
+  }
 </div>
