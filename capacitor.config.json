@@ -1,0 +1,7 @@
+{
+  "appId": "sz.toycircuit.racing",
+  "appName": "Toy Circuit",
+  "webDir": "dist/app/browser",
+  "backgroundColor": "#09090b",
+  "android": { "allowMixedContent": true }
+}
