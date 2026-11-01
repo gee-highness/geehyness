@@ -70,7 +70,7 @@ export interface RaceEvent {
   rewardsXp: number;
 }
 
-export type WeatherState = 'SUNNY' | 'OVERCAST' | 'TROPICAL_RAIN';
+export type WeatherState = 'SUNNY' | 'OVERCAST' | 'MIST' | 'TROPICAL_RAIN';
 
 export interface WorldEnvironmentState {
   timeOfDayHours: number; // 0.0 to 24.0 (e.g. 17.5 = 5:30 PM sunset)

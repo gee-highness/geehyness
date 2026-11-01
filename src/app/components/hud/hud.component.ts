@@ -16,6 +16,7 @@ import { FestivalService } from '../../services/festival.service';
 import { AudioService } from '../../services/audio.service';
 import { EnvironmentService } from '../../services/environment.service';
 import type { WorldBuilder } from '../../game/graphics/world-builder';
+import { SettingsService } from '../../services/settings.service';
 import { HapticsService } from '../../services/haptics.service';
 import { WorldPipelineService } from '../../services/world-pipeline.service';
 
@@ -91,6 +92,14 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
             <span class="rail-tip">{{ b.label }} <kbd>{{ b.key }}</kbd></span>
           </button>
         }
+        <button (click)="envService.cycleWeather()" class="rail-btn group" aria-label="Change weather">
+          <mat-icon class="!text-[22px] text-sky-300">{{ getWeatherIcon() }}</mat-icon>
+          <span class="rail-tip">Weather <kbd>G</kbd></span>
+        </button>
+        <button (click)="settings.cycleQuality()" class="rail-btn group" aria-label="Graphics quality">
+          <mat-icon class="!text-[22px] text-amber-300">tune</mat-icon>
+          <span class="rail-tip">Quality: {{ settings.quality() }} <kbd>Q</kbd></span>
+        </button>
         <button (click)="hapticsService.setEnabled(!hapticsService.enabled())" class="rail-btn group" aria-label="Toggle controller vibration">
           <mat-icon class="!text-[22px]" [class.text-zinc-500]="!hapticsService.enabled()" [class.text-emerald-300]="hapticsService.enabled()">{{ hapticsService.enabled() ? 'vibration' : 'phonelink_erase' }}</mat-icon>
           <span class="rail-tip">Vibration {{ hapticsService.enabled() ? 'on' : 'off' }} <kbd>H</kbd></span>
@@ -144,6 +153,7 @@ export class HudComponent {
   public envService = inject(EnvironmentService);
   public worldPipeline = inject(WorldPipelineService);
   public hapticsService = inject(HapticsService);
+  public settings = inject(SettingsService);
   compact = input<boolean>(false);
 
   @ViewChild('minimapCanvas', { static: false }) minimapCanvasRef!: ElementRef<HTMLCanvasElement>;
@@ -295,6 +305,7 @@ export class HudComponent {
     switch (this.envService.weather()) {
       case 'SUNNY': return 'wb_sunny';
       case 'OVERCAST': return 'cloud';
+      case 'MIST': return 'foggy';
       case 'TROPICAL_RAIN': return 'thunderstorm';
     }
   }

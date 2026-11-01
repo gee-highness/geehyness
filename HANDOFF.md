@@ -83,4 +83,4 @@ APK → `android/app/build/outputs/apk/debug/app-debug.apk` (~93 MB). Send with 
 - Third OSM fetch: `highway=street_lamp/traffic_sign/stop` nodes for the whole corridor, `addr:*`, cliffs/ridges, hydrology widths, more building areas (Matsapha↔Manzini gap, Malagwane Hill).
 - Pedestrians; building collisions are 2-D footprints only; no rain/weather visuals beyond fog/wetness; no real-device profiling.
 - Quality tiers menu (Auto/High/Med/Low); window shader could be baked to a texture for cheaper fragments.
-- Android package id is still `sz.toycircuit.racing` (app name is SHESHA).
+- 

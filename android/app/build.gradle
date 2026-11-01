@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace "sz.toycircuit.racing"
+    namespace "sz.shesha.racing"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "sz.toycircuit.racing"
+        applicationId "sz.shesha.racing"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

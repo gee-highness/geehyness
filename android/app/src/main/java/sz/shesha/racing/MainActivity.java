@@ -1,4 +1,4 @@
-package sz.toycircuit.racing;
+package sz.shesha.racing;
 
 import android.os.Bundle;
 import android.view.View;

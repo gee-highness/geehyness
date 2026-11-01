@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { Weather } from './weather';
+import { QualityTier } from '../../services/settings.service';
 import { CameraRig } from './camera-rig';
 import { WorldBuilder } from './world-builder';
 import { ParticleSystem } from './particle-system';
@@ -41,6 +43,10 @@ export class SceneManager {
   private pixelRatio = 1;
   private maxPixelRatio = 1;
   private frameMs = 16;
+  private weather!: Weather;
+  private quality: QualityTier = 'AUTO';
+  private windKmh = 12;
+  private baseDaylight = 1;
   private govTimer = 0;
 
   constructor(private container: HTMLElement) {
@@ -56,6 +62,7 @@ export class SceneManager {
     if (!this.renderer.shadowMap.enabled) this.makeBlobShadow();
 
     this.particleSystem = new ParticleSystem(this.scene);
+    this.weather = new Weather(this.scene);
     this.worldBuilder.onReady(() => { this.roadTraffic = new RoadTraffic(this.scene, this.worldBuilder); });
   }
 
@@ -164,7 +171,11 @@ export class SceneManager {
     // Update Sky & Fog
     const skyCol = new THREE.Color(env.skyColorHex);
     // Dim HDRI sky & IBL as the sun sinks below the horizon
-    const daylight = THREE.MathUtils.clamp(0.06 + env.sunPosition[1] / 900, 0.06, 1.0);
+    this.windKmh = env.windSpeedKmh; this.weather.set(env.weather);
+    const gloom = env.weather === 'TROPICAL_RAIN' ? 0.45 : env.weather === 'OVERCAST' ? 0.7 : env.weather === 'MIST' ? 0.75 : 1;
+    const daylight = THREE.MathUtils.clamp(0.06 + env.sunPosition[1] / 900, 0.06, 1.0) * gloom;
+    this.baseDaylight = daylight;
+    this.sunLight.intensity = 2.8 * gloom * gloom;
     this.scene.backgroundIntensity = daylight;
     if (this.worldBuilder.city) this.worldBuilder.city.night.value = THREE.MathUtils.clamp(1 - (daylight - 0.06) / 0.3, 0, 1);
     this.scene.environmentIntensity = daylight;
@@ -188,6 +199,8 @@ export class SceneManager {
 
     this.worldBuilder.update(vehicle.position.x, vehicle.position.z);
     this.roadTraffic?.update(dt, vehicle.position.x, vehicle.position.z);
+    this.weather.update(dt, vehicle.position, this.windKmh);
+    if (this.weather.lightning > 0.01) { this.scene.backgroundIntensity = this.baseDaylight + this.weather.lightning * 1.6; this.scene.environmentIntensity = this.baseDaylight + this.weather.lightning * 1.2; }
     const clouds = this.worldBuilder.streets?.clouds;
     if (clouds) {
       clouds.position.set(vehicle.position.x, 0, vehicle.position.z);
@@ -332,6 +345,27 @@ export class SceneManager {
       this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     }
   }
+
+  /** Apply a graphics tier. AUTO keeps the device defaults; the dynamic-resolution governor still runs inside each tier's cap. */
+  public setQuality(q: QualityTier): void {
+    this.quality = q;
+    const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio;
+    const devCap = this.isSoftwareGl ? 1 : this.isMobile ? Math.min(dpr, 1.5) : Math.min(dpr, 2);
+    const cap = q === 'HIGH' ? Math.min(dpr, 2) : q === 'MED' ? Math.min(devCap, 1) : q === 'LOW' ? Math.min(devCap, 0.7) : devCap;
+    this.maxPixelRatio = cap; this.pixelRatio = Math.min(this.pixelRatio, cap);
+    if (q === 'HIGH' || q === 'LOW') this.pixelRatio = cap;
+    this.renderer.setPixelRatio(this.pixelRatio); this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+    const shadows = !this.isSoftwareGl && (q === 'HIGH' || (q === 'AUTO' && !this.isMobile));
+    if (shadows !== this.renderer.shadowMap.enabled) {
+      this.renderer.shadowMap.enabled = shadows; this.sunLight.castShadow = shadows; this.worldBuilder.shadowsOn = shadows;
+      this.scene.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined; if (m) (Array.isArray(m) ? m : [m]).forEach((x) => (x.needsUpdate = true)); });
+    }
+    this.sunLight.shadow.mapSize.set(q === 'HIGH' ? 2048 : 1024, q === 'HIGH' ? 2048 : 1024); this.sunLight.shadow.map?.dispose(); (this.sunLight.shadow as { map: unknown }).map = null;
+    if (this.blob) this.blob.visible = !shadows; else if (!shadows) this.makeBlobShadow();
+    this.weather.setDetail(q === 'LOW' ? 0.35 : q === 'MED' ? 0.65 : 1);
+    this.worldBuilder.setDetailScale(q === 'LOW' ? 0.5 : q === 'MED' ? 0.75 : 1);
+  }
+  public get qualityTier(): QualityTier { return this.quality; }
 
   public get fps(): number { return Math.round(1000 / Math.max(1, this.frameMs)); }
   public get resolution(): number { return this.pixelRatio; }

@@ -39,11 +39,16 @@ export class EnvironmentService {
       this.wetness.set(0.85);
     } else if (w === 'OVERCAST') {
       this.wetness.set(0.15);
+    } else if (w === 'MIST') {
+      this.wetness.set(0.3);
     } else {
       this.wetness.set(0.0);
     }
     this.recompute();
   }
+
+  private static ORDER: WeatherState[] = ['SUNNY', 'OVERCAST', 'MIST', 'TROPICAL_RAIN'];
+  public cycleWeather(): void { const o = EnvironmentService.ORDER; this.setWeather(o[(o.indexOf(this.weather()) + 1) % o.length]); }
 
   public tickDayNight(deltaSeconds: number): void {
     if (!this.isDynamicTime()) return;
@@ -94,6 +99,10 @@ export class EnvironmentService {
       sunColor = '#94a3b8';
       skyColor = '#475569';
       fog = 0.0015;
+    } else if (w === 'MIST') {
+      sunColor = '#cbd5e1';
+      skyColor = '#94a3b8';
+      fog = 0.0042;
     } else if (w === 'TROPICAL_RAIN') {
       sunColor = '#64748b';
       skyColor = '#1e293b';

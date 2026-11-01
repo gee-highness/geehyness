@@ -9,8 +9,7 @@ import {
   PLATFORM_ID,
   ViewChild,
   inject,
-  signal
-} from '@angular/core';
+  signal, effect } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import * as THREE from 'three';
@@ -18,6 +17,7 @@ import * as THREE from 'three';
 // Services
 import { GamepadService } from './services/gamepad.service';
 import { HapticsService } from './services/haptics.service';
+import { SettingsService } from './services/settings.service';
 import { AudioService } from './services/audio.service';
 import { TuningService } from './services/tuning.service';
 import { TelemetryService } from './services/telemetry.service';
@@ -67,6 +67,7 @@ export class App implements AfterViewInit, OnDestroy {
 
   public gamepadService = inject(GamepadService);
   public hapticsService = inject(HapticsService);
+  public settings = inject(SettingsService);
   public audioService = inject(AudioService);
   public tuningService = inject(TuningService);
   public telemetryService = inject(TelemetryService);
@@ -105,6 +106,7 @@ export class App implements AfterViewInit, OnDestroy {
 
   // Core Game Loop & Physics
   private sceneManager!: SceneManager;
+  private qualityFx = effect(() => { const q = this.settings.quality(); this.sceneManager?.setQuality(q); });
   private vehicle!: RaycastVehicle;
   private trafficSimulator!: TrafficSimulator;
 
@@ -188,6 +190,7 @@ export class App implements AfterViewInit, OnDestroy {
           this.vehicle.velocity.set(0, 0, 0); this.vehicle.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
         },
       };
+      this.sceneManager.setQuality(this.settings.quality());
       this.sceneManager.worldBuilder.onReady(() => {
         const sp = this.sceneManager.worldBuilder.meta.spawn;
         this.vehicle.position.set(sp.x, this.sceneManager.worldBuilder.calculateRawTerrainHeight(sp.x, sp.z) + 0.9, sp.z);
@@ -430,6 +433,8 @@ export class App implements AfterViewInit, OnDestroy {
     if (!this.started()) { if (event.code === 'Enter') this.begin(); return; }
 
     if (event.code === 'KeyF') { this.hudComponent?.showFps.update((v) => !v); return; }
+    if (event.code === 'KeyQ') { this.settings.cycleQuality(); return; }
+    if (event.code === 'KeyG') { this.envService.cycleWeather(); return; }
     if (event.code === 'KeyH') { this.hapticsService.setEnabled(!this.hapticsService.enabled()); return; }
     if (event.code === 'KeyV') { this.showCars.update((v) => !v); return; }
     switch (event.code) {

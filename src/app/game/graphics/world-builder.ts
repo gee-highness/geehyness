@@ -321,6 +321,9 @@ export class WorldBuilder {
     return out;
   }
 
+  /** Quality tier multiplier on chunk draw distance. */
+  public detailScale = 1;
+  public setDetailScale(f: number): void { this.detailScale = f; this.visDirty = true; }
   private visDirty = true; private visX = 1e9; private visZ = 1e9; private visT = 0; private shadowT = 0;
   /** Streams chunks in/out by distance. Visibility only re-evaluates after moving ~12 m or 250 ms; new chunks force a refresh. */
   public update(px: number, pz: number): void {
@@ -337,7 +340,7 @@ export class WorldBuilder {
     for (const c of this.chunks) {
       const dx = Math.max(Math.abs(c.cx - px) - c.half, 0), dz = Math.max(Math.abs(c.cz - pz) - c.half, 0); // exact distance to the chunk's box
       const d = Math.hypot(dx, dz);
-      c.obj.visible = d < (c.obj.userData['far'] ?? 3000);
+      c.obj.visible = d < (c.obj.userData['far'] ?? 3000) * this.detailScale;
       if (doShadow && c.obj.visible) c.obj.castShadow = d < 230; // only nearby geometry casts into the shadow map
     }
   }
