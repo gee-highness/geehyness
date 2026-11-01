@@ -42,7 +42,7 @@ export class ExtrasBuilder {
   build(scene: THREE.Scene): void {
     this.railway();
     this.levelCrossings();
-    this.busShelters();
+    this.busShelters(); this.regSigns();
     this.speedSigns(scene);
     this.roundabouts();
     this.viewpoints();
@@ -102,6 +102,24 @@ export class ExtrasBuilder {
         this.box(b, px, yy + 1.5, pz, 0.12, 0.12, 0.35, tx, tz, [0.85, 0.12, 0.1]); // warning light housing
         w.collision.addCircle(px, pz, 0.12);
       }
+    }
+  }
+
+  // ------------------------------------------------------------------ real regulatory signs (OSM stop / give way / traffic_sign)
+  private regSigns(): void {
+    const w = this.w;
+    for (const [x, z, kind] of w.meta.signs ?? []) {
+      const rd = w.nearestRoadSegment(x, z, 6); if (!rd || rd.dist > 14 || rd.way.dz || rd.way.c > 6) continue;
+      const dx = x - rd.px, dz = z - rd.pz; let l = Math.hypot(dx, dz), nx: number, nz: number;
+      if (l < 0.5) { nx = -rd.tz; nz = rd.tx; l = 1; } else { nx = dx / l; nz = dz / l; }
+      const off = Math.max(rd.way.w / 2 + 0.9, l); const px = rd.px + nx * off, pz = rd.pz + nz * off; if (w.roadAt(px, pz)) continue;
+      const y = w.groundHeightAt(px, pz), b = this.buf(px, pz, 'props'), tx = rd.tx, tz = rd.tz;
+      this.box(b, px, y, pz, 0.07, 0.07, 2.3, tx, tz, [0.5, 0.52, 0.55]);
+      // plate faces oncoming traffic: stop = red, give way = white with red rim, other = yellow warning
+      const c: V3 = kind === 0 ? [0.78, 0.08, 0.08] : kind === 1 ? [0.95, 0.95, 0.95] : [0.95, 0.78, 0.1];
+      this.box(b, px, y + 1.85, pz, 0.05, 0.62, 0.62, tx, tz, kind === 1 ? [0.8, 0.1, 0.1] : c);
+      if (kind === 1) this.box(b, px, y + 1.88, pz, 0.06, 0.4, 0.4, tx, tz, c);
+      w.collision.addCircle(px, pz, 0.12);
     }
   }
 

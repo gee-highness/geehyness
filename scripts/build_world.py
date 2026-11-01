@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw
 
 osm_dir, dem_path, out = sys.argv[1:4]
 dir2 = sys.argv[4] if len(sys.argv) > 4 else None
+dir3 = sys.argv[5] if len(sys.argv) > 5 else None   # optional third fetch (fetch_osm3.py)
 os.makedirs(out, exist_ok=True)
 LAT0, LON0 = -26.4966, 31.3826
 KX, KZ = 111320 * math.cos(math.radians(LAT0)), 110574.0
@@ -21,6 +22,12 @@ def load(n): return json.load(open(f"{osm_dir}/{n}.json"))["elements"]
 def load2(n):
     f = f"{dir2}/{n}.json" if dir2 else None
     return json.load(open(f))["elements"] if f and os.path.exists(f) else []
+def load3(n):
+    f = f"{dir3}/{n}.json" if dir3 else None
+    return json.load(open(f))["elements"] if f and os.path.exists(f) else []
+def num(v, default):
+    try: return float(str(v).replace(",", ".").split()[0]) or default
+    except (ValueError, IndexError): return default
 def poly(e): return [P(g["lat"], g["lon"]) for g in e.get("geometry", [])]
 dm = lambda v: int(round(v * 10))
 
@@ -71,6 +78,16 @@ for e in load("roads"):
         kind = t.get("natural") or t.get("landuse") or t.get("leisure")
         if kind and len(g) > 3: ground_polys.append((kind, g, t))
         if t.get("natural") == "water" and len(g) > 3: water_polys.append({"p": [dm(v) for pt in g for v in pt]})
+# --- third fetch: hydrology (real widths for rivers/streams/canals/drains) + lakes/wetlands
+WW = {"river": 8.0, "canal": 5.0, "stream": 2.2, "drain": 1.6, "ditch": 1.2}
+have_w = {tuple(r["nd"][:2]) for r in roads if r.get("c") == 9 and r.get("nd")}
+for e in load3("hydro3"):
+    t = e.get("tags", {}); g = poly(e)
+    if e["type"] != "way" or len(g) < 2: continue
+    if t.get("waterway") in WW and not (e.get("nodes") and tuple(e["nodes"][:2]) in have_w):
+        wd = num(t.get("width", ""), WW[t["waterway"]])
+        roads.append({"ly": 0, "bk": 0, "tn": 0, "lk": 0, "nd": e.get("nodes", []), "ref": "", "c": 9, "w": max(0.8, min(40.0, wd)), "u": 0, "b": 0, "o": 0, "r": "", "n": t.get("name", ""), "p": [dm(v) for pt in g for v in pt]})
+    elif (t.get("natural") in ("water", "wetland") or t.get("water")) and len(g) > 3: water_polys.append({"p": [dm(v) for pt in g for v in pt]})
 print("roads", len(roads), "water", len(water_polys))
 
 # ---------------- railway
@@ -410,8 +427,16 @@ print("buildings", len(bl))
 col.save(f"{out}/groundcolor.png", optimize=True); cls.save(f"{out}/groundclass.png", optimize=True)
 
 # ---------------- extra OSM features (barriers, real trees, power, pitches, pools, parking, tanks, bumps)
-feat = {"barriers": [], "gates": [], "trees": [], "lines": [], "towers": [], "solar": [], "subst": [], "pitches": [], "pools": [], "parking": [], "tanks": [], "bumps": []}
+feat = {"cliffs": [], "barriers": [], "gates": [], "trees": [], "lines": [], "towers": [], "solar": [], "subst": [], "pitches": [], "pools": [], "parking": [], "tanks": [], "bumps": []}
 BK = {"fence": 0, "wall": 1, "retaining_wall": 2, "hedge": 3, "gate": 4, "city_wall": 1, "guard_rail": 0}
+for e in load3("cliffs3"):
+    t = e.get("tags", {}); g = poly(e)
+    if e["type"] != "way" or len(g) < 2: continue
+    kind = t.get("natural") or t.get("man_made") or t.get("barrier")
+    ht = {"cliff": 6.0, "ridge": 3.0, "rock": 2.5, "bare_rock": 2.0, "scree": 1.5, "embankment": 2.5, "retaining_wall": 2.0}.get(kind)
+    if ht is None: continue
+    ht = num(t.get("height", ""), ht)
+    feat["cliffs"].append([0 if kind in ("cliff", "ridge", "rock", "bare_rock", "scree") else 1, round(min(ht, 25.0), 1), [dm(v) for pt in g for v in pt]])
 for e in load2("barriers"):
     t = e.get("tags", {}); k = t.get("barrier", "")
     if e["type"] == "way":
@@ -472,6 +497,7 @@ print("trees", len(trees))
 
 # ---------------- places, POIs, signals, spawn, landmarks
 pts = load("points")
+pts3 = [e for e in load3("points3") if e.get("type") == "node" and "tags" in e]
 places = [{"n": e["tags"]["name"], "k": e["tags"]["place"], "p": [round(v, 1) for v in P(e["lat"], e["lon"])]}
           for e in pts if e["tags"].get("place") in ("city", "town", "suburb", "village", "neighbourhood", "hamlet")]
 KEEP = ("mall", "supermarket", "marketplace", "fuel", "hospital", "bus_station", "school", "college", "university", "place_of_worship", "bank", "police", "restaurant", "fast_food", "convenience")
@@ -481,8 +507,19 @@ for e in pts:
     if t.get("name") and k and (k in KEEP or t.get("shop") in ("mall", "supermarket")):
         pois.append({"n": t["name"], "k": k, "p": [round(v, 1) for v in P(e["lat"], e["lon"])]})
 signals = [[round(v, 1) for v in P(e["lat"], e["lon"])] for e in pts if e["tags"].get("highway") == "traffic_signals"]
-busstops = [{"p": [round(v, 1) for v in P(e["lat"], e["lon"])], "n": e["tags"].get("name", "")} for e in pts if e["tags"].get("highway") == "bus_stop"]
-lamps = [[round(v, 1) for v in P(e["lat"], e["lon"])] for e in pts if e["tags"].get("highway") == "street_lamp"]
+busstops = [{"p": [round(v, 1) for v in P(e["lat"], e["lon"])], "n": e["tags"].get("name", "")} for e in pts + pts3 if e["tags"].get("highway") == "bus_stop"]
+def _dedupe(lst, r=3.0):
+    seen, out = set(), []
+    for q in lst:
+        k = (int(q[0] // r), int(q[1] // r))
+        if k not in seen: seen.add(k); out.append(q)
+    return out
+lamps = _dedupe([[round(v, 1) for v in P(e["lat"], e["lon"])] for e in pts + pts3 if e["tags"].get("highway") == "street_lamp"])
+# traffic signs: [x, z, kind] kind 0=stop 1=give way 2=other regulatory/warning
+SIGNK = {"stop": 0, "give_way": 1}
+signs = _dedupe([[round(v, 1) for v in P(e["lat"], e["lon"])] + [SIGNK.get(e["tags"].get("highway") or e["tags"].get("traffic_sign"), 2)]
+                 for e in pts3 if e["tags"].get("highway") in ("stop", "give_way") or e["tags"].get("traffic_sign")], 4.0)
+addr = [[round(v, 1) for v in P(e["lat"], e["lon"])] + [str(e["tags"]["addr:housenumber"])[:6]] for e in pts3 if e["tags"].get("addr:housenumber")][:20000]
 views = [{"n": e["tags"].get("name", "Viewpoint"), "p": [round(v, 1) for v in P(e["lat"], e["lon"])]} for e in pts if e["tags"].get("tourism") == "viewpoint"]
 mx = np.array([[x, z] for x, z, r in nodes_major])
 def snap(x, z):
@@ -502,6 +539,6 @@ want = {"manzini": (-26.4966, 31.3826), "matsapha": (-26.4945, 31.3084), "lobamb
 snaps = {k: snap(*P(*v)) for k, v in want.items()}
 meta = {"lat0": LAT0, "lon0": LON0, "bounds": [X0, X1, Z0, Z1], "px": PX, "gw": W, "gh": H,
         "dem": {"x0": dem["x0"], "z0": dem["z0"], "step": dem["step"], "nx": dem["nx"], "nz": dem["nz"]},
-        "spawn": spawn, "places": places, "pois": pois, "signals": signals, "busstops": busstops, "lamps": lamps, "views": views + [v for v in extra_views if all(abs(v["p"][0] - q["p"][0]) + abs(v["p"][1] - q["p"][1]) > 60 for q in views)], "snaps": snaps}
+        "spawn": spawn, "places": places, "pois": pois, "signals": signals, "busstops": busstops, "lamps": lamps, "signs": signs, "addr": addr, "views": views + [v for v in extra_views if all(abs(v["p"][0] - q["p"][0]) + abs(v["p"][1] - q["p"][1]) > 60 for q in views)], "snaps": snaps}
 json.dump(meta, open(f"{out}/meta.json", "w"), separators=(",", ":"))
 print("spawn", spawn, "snaps", snaps)

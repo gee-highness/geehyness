@@ -7,7 +7,7 @@ type V3 = [number, number, number];
 export interface Features {
   barriers: [number, number[]][]; gates: [number, number, number][]; trees: [number, number][];
   lines: [number, number[]][]; towers: [number, number, number][]; solar: number[][]; subst: number[][];
-  pitches: [number, number[]][]; pools: number[][]; parking: number[][]; tanks: [number, number, number, number][]; bumps: [number, number][];
+  cliffs?: [number, number, number[]][]; pitches: [number, number[]][]; pools: number[][]; parking: number[][]; tanks: [number, number, number, number][]; bumps: [number, number][];
 }
 const rnd = (a: number): number => { const s = Math.sin(a * 12.9898) * 43758.5453; return s - Math.floor(s); };
 
@@ -69,8 +69,28 @@ export class FeaturesBuilder {
   }
 
   build(): void {
-    this.barriers(); this.realTrees(); this.power(); this.pitches(); this.pools(); this.parking(); this.tanks(); this.humps();
+    this.barriers(); this.realTrees(); this.power(); this.pitches(); this.pools(); this.parking(); this.tanks(); this.humps(); this.cliffs();
     this.flush();
+  }
+
+  // ------------------------------------------------------------------ cliffs, ridges, embankments (OSM natural=cliff etc.)
+  private cliffs(): void {
+    const w = this.w;
+    for (const [kind, ht, p] of this.f.cliffs ?? []) {
+      const pts = this.poly(p); const col: V3 = kind === 0 ? [0.5, 0.45, 0.4] : [0.42, 0.4, 0.36], col2: V3 = kind === 0 ? [0.36, 0.33, 0.3] : [0.3, 0.3, 0.27];
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const a = pts[i], c = pts[i + 1]; const L = Math.hypot(c[0] - a[0], c[1] - a[1]); if (L < 1) continue;
+        const tx = (c[0] - a[0]) / L, tz = (c[1] - a[1]) / L, n = Math.max(1, Math.ceil(L / 6));
+        for (let k = 0; k < n; k++) {
+          const s0 = (L * k) / n, s1 = (L * (k + 1)) / n, mx = a[0] + tx * (s0 + s1) / 2, mz = a[1] + tz * (s0 + s1) / 2, len = s1 - s0;
+          if (w.roadAt(mx, mz)) continue;
+          const hh = ht * (0.75 + 0.5 * rnd(mx * 0.31 + mz * 0.17)), t = kind === 0 ? 1.6 : 0.9;
+          slab(this.buf(mx, mz, 'props'), (px, pz) => this.h(px, pz), mx - tx * len / 2, mz - tz * len / 2, mx + tx * len / 2, mz + tz * len / 2, t, hh, col, col2);
+          const nx = -tz * t / 2, nz = tx * t / 2;
+          w.collision.addPolygon([mx - tx * len / 2 + nx, mz - tz * len / 2 + nz, mx + tx * len / 2 + nx, mz + tz * len / 2 + nz, mx + tx * len / 2 - nx, mz + tz * len / 2 - nz, mx - tx * len / 2 - nx, mz - tz * len / 2 - nz], this.h(mx, mz) - 1, this.h(mx, mz) + hh);
+        }
+      }
+    }
   }
 
   // ------------------------------------------------------------------ barriers

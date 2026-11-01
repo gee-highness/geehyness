@@ -20,7 +20,7 @@ interface WorldMeta {
   places: { n: string; k: string; p: [number, number] }[];
   pois: { n: string; k: string; p: [number, number] }[];
   signals: [number, number][];
-  busstops?: { p: [number, number]; n: string }[]; lamps?: [number, number][]; views?: { p: [number, number]; n: string }[];
+  busstops?: { p: [number, number]; n: string }[]; lamps?: [number, number][]; signs?: [number, number, number][]; addr?: [number, number, string][]; views?: { p: [number, number]; n: string }[];
   snaps: Record<string, [number, number]>;
 }
 interface Surf { way: RoadWay; h: number; elev: boolean; px: number; pz: number; d: number }
@@ -715,6 +715,12 @@ export class WorldBuilder {
     const poleM = new THREE.MeshStandardMaterial({ color: 0x8a9096, metalness: 0.8, roughness: 0.35 });
     const headM = new THREE.MeshBasicMaterial({ color: 0xfff1c0 });
     const spots: { x: number; z: number; rot: number }[] = [];
+    // real OSM street lamps first (arm turned toward the nearest carriageway); procedural ones then skip anywhere near a real lamp
+    for (const [lx, lz] of this.meta.lamps ?? []) {
+      const rd = this.nearestRoadSegment(lx, lz, 8); if (!rd || rd.dist > 25 || rd.way.dz) continue;
+      const dx = rd.px - lx, dz = rd.pz - lz; spots.push({ x: lx, z: lz, rot: Math.atan2(-dz, dx) });
+    }
+    const real = spots.slice();
     for (const w of this.roadWays) {
       if (w.c > 3 || w.dz) continue;
       let acc = 0;
@@ -724,6 +730,7 @@ export class WorldBuilder {
         for (let s = (50 - acc) % 50; s < L; s += 50) {
           const x = ax + tx * s, z = az + tz * s;
           if (Math.hypot(x, z) > 6500) continue;
+          if (real.length && real.some((r) => Math.abs(r.x - x) < 22 && Math.abs(r.z - z) < 22)) continue;
           const side = w.o ? 1 : (Math.floor(x / 50 + z / 50) % 2 ? 1 : -1);
           const nx = -tz * side, nz = tx * side, off = w.w / 2 + 1.4;
           // arm (+x of the lamp) points back toward the carriageway: direction (-nx, -nz)

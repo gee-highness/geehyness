@@ -79,8 +79,16 @@ APK → `android/app/build/outputs/apk/debug/app-debug.apk` (~93 MB). Send with 
 - Anything placed on a road/pavement should use `groundHeightAt(x,z[,y])`, not terrain height.
 - `GeoBuf.pos.length / 3` is the "next vertex index" idiom (compat getter).
 
+## Added in the follow-up session
+- Android package id is now `sz.shesha.racing` (java sources moved; rebuild APK).
+- Quality tiers Auto/High/Med/Low (`Q`, HUD rail): pixel-ratio cap, shadows, shadow-map size, chunk draw distance, rain + pedestrian density. `SettingsService`, `SceneManager.setQuality`.
+- Weather (`G`, HUD rail): Sunny/Overcast/Mist/Tropical rain; GPU-animated rain streaks + lightning (`weather.ts`), gloom on sun/sky, wet roads.
+- Window shader baked into a shared mask atlas (`windowAtlas()` in `city-builder.ts`).
+- 3D building collisions: footprints carry a vertical extent; flat roofs are landable (`CollisionWorld.roofAt`, used by `groundHeightAt`/`queryGround`).
+- Pedestrians on pavements (`pedestrians.ts`), they step clear of fast cars. `__shesha.peds()` debug hook.
+- Parked-car detail radius cut 230 -> 100 m (was ~469k of ~1M triangles). `__shesha.wb` exposes the WorldBuilder.
+- Third OSM fetch pipeline written (`scripts/fetch_osm3.py`, `build_world.py` 5th arg, game consumers) but **data not fetched** (Overpass blocked in the sandbox) - see `data/README.md`.
+
 ## Ideas not done yet
-- Third OSM fetch: `highway=street_lamp/traffic_sign/stop` nodes for the whole corridor, `addr:*`, cliffs/ridges, hydrology widths, more building areas (Matsapha↔Manzini gap, Malagwane Hill).
-- Pedestrians; building collisions are 2-D footprints only; no rain/weather visuals beyond fog/wetness; no real-device profiling.
-- Quality tiers menu (Auto/High/Med/Low); window shader could be baked to a texture for cheaper fragments.
-- 
+- Draw house numbers from `meta.addr`; pedestrian crossings use; building collision with real roof ramps.
+- Real-device profiling (60 fps, rumble, controller feel) - never done.
