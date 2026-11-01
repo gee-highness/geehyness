@@ -145,6 +145,18 @@ export class GamepadService {
     };
   }
 
+  /** Cancel any rumble that is still playing. */
+  public stopRumble(): void {
+    for (const pad of (typeof navigator !== 'undefined' && navigator.getGamepads ? Array.from(navigator.getGamepads()) : [])) {
+      const a = (pad as unknown as { vibrationActuator?: { reset?: () => Promise<unknown>; playEffect?: (t: string, p: object) => Promise<unknown> } } | null)?.vibrationActuator;
+      if (!a) continue;
+      try {
+        if (typeof a.reset === 'function') a.reset().catch(() => undefined);
+        else a.playEffect?.('dual-rumble', { startDelay: 0, duration: 1, weakMagnitude: 0, strongMagnitude: 0 }).catch(() => undefined);
+      } catch { /* ignore */ }
+    }
+  }
+
   public playDualRumble(frame: HapticFrame): void {
     const pad = this.getConnectedGamepad();
     if (!pad) return;

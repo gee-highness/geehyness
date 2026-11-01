@@ -6,14 +6,14 @@ import { WeatherState, WorldEnvironmentState } from '../models/world.types';
 })
 export class EnvironmentService {
   // 17.5 = 5:30 PM golden hour sunset over Ezulwini Valley
-  readonly timeOfDayHours = signal<number>(16.8);
+  readonly timeOfDayHours = signal<number>(10.5);
   readonly weather = signal<WeatherState>('SUNNY');
   readonly isDynamicTime = signal<boolean>(true);
   readonly wetness = signal<number>(0.0);
 
   // Computed visual properties
   readonly envState = signal<WorldEnvironmentState>({
-    timeOfDayHours: 16.8,
+    timeOfDayHours: 10.5,
     weather: 'SUNNY',
     wetness: 0.0,
     ambientTempC: 26,
@@ -48,7 +48,7 @@ export class EnvironmentService {
   public tickDayNight(deltaSeconds: number): void {
     if (!this.isDynamicTime()) return;
     // 1 full day/night cycle in 12 real minutes (12 * 60 = 720 seconds)
-    const hoursPerSecond = 24 / 720;
+    const hoursPerSecond = 24 / 3000; // one full day per 50 real minutes
     let next = this.timeOfDayHours() + deltaSeconds * hoursPerSecond;
     if (next >= 24) next -= 24;
     this.timeOfDayHours.set(next);
@@ -69,7 +69,7 @@ export class EnvironmentService {
     const sunX = sunAzimuth * radius * 0.8;
     const sunZ = -1200;
 
-    let sunColor = '#fde047'; // Noon warm yellow
+    let sunColor = '#fff1d0'; // Noon warm white
     let skyColor = '#38bdf8'; // Clear bright blue
     let fog = 0.0005;
 
@@ -80,12 +80,12 @@ export class EnvironmentService {
       fog = 0.0012;
     } else if (hours >= 5.5 && hours < 7.5) {
       // Dawn / Sunrise
-      sunColor = '#fb923c'; // Dawn amber
+      sunColor = '#ffc890'; // Dawn amber
       skyColor = '#f472b6'; // Morning rose-sky
       fog = 0.0008;
     } else if (hours >= 16.5 && hours <= 19.5) {
       // Sunset golden hour
-      sunColor = '#ea580c'; // Intense orange sunset
+      sunColor = '#ffb878'; // Golden hour
       skyColor = '#4c1d95'; // Purple dusk
       fog = 0.0007;
     }

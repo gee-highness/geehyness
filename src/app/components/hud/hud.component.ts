@@ -4,6 +4,7 @@ import {
   ElementRef,
   ViewChild,
   inject,
+  input,
   output,
   signal
 } from '@angular/core';
@@ -15,6 +16,7 @@ import { FestivalService } from '../../services/festival.service';
 import { AudioService } from '../../services/audio.service';
 import { EnvironmentService } from '../../services/environment.service';
 import type { WorldBuilder } from '../../game/graphics/world-builder';
+import { HapticsService } from '../../services/haptics.service';
 import { WorldPipelineService } from '../../services/world-pipeline.service';
 
 @Component({
@@ -27,6 +29,8 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
     .rail-btn{position:relative;width:44px;height:44px;border-radius:12px;display:grid;place-items:center;cursor:pointer;transition:background .15s,transform .15s}
     .rail-btn:hover{background:rgba(255,255,255,.12);transform:scale(1.06)}
     .rail-btn:focus-visible{outline:2px solid #fbbf24}
+    .compact .rail-btn{width:34px;height:34px}
+    .compact .rail-tip{display:none}
     .rail-tip{position:absolute;right:54px;white-space:nowrap;background:rgba(9,9,11,.92);border:1px solid rgba(255,255,255,.12);padding:6px 10px;border-radius:8px;font-size:11px;font-weight:600;opacity:0;transform:translateX(6px);pointer-events:none;transition:.15s}
     .rail-btn:hover .rail-tip,.rail-btn:focus-visible .rail-tip{opacity:1;transform:none}
     kbd{display:inline-block;margin:0 2px;padding:1px 6px;border-radius:5px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);font:600 10px ui-monospace,monospace;color:#fde68a}
@@ -47,9 +51,9 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
       </div>
 
       <!-- Top-right: time / weather / input -->
-      <div class="absolute top-4 right-4 pointer-events-auto hud-card px-4 py-2.5 flex items-center gap-4 text-xs">
+      <div class="absolute top-3 right-3 sm:top-4 sm:right-4 pointer-events-auto hud-card px-3 sm:px-4 py-2 sm:py-2.5 flex items-center gap-3 sm:gap-4 text-xs">
         <div class="flex items-center gap-1.5"><mat-icon class="text-amber-300 !text-base">schedule</mat-icon><span class="font-mono font-semibold">{{ formatTimeOfDay() }}</span></div>
-        <div class="flex items-center gap-1.5"><mat-icon class="text-sky-300 !text-base">{{ getWeatherIcon() }}</mat-icon><span class="capitalize">{{ envService.weather().toLowerCase().replace('_', ' ') }}</span></div>
+        <div class="flex items-center gap-1.5"><mat-icon class="text-sky-300 !text-base">{{ getWeatherIcon() }}</mat-icon><span class="capitalize" [class.hidden]="compact()">{{ envService.weather().toLowerCase().replace('_', ' ') }}</span></div>
         <div class="hidden md:flex items-center gap-1.5" [class.text-emerald-300]="gamepadService.isConnected()" [class.text-zinc-500]="!gamepadService.isConnected()">
           <mat-icon class="!text-base">sports_esports</mat-icon>
           <span>{{ gamepadService.isConnected() ? (gamepadService.isDualShock() ? 'DualShock 4' : 'Controller') : 'Keyboard' }}</span>
@@ -74,13 +78,17 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
       }
 
       <!-- Right rail: actions -->
-      <nav class="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-auto hud-card p-1.5 flex flex-col gap-1" aria-label="Game menu">
+      <nav class="absolute pointer-events-auto hud-card p-1.5 flex gap-1" [ngClass]="compact() ? 'top-3 left-1/2 -translate-x-1/2 flex-row compact' : 'right-4 top-1/2 -translate-y-1/2 flex-col'" aria-label="Game menu">
         @for (b of actions; track b.id) {
           <button (click)="fire(b.id)" class="rail-btn group" [attr.aria-label]="b.label">
             <mat-icon [class]="b.color + ' !text-[22px]'">{{ b.icon }}</mat-icon>
             <span class="rail-tip">{{ b.label }} <kbd>{{ b.key }}</kbd></span>
           </button>
         }
+        <button (click)="hapticsService.setEnabled(!hapticsService.enabled())" class="rail-btn group" aria-label="Toggle controller vibration">
+          <mat-icon class="!text-[22px]" [class.text-zinc-500]="!hapticsService.enabled()" [class.text-emerald-300]="hapticsService.enabled()">{{ hapticsService.enabled() ? 'vibration' : 'phonelink_erase' }}</mat-icon>
+          <span class="rail-tip">Vibration {{ hapticsService.enabled() ? 'on' : 'off' }} <kbd>H</kbd></span>
+        </button>
         <button (click)="toggleAudio()" class="rail-btn group" aria-label="Toggle sound">
           <mat-icon class="!text-[22px]" [class.text-red-400]="audioService.isMuted()" [class.text-zinc-300]="!audioService.isMuted()">{{ audioService.isMuted() ? 'volume_off' : 'volume_up' }}</mat-icon>
           <span class="rail-tip">{{ audioService.isMuted() ? 'Unmute' : 'Mute' }} <kbd>N</kbd></span>
@@ -88,16 +96,16 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
       </nav>
 
       <!-- Bottom-left: live rotating minimap -->
-      <div class="absolute bottom-5 left-5 pointer-events-auto hud-card p-1.5 w-[168px] max-sm:w-[120px]">
+      <div class="absolute pointer-events-auto hud-card p-1.5" [ngClass]="compact() ? 'top-[68px] left-3 w-[96px]' : 'bottom-5 left-5 w-[168px] max-sm:w-[120px]'">
         <canvas #minimapCanvas width="288" height="288" class="w-full aspect-square rounded-xl"></canvas>
       </div>
 
       <!-- Bottom-right: gauge cluster -->
-      <div class="absolute bottom-5 right-20 max-sm:right-16 pointer-events-none">
-        <div class="relative w-[250px] h-[250px] max-sm:w-[190px] max-sm:h-[190px]">
+      <div class="absolute pointer-events-none" [ngClass]="compact() ? 'bottom-2 left-1/2 -translate-x-1/2' : 'bottom-5 right-20 max-sm:right-16'">
+        <div class="relative" [ngClass]="compact() ? 'w-[150px] h-[150px]' : 'w-[250px] h-[250px] max-sm:w-[190px] max-sm:h-[190px]'">
           <canvas #gaugeCanvas width="500" height="500" class="absolute inset-0 w-full h-full"></canvas>
           <div class="absolute inset-0 flex flex-col items-center justify-center">
-            <div class="text-[64px] max-sm:text-[46px] leading-none font-black tabular-nums tracking-tight drop-shadow-[0_2px_12px_rgba(0,0,0,.6)]">{{ telemetryService.speedKmh() }}</div>
+            <div class="text-[64px] max-sm:text-[46px] leading-none font-black tabular-nums tracking-tight drop-shadow-[0_2px_12px_rgba(0,0,0,.6)]" [class.!text-[38px]]="compact()">{{ telemetryService.speedKmh() }}</div>
             <div class="text-[11px] font-bold tracking-[0.3em] text-zinc-300 -mt-0.5">KM/H</div>
             <div class="mt-2 flex items-baseline gap-1"><span class="text-3xl max-sm:text-xl font-black text-amber-300">{{ telemetryService.currentGear() }}</span><span class="text-[10px] text-zinc-400 font-bold">GEAR</span></div>
             <div class="text-[10px] text-emerald-300 font-semibold mt-1 max-w-[120px] truncate">{{ telemetryService.currentSurface() }}</div>
@@ -121,6 +129,8 @@ export class HudComponent {
   public audioService = inject(AudioService);
   public envService = inject(EnvironmentService);
   public worldPipeline = inject(WorldPipelineService);
+  public hapticsService = inject(HapticsService);
+  compact = input<boolean>(false);
 
   @ViewChild('minimapCanvas', { static: false }) minimapCanvasRef!: ElementRef<HTMLCanvasElement>;
 

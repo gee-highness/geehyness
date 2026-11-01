@@ -3,6 +3,7 @@
   <!-- Interactive Racing HUD Overlay (Always Visible during Drive) -->
   @if (!isPhotoMode()) {
     <app-hud
+      [compact]="showTouchControls() && !gamepadService.isConnected()"
       (openMap)="showMap.set(true)"
       (openTuning)="showTuning.set(true)"
       (toggleTelemetry)="telemetryService.toggleTelemetry()"
@@ -14,7 +15,7 @@
   }
 
   <!-- Mobile On-Screen Virtual Controls -->
-  @if (showTouchControls() && !isPhotoMode()) {
+  @if (showTouchControls() && !gamepadService.isConnected() && !isPhotoMode()) {
     <app-touch-controls
       (steer)="onTouchSteer($event)"
       (throttle)="onTouchThrottle($event)"

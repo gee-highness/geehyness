@@ -316,39 +316,46 @@ export class App implements AfterViewInit, OnDestroy {
       const hit = wb.collision.resolve(this.vehicle, this.sceneManager.trafficColliders(), dt);
       if (hit.impactSpeed > 1.2) {
         if (hit.hitKind === 'car') this.sceneManager.hitTraffic(hit.hitId, hit.impactSpeed);
-        const f = Math.min(1, hit.impactSpeed / 14);
-        this.hapticsService.triggerImpulse('landing', f, f, 120 + f * 280);
+        this.crashRumble(hit.impactSpeed);
       }
     }
   }
 
+  private lastCrashRumble = 0;
   private updateHaptics(telem: ReturnType<RaycastVehicle['getTelemetry']>, now: number): void {
-    // Engine RPM rumble (strong motor)
+    const h = this.hapticsService;
+    // Engine: silent at idle, a faint hum only when revving hard under throttle
     const normRpm = telem.rpm / this.vehicle.config.engineMaxRpm;
-    const engineStrong = (0.05 + normRpm * 0.2) * (telem.throttle > 0 ? 1.0 : 0.4);
-    this.hapticsService.setContinuous('engine', engineStrong, 0.0);
+    const engine = telem.throttle > 0.3 && normRpm > 0.45 ? (normRpm - 0.45) * 0.35 : 0;
+    if (engine > 0.02) h.setContinuous('engine', engine, 0.0, 90);
 
-    // Tire Slip / Drift buzz (weak motor)
-    if (telem.wheels[0].isSkidding || telem.driftAngleDeg > 12) {
-      const slipWeak = Math.min(0.85, (telem.driftAngleDeg / 35) * 0.8);
-      this.hapticsService.setContinuous('tireSlip', 0.1, slipWeak);
+    // Tyre slip / drift buzz (weak motor), only while genuinely sliding
+    if ((telem.wheels[0].isSkidding || telem.driftAngleDeg > 14) && telem.speedKmh > 25) {
+      h.setContinuous('tireSlip', 0.08, Math.min(0.7, (telem.driftAngleDeg / 40) * 0.7), 90);
     }
 
-    // Surface roughness jitter
-    const isRough = [1, 4, 6, 7, 10].includes(telem.wheels[0].surfaceClass);
-    if (isRough && telem.speedKmh > 20) {
-      this.hapticsService.setContinuous('surfaceRoughness', 0.2 + Math.random() * 0.15, 0.25 + Math.random() * 0.2);
+    // Loose surfaces only (rock, dirt road, sand) and only when moving
+    if ([6, 7, 10].includes(telem.wheels[0].surfaceClass) && telem.speedKmh > 30) {
+      const k = Math.min(1, telem.speedKmh / 120);
+      h.setContinuous('surfaceRoughness', 0.1 * k, 0.15 * k, 90);
     }
+    h.update(now);
+  }
 
-    // Kerbs & speed bumps
-    if (Math.abs(telem.wheels[0].lateralForceN) > 3500) {
-      this.hapticsService.setContinuous('kerb', 0.35, 0.55);
-    }
-
-    this.hapticsService.update(now);
+  /** One short, rate-limited thump per crash instead of re-triggering every physics step. */
+  private crashRumble(impact: number): void {
+    const now = performance.now();
+    if (now - this.lastCrashRumble < 350) return;
+    this.lastCrashRumble = now;
+    const f = Math.min(1, impact / 14);
+    this.hapticsService.triggerImpulse('collision', 0.3 + f * 0.7, 0.2 + f * 0.6, 90 + f * 160);
   }
 
   // Window resize handler
+  @HostListener('window:blur')
+  @HostListener('document:visibilitychange')
+  onFocusLost(): void { this.hapticsService.stopAll(); }
+
   @HostListener('window:resize')
   onResize(): void {
     if (this.sceneManager) {
@@ -362,6 +369,7 @@ export class App implements AfterViewInit, OnDestroy {
     this.audioService.unlockAudio();
     if (!this.started()) { if (event.code === 'Enter') this.begin(); return; }
 
+    if (event.code === 'KeyH') { this.hapticsService.setEnabled(!this.hapticsService.enabled()); return; }
     if (event.code === 'KeyV') { this.showCars.update((v) => !v); return; }
     switch (event.code) {
       case 'ArrowLeft':

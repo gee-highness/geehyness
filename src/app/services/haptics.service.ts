@@ -9,6 +9,14 @@ export class HapticsService {
   private gamepadService = inject(GamepadService);
 
   readonly masterIntensity = signal<number>(1.0); // 0.0 to 1.5
+  readonly enabled = signal<boolean>(typeof localStorage === 'undefined' ? true : localStorage.getItem('shesha.rumble') !== 'off');
+  private wasActive = false;
+  public setEnabled(on: boolean): void { this.enabled.set(on); try { localStorage.setItem('shesha.rumble', on ? 'on' : 'off'); } catch { /* private mode */ } if (!on) this.stopAll(); }
+  /** Hard stop: clear every channel and cancel the actuator (also on blur/hidden). */
+  public stopAll(): void {
+    for (const k of Object.keys(this.channels) as HapticEventSource[]) this.channels[k] = { strong: 0, weak: 0, expiryTime: 0 };
+    this.wasActive = false; this.gamepadService.stopRumble();
+  }
   readonly lastActiveFrame = signal<HapticFrame>({ strong: 0, weak: 0, durationMs: 80 });
 
   // Channel states
@@ -83,6 +91,7 @@ export class HapticsService {
       }
     }
 
+    if (!this.enabled()) { if (this.wasActive) this.stopAll(); return; }
     const mult = this.masterIntensity();
     const finalStrong = Math.min(1, sumStrong * mult);
     const finalWeak = Math.min(1, sumWeak * mult);
@@ -90,14 +99,18 @@ export class HapticsService {
     const frame: HapticFrame = {
       strong: finalStrong,
       weak: finalWeak,
-      durationMs: 120, // 120ms with 80ms refresh gives continuous smooth overlap without stutter
+      durationMs: 100, // 100ms with 80ms refresh gives continuous smooth overlap without stutter
     };
 
     this.lastActiveFrame.set(frame);
     this.lastSentTime = now;
 
-    if (finalStrong > 0.01 || finalWeak > 0.01 || force) {
+    if (finalStrong > 0.03 || finalWeak > 0.03 || force) {
+      this.wasActive = true;
       this.gamepadService.playDualRumble(frame);
+    } else if (this.wasActive) {
+      this.wasActive = false;
+      this.gamepadService.stopRumble();
     }
   }
 

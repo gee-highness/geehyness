@@ -96,8 +96,8 @@ export class WorldBuilder {
   private static cr(p0: number, p1: number, p2: number, p3: number, t: number): number {
     return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t);
   }
-  /** Smooth (bicubic) real-world elevation in metres, relative to the Manzini datum. */
-  public calculateRawTerrainHeight(x: number, z: number): number {
+  /** Smooth (bicubic) real-world elevation in metres, relative to the Manzini datum. Used to bake the terrain mesh. */
+  private bicubicHeight(x: number, z: number): number {
     if (!this.dem) return 0;
     const d = this.meta.dem;
     const u = Math.max(0, Math.min(d.nx - 1.001, (x - d.x0) / d.step)), v = Math.max(0, Math.min(d.nz - 1.001, (z - d.z0) / d.step));
@@ -105,6 +105,32 @@ export class WorldBuilder {
     const row = (jj: number) => WorldBuilder.cr(this.cell(i - 1, jj), this.cell(i, jj), this.cell(i + 1, jj), this.cell(i + 2, jj), fu);
     return WorldBuilder.cr(row(j - 1), row(j), row(j + 1), row(j + 2), fv) - 610;
   }
+
+  private readonly TS = 80; // terrain mesh spacing, metres
+  private tnx = 0; private tnz = 0; private tH!: Float32Array;
+  private bakeHeightGrid(): void {
+    const [x0, x1, z0, z1] = this.meta.bounds, S = this.TS;
+    this.tnx = Math.ceil((x1 - x0) / S) + 1; this.tnz = Math.ceil((z1 - z0) / S) + 1;
+    this.tH = new Float32Array(this.tnx * this.tnz);
+    for (let j = 0; j < this.tnz; j++) for (let i = 0; i < this.tnx; i++) this.tH[j * this.tnx + i] = this.bicubicHeight(x0 + i * S, z0 + j * S);
+  }
+
+  /**
+   * Terrain height EXACTLY as the rendered mesh (same triangles), so roads, buildings, trees and the car
+   * can never sink below or float above the ground.
+   */
+  public calculateRawTerrainHeight(x: number, z: number): number {
+    if (!this.tH) return 0;
+    const S = this.TS, [x0, , z0] = this.meta.bounds;
+    const u = Math.max(0, Math.min(this.tnx - 1.0001, (x - x0) / S)), v = Math.max(0, Math.min(this.tnz - 1.0001, (z - z0) / S));
+    const i = Math.floor(u), j = Math.floor(v), fu = u - i, fv = v - j, n = this.tnx;
+    const ha = this.tH[j * n + i], hb = this.tH[j * n + i + 1], hc = this.tH[(j + 1) * n + i], hd = this.tH[(j + 1) * n + i + 1];
+    // mesh triangles are (a,c,b) and (b,c,d): diagonal runs b-c
+    return fu + fv <= 1 ? ha + fu * (hb - ha) + fv * (hc - ha) : hd + (1 - fu) * (hc - hd) + (1 - fv) * (hb - hd);
+  }
+
+  /** Visible road surface sits this far above the terrain (per road class). */
+  private static readonly ROAD_LIFT = [0.16, 0.16, 0.15, 0.14, 0.13, 0.12, 0.1, 0.1, 0.08, -0.3];
 
   private groundClassAt(x: number, z: number): number {
     if (!this.groundCls) return 1;
@@ -141,12 +167,12 @@ export class WorldBuilder {
   }
 
   public queryGround(x: number, z: number): GroundQueryResult {
-    const height = this.calculateRawTerrainHeight(x, z);
-    const e = 0.6;
+    const road = this.roadAt(x, z);
+    const height = this.calculateRawTerrainHeight(x, z) + (road ? WorldBuilder.ROAD_LIFT[road.c] : 0);
+    const e = 2.5;
     const hL = this.calculateRawTerrainHeight(x - e, z), hR = this.calculateRawTerrainHeight(x + e, z);
     const hD = this.calculateRawTerrainHeight(x, z - e), hU = this.calculateRawTerrainHeight(x, z + e);
     const normal = new THREE.Vector3(hL - hR, 2 * e, hD - hU).normalize();
-    const road = this.roadAt(x, z);
     const cls = road ? (road.u ? 7 : 11) : this.groundClassAt(x, z);
     const names: Record<number, string> = { 1: 'Bushveld', 2: 'Grassland', 3: 'Pasture', 4: 'Farmland', 5: 'Forest floor', 6: 'Rock', 7: 'Dirt road', 8: 'Town ground', 9: 'Industrial ground', 10: 'Sand', 11: 'Asphalt', 12: 'Wetland' };
     return { height, normal, surfaceClass: cls, surfaceName: road && road.n ? road.n : (names[cls] ?? 'Ground') };
@@ -198,6 +224,7 @@ export class WorldBuilder {
     groundTex.colorSpace = THREE.SRGBColorSpace; groundTex.anisotropy = 8;
 
     this.roadWays = roads.roads;
+    this.bakeHeightGrid();
     this.indexRoads();
     this.buildTerrain(scene, groundTex);
     this.buildRoads(scene);
@@ -279,13 +306,13 @@ export class WorldBuilder {
 
   // ------------------------------------------------------------------ terrain
   private buildTerrain(scene: THREE.Scene, groundTex: THREE.Texture): void {
-    const [x0, x1, z0, z1] = this.meta.bounds; const S = 120;
-    const nx = Math.ceil((x1 - x0) / S) + 1, nz = Math.ceil((z1 - z0) / S) + 1;
+    const [x0, , z0] = this.meta.bounds; const S = this.TS;
+    const nx = this.tnx, nz = this.tnz;
     const pos = new Float32Array(nx * nz * 3), uv = new Float32Array(nx * nz * 2);
     const W = this.meta.gw * this.meta.px, Hh = this.meta.gh * this.meta.px;
     for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
       const x = x0 + i * S, z = z0 + j * S, k = j * nx + i;
-      pos[k * 3] = x; pos[k * 3 + 1] = this.calculateRawTerrainHeight(x, z); pos[k * 3 + 2] = z;
+      pos[k * 3] = x; pos[k * 3 + 1] = this.tH[k]; pos[k * 3 + 2] = z;
       uv[k * 2] = (x - x0) / W; uv[k * 2 + 1] = 1 - (z - z0) / Hh;
     }
     const idx = new Uint32Array((nx - 1) * (nz - 1) * 6); let n = 0;
@@ -357,7 +384,7 @@ export class WorldBuilder {
     const water = new THREE.MeshStandardMaterial({ color: 0x3b6f8a, roughness: 0.08, metalness: 0.25, transparent: true, opacity: 0.9 });
     const mats: Record<string, THREE.Material> = { asph, dirt, mark1: mk(false), mark2: mk(true), water };
     const map = new Map<string, Map<string, GeoBuf>>();
-    const YOFF = [0.18, 0.16, 0.14, 0.12, 0.1, 0.08, 0.06, 0.05, 0.04, -0.3];
+    const YOFF = WorldBuilder.ROAD_LIFT;
 
     for (const w of this.roadWays) {
       // resample to <= 16 m
@@ -365,7 +392,7 @@ export class WorldBuilder {
       for (let i = 0; i + 1 < w.p.length; i += 2) {
         const x = w.p[i] / 10, z = w.p[i + 1] / 10;
         if (i === 0) { pts.push([x, z]); continue; }
-        const [px, pz] = pts[pts.length - 1]; const L = Math.hypot(x - px, z - pz), n = Math.max(1, Math.ceil(L / 16));
+        const [px, pz] = pts[pts.length - 1]; const L = Math.hypot(x - px, z - pz), n = Math.max(1, Math.ceil(L / 8));
         for (let k = 1; k <= n; k++) pts.push([px + ((x - px) * k) / n, pz + ((z - pz) * k) / n]);
       }
       if (pts.length < 2) continue;

@@ -73,6 +73,7 @@ export class SceneManager {
     this.renderer = new THREE.WebGLRenderer({
       antialias: !this.isSoftwareGl,
       powerPreference: 'high-performance',
+      logarithmicDepthBuffer: true, // road/terrain/building layers 5-10 cm apart must not z-fight at distance
       preserveDrawingBuffer: true, // Needed for Photo Mode snapshot export
     });
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
@@ -153,7 +154,7 @@ export class SceneManager {
     this.scene.environmentIntensity = daylight;
     if (this.scene.fog) {
       (this.scene.fog as THREE.FogExp2).color = skyCol.clone().lerp(new THREE.Color(0xdbe5e8), 0.8).multiplyScalar(Math.max(0.05, daylight));
-      (this.scene.fog as THREE.FogExp2).density = env.fogDensity;
+      (this.scene.fog as THREE.FogExp2).density = env.fogDensity * 0.35;
     }
 
     // Wet road puddles and mirror reflections
