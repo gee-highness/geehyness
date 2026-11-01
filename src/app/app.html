@@ -1,0 +1,56 @@
+<!-- Fullscreen 3D Viewport Container -->
+<div #canvasContainer class="relative w-screen h-screen overflow-hidden bg-zinc-950 select-none">
+  <!-- Interactive Racing HUD Overlay (Always Visible during Drive) -->
+  @if (!isPhotoMode()) {
+    <app-hud
+      (openMap)="showMap.set(true)"
+      (openTuning)="showTuning.set(true)"
+      (toggleTelemetry)="telemetryService.toggleTelemetry()"
+      (openPhotoMode)="togglePhotoMode()"
+      (cycleCamera)="onCycleCamera()"
+      (openPipeline)="showPipeline.set(true)"
+    ></app-hud>
+  }
+
+  <!-- Mobile On-Screen Virtual Controls -->
+  @if (showTouchControls() && !isPhotoMode()) {
+    <app-touch-controls
+      (steer)="onTouchSteer($event)"
+      (throttle)="onTouchThrottle($event)"
+      (brake)="onTouchBrake($event)"
+      (handbrake)="onTouchHandbrake($event)"
+      (resetCar)="resetCarUpright()"
+    ></app-touch-controls>
+  }
+
+  <!-- Forza Live Telemetry Modal (T key / D-Pad Up) -->
+  @if (telemetryService.showTelemetryOverlay()) {
+    <app-telemetry (closeModal)="telemetryService.showTelemetryOverlay.set(false)"></app-telemetry>
+  }
+
+  <!-- Garage Tuning & Dyno Workshop Modal (Garage button) -->
+  @if (showTuning()) {
+    <app-tuning (closeModal)="showTuning.set(false)"></app-tuning>
+  }
+
+  <!-- Corridor Interactive Vector Map (M key / Options) -->
+  @if (showMap()) {
+    <app-map-modal
+      (closeModal)="showMap.set(false)"
+      (teleport)="teleportToDistrict($event)"
+    ></app-map-modal>
+  }
+
+  <!-- World Pipeline & Tooling Inspector (O key) -->
+  @if (showPipeline()) {
+    <app-pipeline-modal (closeModal)="showPipeline.set(false)"></app-pipeline-modal>
+  }
+
+  <!-- Cinematic Photo Mode (P key / D-Pad Down) -->
+  @if (isPhotoMode()) {
+    <app-photo-mode
+      (exitPhotoMode)="togglePhotoMode()"
+      (capturePhoto)="captureHighResPhoto()"
+    ></app-photo-mode>
+  }
+</div>

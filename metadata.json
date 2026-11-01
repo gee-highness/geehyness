@@ -1,0 +1,6 @@
+{
+  "name": "SD: Slow Down",
+  "description": "The signs say Slow Down. The aim is obviously not to. Physics-driven mobile & party racing across the Manzini-Ezulwini Eswatini corridor with DualShock 4 rumble, Forza-grade telemetry, and deep tuning.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
