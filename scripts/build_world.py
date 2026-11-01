@@ -8,6 +8,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 osm_dir, dem_path, out = sys.argv[1:4]
+dir2 = sys.argv[4] if len(sys.argv) > 4 else None
 os.makedirs(out, exist_ok=True)
 LAT0, LON0 = -26.4966, 31.3826
 KX, KZ = 111320 * math.cos(math.radians(LAT0)), 110574.0
@@ -17,6 +18,9 @@ random.seed(7)
 
 def P(lat, lon): return ((lon - LON0) * KX, -(lat - LAT0) * KZ)
 def load(n): return json.load(open(f"{osm_dir}/{n}.json"))["elements"]
+def load2(n):
+    f = f"{dir2}/{n}.json" if dir2 else None
+    return json.load(open(f))["elements"] if f and os.path.exists(f) else []
 def poly(e): return [P(g["lat"], g["lon"]) for g in e.get("geometry", [])]
 dm = lambda v: int(round(v * 10))
 
@@ -108,11 +112,18 @@ STYLE = {"residential": ((116, 124, 88), 8), "commercial": ((138, 138, 130), 8),
          "scrub": ((92, 112, 62), 1), "heath": ((118, 122, 72), 1), "grassland": ((118, 138, 82), 2), "wetland": ((84, 122, 96), 12),
          "water": ((52, 96, 128), 12), "reservoir": ((52, 96, 128), 12), "cemetery": ((110, 130, 96), 2), "quarry": ((156, 138, 118), 6),
          "bare_rock": ((150, 142, 130), 6), "sand": ((196, 180, 140), 10), "construction": ((170, 150, 120), 7),
-         "brownfield": ((170, 150, 120), 7), "religious": ((120, 130, 96), 2), "military": ((120, 128, 90), 2), "garages": ((140, 138, 130), 8)}
+         "brownfield": ((170, 150, 120), 7), "religious": ((120, 130, 96), 2), "military": ((120, 128, 90), 2), "garages": ((140, 138, 130), 8), "garden": ((100, 140, 80), 2), "golf_course": ((92, 150, 82), 2), "sports_centre": ((104, 146, 84), 2), "parking": ((92, 92, 90), 9), "allotments": ((130, 140, 80), 4)}
 ORDER = ["farmland", "farmyard", "grassland", "heath", "scrub", "meadow", "grass", "orchard", "vineyard", "plant_nursery", "forest", "wood",
          "wetland", "sand", "bare_rock", "quarry", "brownfield", "construction", "residential", "commercial", "retail", "industrial", "garages", "cemetery",
-         "religious", "military", "recreation_ground", "park", "pitch", "water", "reservoir"]
+         "religious", "military", "recreation_ground", "park", "garden", "golf_course", "sports_centre", "parking", "pitch", "water", "reservoir"]
 rank = {k: i for i, k in enumerate(ORDER)}
+for e in load2("leisure"):
+    t = e.get("tags", {}); g = poly(e)
+    kind = t.get("leisure") or ("parking" if t.get("amenity") == "parking" else t.get("landuse"))
+    if kind in ("park", "garden", "golf_course", "sports_centre", "pitch", "parking", "cemetery", "allotments") and len(g) > 3: ground_polys.append((kind, g, t))
+for e in load2("misc"):
+    t = e.get("tags", {}); g = poly(e) if e["type"] == "way" else []
+    if t.get("man_made") == "works" and len(g) > 3: ground_polys.append(("industrial", g, t))
 ground_polys.sort(key=lambda a: rank.get(a[0], -1))
 wood_masks = []
 for kind, g, t in ground_polys:
@@ -181,8 +192,8 @@ for i, ((x, z), t) in enumerate(poi_xy): PHASH[(int(x // 60), int(z // 60))].app
 cent = []  # building centroids for density
 BR = []
 seen = set()
-for n_ in ("bld_manzini", "bld_ezulwini"):
-    for e in load(n_):
+for n_, ldr in [("bld_manzini", load), ("bld_ezulwini", load)] + [(n, load2) for n in ("bld_lobamba", "bld_malkerns", "bld_matsapha1", "bld_matsapha2", "bld_mbabane1", "bld_mbabane2")]:
+    for e in ldr(n_):
         if e["id"] in seen: continue
         seen.add(e["id"]); t = e.get("tags", {})
         polys = []
@@ -312,12 +323,13 @@ def pip(g, x, z):
     return ins
 MATS = P(-26.494482, 31.308351)  # Matsapha centre
 CBD = P(-26.4981, 31.3742)  # Manzini CBD (Nkose'luhlaza / Ngwane St core)
+CBD2 = P(-26.3257, 31.1447)  # Mbabane CBD
 stalls = []
 use_count = defaultdict(int)
 for t, g, area, cx, cz in BR:
     h_ = (math.sin(cx * 12.9898 + cz * 78.233) * 43758.5453) % 1.0
     h2 = (math.sin(cx * 3.1 + cz * 5.7) * 9731.17) % 1.0
-    d_cbd = math.hypot(cx - CBD[0], cz - CBD[1]); d_mat = math.hypot(cx - MATS[0], cz - MATS[1])
+    d_cbd = min(math.hypot(cx - CBD[0], cz - CBD[1]), 1.1 * math.hypot(cx - CBD2[0], cz - CBD2[1])); d_mat = math.hypot(cx - MATS[0], cz - MATS[1])
     poi = None
     for a in (-1, 0, 1):
         for b in (-1, 0, 1):
@@ -397,6 +409,56 @@ json.dump({"b": bl, "signs": SIGNS, "stalls": stalls}, open(f"{out}/buildings.js
 print("buildings", len(bl))
 col.save(f"{out}/groundcolor.png", optimize=True); cls.save(f"{out}/groundclass.png", optimize=True)
 
+# ---------------- extra OSM features (barriers, real trees, power, pitches, pools, parking, tanks, bumps)
+feat = {"barriers": [], "gates": [], "trees": [], "lines": [], "towers": [], "solar": [], "subst": [], "pitches": [], "pools": [], "parking": [], "tanks": [], "bumps": []}
+BK = {"fence": 0, "wall": 1, "retaining_wall": 2, "hedge": 3, "gate": 4, "city_wall": 1, "guard_rail": 0}
+for e in load2("barriers"):
+    t = e.get("tags", {}); k = t.get("barrier", "")
+    if e["type"] == "way":
+        g = poly(e)
+        if k in BK and len(g) >= 2: feat["barriers"].append([BK[k], [dm(v) for pt in g for v in pt]])
+    elif k in ("gate", "lift_gate", "bollard", "toll_booth"): feat["gates"].append([round(P(e["lat"], e["lon"])[0], 1), round(P(e["lat"], e["lon"])[1], 1), {"gate": 0, "lift_gate": 1, "bollard": 2, "toll_booth": 1}[k]])
+for e in load2("trees"):
+    if e["type"] == "node": x, z = P(e["lat"], e["lon"]); feat["trees"].append([round(x, 1), round(z, 1)])
+    else:
+        g = poly(e)
+        for i in range(len(g) - 1):
+            L = math.hypot(g[i + 1][0] - g[i][0], g[i + 1][1] - g[i][1])
+            for k in range(max(1, int(L // 7))): f = k * 7 / max(L, 1); feat["trees"].append([round(g[i][0] + (g[i + 1][0] - g[i][0]) * f, 1), round(g[i][1] + (g[i + 1][1] - g[i][1]) * f, 1)])
+for e in load2("power"):
+    t = e.get("tags", {}); pw = t.get("power", "")
+    if e["type"] == "node" and pw in ("tower", "pole"): x, z = P(e["lat"], e["lon"]); feat["towers"].append([round(x, 1), round(z, 1), 0 if pw == "tower" else 1])
+    elif e["type"] == "way":
+        g = poly(e)
+        if pw in ("line", "minor_line", "cable") and len(g) >= 2: feat["lines"].append([0 if pw == "line" else 1, [dm(v) for pt in g for v in pt]])
+        elif pw == "generator" and len(g) > 3: feat["solar"].append([dm(v) for pt in g for v in pt])
+        elif pw == "substation" and len(g) > 3: feat["subst"].append([dm(v) for pt in g for v in pt])
+SPORT = {"soccer": 0, "football": 0, "tennis": 1, "basketball": 2, "netball": 2, "volleyball": 2, "athletics": 3, "cricket": 3, "rugby": 0}
+for e in load2("leisure"):
+    t = e.get("tags", {}); g = poly(e)
+    if e["type"] != "way" or len(g) < 4: continue
+    pts_ = [dm(v) for pt in g for v in pt]
+    if t.get("leisure") == "pitch": feat["pitches"].append([SPORT.get(str(t.get("sport", "")).split(";")[0], 3), pts_])
+    elif t.get("leisure") == "swimming_pool": feat["pools"].append(pts_)
+    elif t.get("amenity") == "parking": feat["parking"].append(pts_)
+for e in load2("misc"):
+    t = e.get("tags", {}); mm = t.get("man_made", "")
+    if mm in ("storage_tank", "silo"):
+        if e["type"] == "way":
+            g = poly(e)
+            if len(g) > 3:
+                cx = sum(p[0] for p in g) / len(g); cz = sum(p[1] for p in g) / len(g); r = sum(math.hypot(p[0] - cx, p[1] - cz) for p in g) / len(g)
+                feat["tanks"].append([round(cx, 1), round(cz, 1), round(max(1.5, r), 1), 1 if mm == "silo" else 0])
+        else: x, z = P(e["lat"], e["lon"]); feat["tanks"].append([round(x, 1), round(z, 1), 4.0, 1 if mm == "silo" else 0])
+    if e["type"] == "node" and t.get("traffic_calming"): x, z = P(e["lat"], e["lon"]); feat["bumps"].append([round(x, 1), round(z, 1)])
+extra_views = []
+for e in load2("misc"):
+    t = e.get("tags", {})
+    if e["type"] == "node" and (t.get("tourism") == "viewpoint" or t.get("natural") == "peak"):
+        x, z = P(e["lat"], e["lon"]); extra_views.append({"n": t.get("name") or ("Peak" + (" " + t["ele"] + "m" if t.get("ele") else "")), "p": [round(x, 1), round(z, 1)]})
+json.dump(feat, open(f"{out}/features.json", "w"), separators=(",", ":"))
+print("features", {k: len(v) for k, v in feat.items()}, "views+", len(extra_views))
+
 # ---------------- trees from raster (forest + residential gardens)
 arr = np.array(cls); trees = []
 for cid, prob in ((5, 0.5), (8, 0.025), (2, 0.004), (4, 0.01)):
@@ -440,6 +502,6 @@ want = {"manzini": (-26.4966, 31.3826), "matsapha": (-26.4945, 31.3084), "lobamb
 snaps = {k: snap(*P(*v)) for k, v in want.items()}
 meta = {"lat0": LAT0, "lon0": LON0, "bounds": [X0, X1, Z0, Z1], "px": PX, "gw": W, "gh": H,
         "dem": {"x0": dem["x0"], "z0": dem["z0"], "step": dem["step"], "nx": dem["nx"], "nz": dem["nz"]},
-        "spawn": spawn, "places": places, "pois": pois, "signals": signals, "busstops": busstops, "lamps": lamps, "views": views, "snaps": snaps}
+        "spawn": spawn, "places": places, "pois": pois, "signals": signals, "busstops": busstops, "lamps": lamps, "views": views + [v for v in extra_views if all(abs(v["p"][0] - q["p"][0]) + abs(v["p"][1] - q["p"][1]) > 60 for q in views)], "snaps": snaps}
 json.dump(meta, open(f"{out}/meta.json", "w"), separators=(",", ":"))
 print("spawn", spawn, "snaps", snaps)

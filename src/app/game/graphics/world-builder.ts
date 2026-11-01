@@ -31,6 +31,7 @@ import { CityBuilder } from './city-builder';
 import { StreetBuilder } from './street-builder';
 import { BridgeBuilder } from './bridge-builder';
 import { ExtrasBuilder } from './extras-builder';
+import { FeaturesBuilder, Features } from './features-builder';
 
 export const WORLD: { current?: WorldBuilder } = {};
 const CHUNK = 800;
@@ -66,6 +67,24 @@ export class WorldBuilder {
   private bGrid = new Map<number, number[]>();
   public city!: CityBuilder;
   public streets!: StreetBuilder;
+  public features?: FeaturesBuilder;
+  private barrierCells = new Set<number>();
+  public markBarrier(x: number, z: number): void { this.barrierCells.add(Math.floor(x / 30) * 100003 + Math.floor(z / 30)); }
+  public barrierNear(x: number, z: number): boolean {
+    const cx = Math.floor(x / 30), cz = Math.floor(z / 30);
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) if (this.barrierCells.has((cx + a) * 100003 + (cz + b))) return true;
+    return false;
+  }
+  /** Raised speed humps add real height to the road surface. */
+  private bumpAt(x: number, z: number): number {
+    const bs = this.features?.bumps; if (!bs?.length) return 0;
+    for (const b of bs) {
+      const dx = x - b.x, dz = z - b.z; if (Math.abs(dx) > 6 || Math.abs(dz) > 6) continue;
+      const along = dx * b.tx + dz * b.tz, across = -dx * b.tz + dz * b.tx;
+      if (Math.abs(along) < 0.9 && Math.abs(across) < b.hw) return 0.09 * Math.min(1, (0.9 - Math.abs(along)) / 0.35);
+    }
+    return 0;
+  }
   private bridges = new BridgeBuilder(this);
 
   /** Register a chunk object for distance streaming. */
@@ -247,6 +266,7 @@ export class WorldBuilder {
     const rs = this.roadSurface(x, z, y); const road = rs?.way ?? null;
     const pave = !road && this.onPavement(x, z);
     let height = rs ? rs.h : this.calculateRawTerrainHeight(x, z) + (pave ? WorldBuilder.ROAD_LIFT[4] + 0.15 : 0);
+    if (rs && !rs.elev) height += this.bumpAt(x, z);
     if (road?.rg) height += 0.035 * Math.sin(x * 3.1 + z * 2.3) * Math.sin(x * 1.7 - z * 2.9) + 0.02 * Math.sin(x * 7.3 + z * 5.1); // washboard / potholes on roads tagged rough
     const e = 2.5; let normal: THREE.Vector3;
     if (rs?.elev) {
@@ -288,6 +308,7 @@ export class WorldBuilder {
 
   /** Streams chunks in/out by distance so mobile GPUs stay happy. */
   public update(px: number, pz: number): void {
+    this.city?.update(px, pz);
     for (const t of this.terrainTiles) {
       const d = Math.hypot(t.cx - px, t.cz - pz);
       t.lod0.visible = d < 2400; t.lod1.visible = d >= 2400 && d < 5200;
@@ -302,9 +323,10 @@ export class WorldBuilder {
   private async loadWorld(scene: THREE.Scene): Promise<void> {
     const base = 'assets/world/';
     const json = (n: string) => fetch(base + n).then((r) => r.json());
-    const [meta, roads, blds, hbuf, tbuf] = await Promise.all([
+    const [meta, roads, blds, hbuf, tbuf, feats] = await Promise.all([
       json('meta.json'), json('roads.json'), json('buildings.json'),
       fetch(base + 'height.bin').then((r) => r.arrayBuffer()), fetch(base + 'trees.bin').then((r) => r.arrayBuffer()),
+      json('features.json').catch(() => null),
     ]);
     this.meta = meta;
     this.dem = Float32Array.from(new Int16Array(hbuf), (v) => v / 10);
@@ -323,6 +345,8 @@ export class WorldBuilder {
     this.streets = new StreetBuilder(this);
     this.streets.build(scene);
     new ExtrasBuilder(this, roads.rails ?? [], roads.crossings ?? []).build(scene);
+    if (feats) { this.features = new FeaturesBuilder(this, feats as Features); this.features.build(); }
+    this.city.prime();
     this.buildTrees(scene, tbuf);
     this.buildStreetFurniture(scene);
     this.buildLabels(scene);

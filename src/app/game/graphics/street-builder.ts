@@ -259,7 +259,7 @@ export class StreetBuilder {
     this.placeParked(parked.slice(0, 1100));
   }
 
-  private async placeParked(list: { m: string; x: number; z: number; rot: number }[]): Promise<void> {
+  public async placeParked(list: { m: string; x: number; z: number; rot: number }[]): Promise<void> {
     const w = this.w; const byChunk = new Map<string, THREE.BufferGeometry[]>(); const cache = new Map<string, THREE.BufferGeometry[]>();
     for (const m of new Set(list.map((l) => l.m))) {
       const model = await AssetLibrary.load(`assets/models/cars/${m}.glb`).catch(() => null); if (!model) continue;

@@ -31,7 +31,7 @@ export class CityBuilder {
 
   constructor(private w: WorldBuilder) {}
 
-  private static size(mat: string): number { return mat === 'props' || mat === 'sign' ? 300 : CH; }
+  private static size(mat: string): number { return mat === 'props' || mat === 'sign' ? 400 : CH; }
   private buf(cx: number, cz: number, mat: string): GeoBuf {
     const sz = CityBuilder.size(mat);
     const k = `${sz}:${Math.floor(cx / sz)},${Math.floor(cz / sz)}`;
@@ -110,9 +110,50 @@ export class CityBuilder {
   }
 
   // ------------------------------------------------------------------ main
+  private pending = new Map<string, Bld[]>();
+  private cur: { list: Bld[]; i: number } | null = null;
+
+  /** Group footprints by 800 m chunk (cheap); geometry is generated lazily as the player approaches. */
   build(scene: THREE.Scene, list: Bld[], signs: string[][]): void {
     this.makeMaterials(signs);
-    for (const b of list) this.addBuilding(b);
+    for (const b of list) {
+      const f = b[2], n = f.length / 2; if (n < 3) continue;
+      let cx = 0, cz = 0, A = 0;
+      for (let i = 0; i < n; i++) { cx += f[i * 2]; cz += f[i * 2 + 1]; const j = (i + 1) % n; A += f[i * 2] * f[j * 2 + 1] - f[j * 2] * f[i * 2 + 1]; }
+      cx /= n * 10; cz /= n * 10; const area = Math.abs(A) / 200;
+      this.w.addFootprint(cx, cz, Math.sqrt(area) * 0.6 + 1.5);
+      const key = `${Math.floor(cx / CH)},${Math.floor(cz / CH)}`; let l = this.pending.get(key); if (!l) { l = []; this.pending.set(key, l); } l.push(b);
+    }
+    void scene;
+  }
+
+  /** Build the area around the start synchronously so it is ready before the intro ends (after barriers/features exist). */
+  prime(): void { const sp = this.w.meta.spawn; this.stream(sp.x, sp.z, 1300, 1e9); }
+
+  /** Called every frame: builds nearby chunks within a small time budget (keeps the frame rate smooth). */
+  update(px: number, pz: number): void { this.stream(px, pz, 1500, 3); }
+
+  private stream(px: number, pz: number, radius: number, budgetMs: number): void {
+    const t0 = performance.now();
+    for (;;) {
+      if (!this.cur) {
+        let bestKey: string | null = null, bd = radius;
+        this.pending.forEach((_, key) => {
+          const [ix, iz] = key.split(',').map(Number);
+          const dx = Math.max(Math.abs((ix + 0.5) * CH - px) - CH / 2, 0), dz = Math.max(Math.abs((iz + 0.5) * CH - pz) - CH / 2, 0), d = Math.hypot(dx, dz);
+          if (d < bd) { bd = d; bestKey = key; }
+        });
+        if (!bestKey) return;
+        this.cur = { list: this.pending.get(bestKey)!, i: 0 }; this.pending.delete(bestKey);
+      }
+      const c = this.cur;
+      while (c.i < c.list.length) { this.addBuilding(c.list[c.i++]); if ((c.i & 7) === 0 && performance.now() - t0 > budgetMs) return; }
+      this.emitWalls(); this.cur = null;
+      if (performance.now() - t0 > budgetMs) return;
+    }
+  }
+
+  private emitWalls(): void {
     this.walls.forEach((m, key) => {
       const [szs, rest] = key.split(':'); const sz = Number(szs); const [ix, iz] = rest.split(',').map(Number); const cx = (ix + 0.5) * sz, cz = (iz + 0.5) * sz;
       m.forEach((buf, mk) => {
@@ -125,7 +166,6 @@ export class CityBuilder {
       });
     });
     this.walls.clear();
-    void scene;
   }
 
   // ------------------------------------------------------------------ styles by use
@@ -204,7 +244,6 @@ export class CityBuilder {
 
     // collision footprint + tree rejection
     if (use !== 17 && !w.overlapsRoad(pts, cx, cz)) w.collision.addPolygon(pts.flatMap((p) => [p[0], p[1]]));
-    w.addFootprint(cx, cz, Math.sqrt(area) * 0.6 + 1.5);
 
     // walled compound + hedge for houses in town (detail only when close)
     if ((use === 0 || use === 1 || use === 13) && area > 70 && Math.hypot(cx + 750, cz + 210) < 3400 && r < 0.8) this.compound(cx, cz, ocx, ocz, ux, uz, vx, vz, halfU, halfV, r, hs);
@@ -222,7 +261,8 @@ export class CityBuilder {
 
   // ------------------------------------------------------------------ compound walls
   private compound(cx: number, cz: number, ocx: number, ocz: number, ux: number, uz: number, vx: number, vz: number, hu: number, hv: number, r: number, hs: number[]): void {
-    const w = this.w; const m = 2.4 + r * 2.4, A = hu + m, B = hv + m; const y = Math.min(...hs);
+    const w = this.w; if (w.barrierNear(cx, cz)) return; // real mapped walls/fences take priority over my guessed compound
+    const m = 2.4 + r * 2.4, A = hu + m, B = hv + m; const y = Math.min(...hs);
     const P = (su: number, sv: number): [number, number] => [ocx + ux * su + vx * sv, ocz + uz * su + vz * sv];
     const corners = [P(-A, -B), P(A, -B), P(A, B), P(-A, B)];
     for (const c of corners) if (w.roadAt(c[0], c[1])) return;
