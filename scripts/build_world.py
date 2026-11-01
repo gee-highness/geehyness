@@ -45,6 +45,7 @@ for e in load("roads"):
         if c == 7 or (unpaved and c >= 5): u = 1
         else: u = 0
         br = 1 if (t.get("bridge") or t.get("tunnel") or t.get("embankment") == "yes") else 0
+        w *= 1.2  # roads 20% wider for a more generous, drivable feel
         roads.append({"c": c, "w": round(w, 1), "u": u, "b": br, "o": 1 if t.get("oneway") == "yes" else 0,
                       "r": t.get("ref", ""), "n": t.get("name", ""), "p": [dm(v) for pt in g for v in pt]})
         if c <= 3: nodes_major.extend((x, z, t.get("ref", "")) for x, z in g)
