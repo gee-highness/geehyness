@@ -314,6 +314,15 @@ export class WorldBuilder {
     return best;
   }
 
+  /** Indices of ways with a segment within r of (x,z) (uses the segment grid). */
+  public waysNear(x: number, z: number, r: number): number[] {
+    const seen = new Set<number>();
+    for (let a = Math.floor((x - r) / 50); a <= Math.floor((x + r) / 50); a++) for (let b = Math.floor((z - r) / 50); b <= Math.floor((z + r) / 50); b++) {
+      const list = this.cellRoads.get(a * 100003 + b); if (list) for (let k = 0; k < list.length; k += 2) seen.add(list[k]);
+    }
+    return [...seen];
+  }
+
   /** Road polylines near a point, for the live minimap (uses the segment grid, not a scan of every way). */
   public nearbyRoads(x: number, z: number, r: number): { c: number; pts: number[] }[] {
     const seen = new Set<number>(); const out: { c: number; pts: number[] }[] = [];

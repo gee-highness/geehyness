@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Weather } from './weather';
+import { Pedestrians } from './pedestrians';
 import { QualityTier } from '../../services/settings.service';
 import { CameraRig } from './camera-rig';
 import { WorldBuilder } from './world-builder';
@@ -31,6 +32,8 @@ export class SceneManager {
   private modelWheelCy = 0.33;
   private modelRadius = 0.33;
   private roadTraffic?: RoadTraffic;
+  private pedestrians?: Pedestrians;
+  private pedFraction = 1;
   private vehicleParts!: ReturnType<typeof CarFactory.createVehicleMesh>;
 
   // Lighting & Sky
@@ -63,7 +66,7 @@ export class SceneManager {
 
     this.particleSystem = new ParticleSystem(this.scene);
     this.weather = new Weather(this.scene);
-    this.worldBuilder.onReady(() => { this.roadTraffic = new RoadTraffic(this.scene, this.worldBuilder); });
+    this.worldBuilder.onReady(() => { this.roadTraffic = new RoadTraffic(this.scene, this.worldBuilder); this.pedestrians = new Pedestrians(this.scene, this.worldBuilder); this.pedestrians.setCount(this.pedFraction); });
   }
 
   private detectSoftwareGl(): void {
@@ -199,6 +202,8 @@ export class SceneManager {
 
     this.worldBuilder.update(vehicle.position.x, vehicle.position.z);
     this.roadTraffic?.update(dt, vehicle.position.x, vehicle.position.z);
+    this.pedestrians?.update(dt, vehicle.position.x, vehicle.position.z, vehicle.velocity.x, vehicle.velocity.z);
+    (window as unknown as { __shesha?: Record<string, unknown> }).__shesha!['peds'] = () => this.pedestrians?.debug();
     this.weather.update(dt, vehicle.position, this.windKmh);
     if (this.weather.lightning > 0.01) { this.scene.backgroundIntensity = this.baseDaylight + this.weather.lightning * 1.6; this.scene.environmentIntensity = this.baseDaylight + this.weather.lightning * 1.2; }
     const clouds = this.worldBuilder.streets?.clouds;
@@ -362,6 +367,7 @@ export class SceneManager {
     }
     this.sunLight.shadow.mapSize.set(q === 'HIGH' ? 2048 : 1024, q === 'HIGH' ? 2048 : 1024); this.sunLight.shadow.map?.dispose(); (this.sunLight.shadow as { map: unknown }).map = null;
     if (this.blob) this.blob.visible = !shadows; else if (!shadows) this.makeBlobShadow();
+    this.pedFraction = q === 'LOW' ? 0.3 : q === 'MED' ? 0.65 : 1; this.pedestrians?.setCount(this.pedFraction);
     this.weather.setDetail(q === 'LOW' ? 0.35 : q === 'MED' ? 0.65 : 1);
     this.worldBuilder.setDetailScale(q === 'LOW' ? 0.5 : q === 'MED' ? 0.75 : 1);
   }
