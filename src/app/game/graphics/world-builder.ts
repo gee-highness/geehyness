@@ -22,35 +22,17 @@ interface WorldMeta {
   signals: [number, number][];
   snaps: Record<string, [number, number]>;
 }
-interface RoadWay { c: number; w: number; u: number; o: number; n: string; p: number[] }
+interface RoadWay { c: number; w: number; u: number; o: number; n: string; p: number[]; sw?: number }
 
-/** Growable geometry buffers. */
-class GeoBuf {
-  pos: number[] = []; nor: number[] = []; uv: number[] = []; col: number[] = []; win: number[] = []; idx: number[] = [];
-  vert(x: number, y: number, z: number, nx: number, ny: number, nz: number, u: number, v: number, c: number[], w = 0): number {
-    this.pos.push(x, y, z); this.nor.push(nx, ny, nz); this.uv.push(u, v); this.col.push(c[0], c[1], c[2]); this.win.push(w);
-    return this.pos.length / 3 - 1;
-  }
-  tri(a: number, b: number, c: number): void { this.idx.push(a, b, c); }
-  get empty(): boolean { return this.idx.length === 0; }
-  toGeometry(withColor = true, withWin = false): THREE.BufferGeometry {
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
-    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nor, 3));
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
-    if (withColor) g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
-    if (withWin) g.setAttribute('aWin', new THREE.Float32BufferAttribute(this.win, 1));
-    g.setIndex(this.idx);
-    g.computeBoundingSphere();
-    return g;
-  }
-}
+import { GeoBuf } from './geo-buf';
+import { CityBuilder } from './city-builder';
+import { StreetBuilder } from './street-builder';
 
 export const WORLD: { current?: WorldBuilder } = {};
 const CHUNK = 800;
-const HOUSE_TINTS: number[][] = [[0.95, 0.94, 0.9], [0.96, 0.9, 0.78], [0.95, 0.82, 0.7], [0.78, 0.86, 0.93], [0.8, 0.9, 0.78], [0.97, 0.9, 0.64], [0.9, 0.72, 0.6], [0.88, 0.88, 0.88]];
-const ROOF_TINTS: number[][] = [[0.78, 0.78, 0.8], [0.8, 0.36, 0.3], [0.38, 0.55, 0.42], [0.55, 0.2, 0.18], [0.9, 0.9, 0.92], [0.4, 0.45, 0.6], [0.6, 0.5, 0.45]];
-const CONCRETE_TINTS: number[][] = [[0.85, 0.85, 0.85], [0.95, 0.93, 0.88], [0.75, 0.78, 0.8], [0.9, 0.82, 0.7]];
+const HOUSE_TINTS_UNUSED: number[][] = [[0.95, 0.94, 0.9], [0.96, 0.9, 0.78], [0.95, 0.82, 0.7], [0.78, 0.86, 0.93], [0.8, 0.9, 0.78], [0.97, 0.9, 0.64], [0.9, 0.72, 0.6], [0.88, 0.88, 0.88]];
+const ROOF_TINTS_UNUSED: number[][] = [[0.78, 0.78, 0.8], [0.8, 0.36, 0.3], [0.38, 0.55, 0.42], [0.55, 0.2, 0.18], [0.9, 0.9, 0.92], [0.4, 0.45, 0.6], [0.6, 0.5, 0.45]];
+const CONCRETE_TINTS_UNUSED: number[][] = [[0.85, 0.85, 0.85], [0.95, 0.93, 0.88], [0.75, 0.78, 0.8], [0.9, 0.82, 0.7]];
 
 /**
  * The real Manzini - Matsapha - Lobamba - Ezulwini - Mbabane corridor, built from OpenStreetMap
@@ -78,6 +60,66 @@ export class WorldBuilder {
   private cellRoads = new Map<number, number[]>();
   private chunks: { obj: THREE.Object3D; cx: number; cz: number; r: number }[] = [];
   private bGrid = new Map<number, number[]>();
+  public city!: CityBuilder;
+  public streets!: StreetBuilder;
+
+  /** Register a chunk object for distance streaming. */
+  public registerChunk(obj: THREE.Object3D, cx: number, cz: number, r: number, far: number): void {
+    obj.userData['far'] = far; this.chunks.push({ obj, cx, cz, r });
+  }
+  public addFootprint(cx: number, cz: number, r: number): void {
+    const gk = Math.floor(cx / 40) * 100003 + Math.floor(cz / 40); let l = this.bGrid.get(gk); if (!l) { l = []; this.bGrid.set(gk, l); } l.push(cx, cz, r);
+  }
+  public roadLift(c: number): number { return WorldBuilder.ROAD_LIFT[c]; }
+  public buildingsNear(x: number, z: number): number {
+    const cx = Math.floor(x / 40), cz = Math.floor(z / 40); let n = 0;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const l = this.bGrid.get((cx + a) * 100003 + (cz + b)); if (l) n += l.length / 3; }
+    return n;
+  }
+  public nearBuildingPublic(x: number, z: number): boolean { return this.nearBuilding(x, z); }
+  /** Nearest road segment (class <= maxC): unit tangent, way and distance. */
+  public nearestRoadSegment(x: number, z: number, maxC: number): { tx: number; tz: number; way: RoadWay; dist: number } | null {
+    const cx = Math.floor(x / 50), cz = Math.floor(z / 50); let best: { tx: number; tz: number; way: RoadWay; dist: number } | null = null;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+      const list = this.cellRoads.get((cx + a) * 100003 + (cz + b)); if (!list) continue;
+      for (let k = 0; k < list.length; k += 2) {
+        const way = this.roadWays[list[k]]; if (way.c > maxC) continue; const p = way.p, i = list[k + 1];
+        const ax = p[i] / 10, az = p[i + 1] / 10, dx = p[i + 2] / 10 - ax, dz = p[i + 3] / 10 - az, l2 = dx * dx + dz * dz || 1;
+        const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2)); const d = Math.hypot(x - ax - t * dx, z - az - t * dz);
+        if (!best || d < best.dist) { const l = Math.sqrt(l2); best = { tx: dx / l, tz: dz / l, way, dist: d }; }
+      }
+    }
+    return best;
+  }
+
+  /** Is (x,z) on a kerbed pavement beside a road? (visible geometry is built by StreetBuilder) */
+  public onPavement(x: number, z: number): boolean {
+    const cx = Math.floor(x / 50), cz = Math.floor(z / 50);
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+      const list = this.cellRoads.get((cx + a) * 100003 + (cz + b)); if (!list) continue;
+      for (let k = 0; k < list.length; k += 2) {
+        const way = this.roadWays[list[k]]; if (!way.sw) continue; const p = way.p, i = list[k + 1];
+        const ax = p[i] / 10, az = p[i + 1] / 10, dx = p[i + 2] / 10 - ax, dz = p[i + 3] / 10 - az, l2 = dx * dx + dz * dz || 1;
+        const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2)); const d = Math.hypot(x - ax - t * dx, z - az - t * dz);
+        if (d > way.w / 2 + 0.3 && d < way.w / 2 + 0.05 + way.sw && this.buildingsNear(x, z) >= 4) return true;
+      }
+    }
+    return false;
+  }
+
+  /** Distance from a point to the nearest drawable road centreline (class <= maxC). */
+  public distToRoad(x: number, z: number, maxC = 5): number {
+    const cx = Math.floor(x / 50), cz = Math.floor(z / 50); let best = 1e9;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+      const list = this.cellRoads.get((cx + a) * 100003 + (cz + b)); if (!list) continue;
+      for (let k = 0; k < list.length; k += 2) {
+        const w = this.roadWays[list[k]]; if (w.c > maxC) continue; const p = w.p, i = list[k + 1];
+        const ax = p[i] / 10, az = p[i + 1] / 10, dx = p[i + 2] / 10 - ax, dz = p[i + 3] / 10 - az, l2 = dx * dx + dz * dz || 1;
+        const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2)); best = Math.min(best, Math.hypot(x - ax - t * dx, z - az - t * dz));
+      }
+    }
+    return best;
+  }
 
   public onReady(cb: () => void): void { if (this.ready) cb(); else this.readyCbs.push(cb); }
 
@@ -169,19 +211,22 @@ export class WorldBuilder {
   /** Height of the drivable surface (terrain + road lift) at a point. */
   public groundHeightAt(x: number, z: number): number {
     const road = this.roadAt(x, z);
-    return this.calculateRawTerrainHeight(x, z) + (road ? WorldBuilder.ROAD_LIFT[road.c] : 0);
+    const base = this.calculateRawTerrainHeight(x, z);
+    if (road) return base + WorldBuilder.ROAD_LIFT[road.c];
+    return this.onPavement(x, z) ? base + WorldBuilder.ROAD_LIFT[4] + 0.15 : base;
   }
 
   public queryGround(x: number, z: number): GroundQueryResult {
     const road = this.roadAt(x, z);
-    const height = this.calculateRawTerrainHeight(x, z) + (road ? WorldBuilder.ROAD_LIFT[road.c] : 0);
+    const pave = !road && this.onPavement(x, z);
+    const height = this.calculateRawTerrainHeight(x, z) + (road ? WorldBuilder.ROAD_LIFT[road.c] : pave ? WorldBuilder.ROAD_LIFT[4] + 0.15 : 0);
     const e = 2.5;
     const hL = this.calculateRawTerrainHeight(x - e, z), hR = this.calculateRawTerrainHeight(x + e, z);
     const hD = this.calculateRawTerrainHeight(x, z - e), hU = this.calculateRawTerrainHeight(x, z + e);
     const normal = new THREE.Vector3(hL - hR, 2 * e, hD - hU).normalize();
-    const cls = road ? (road.u ? 7 : 11) : this.groundClassAt(x, z);
+    const cls = road ? (road.u ? 7 : 11) : pave ? 8 : this.groundClassAt(x, z);
     const names: Record<number, string> = { 1: 'Bushveld', 2: 'Grassland', 3: 'Pasture', 4: 'Farmland', 5: 'Forest floor', 6: 'Rock', 7: 'Dirt road', 8: 'Town ground', 9: 'Industrial ground', 10: 'Sand', 11: 'Asphalt', 12: 'Wetland' };
-    return { height, normal, surfaceClass: cls, surfaceName: road && road.n ? road.n : (names[cls] ?? 'Ground') };
+    return { height, normal, surfaceClass: cls, surfaceName: road && road.n ? road.n : pave ? 'Pavement' : (names[cls] ?? 'Ground') };
   }
 
   public districtAt(x: number, z: number): string {
@@ -239,7 +284,10 @@ export class WorldBuilder {
     this.buildTerrain(scene, groundTex);
     this.buildRoads(scene);
     this.buildWater(scene, roads.water);
-    this.buildBuildings(scene, blds.b);
+    this.city = new CityBuilder(this);
+    this.city.build(scene, blds.b, blds.signs ?? []);
+    this.streets = new StreetBuilder(this);
+    this.streets.build(scene);
     this.buildTrees(scene, tbuf);
     this.buildStreetFurniture(scene);
     this.buildLabels(scene);
@@ -306,7 +354,7 @@ export class WorldBuilder {
   }
 
   /** Real photographic PBR set tiled in world space (uv = metres / tileM). */
-  private pbr(name: string, tile: number, rough = 0.9): THREE.MeshStandardMaterial {
+  public pbr(name: string, tile: number, rough = 0.9): THREE.MeshStandardMaterial {
     const map = WorldBuilder.loadTiled(`assets/tex/${name}_diff.jpg`, 1, 1, true);
     const nrm = WorldBuilder.loadTiled(`assets/tex/${name}_nor_gl.jpg`, 1, 1, false);
     const m = new THREE.MeshStandardMaterial({ map, normalMap: nrm, roughness: rough, metalness: 0.02 });
@@ -494,111 +542,20 @@ export class WorldBuilder {
   }
 
   // ------------------------------------------------------------------ buildings
-  private static hash(a: number, b: number): number { const s = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453; return s - Math.floor(s); }
-
-  private buildBuildings(scene: THREE.Scene, list: [number, number, number[]][]): void {
-    const plaster = this.pbr('white_plaster_rough_01', 3, 0.9);
-    const concrete = this.pbr('concrete_wall_007', 3, 0.85);
-    const iron = this.pbr('corrugated_iron', 3, 0.55); iron.metalness = 0.45;
-    const clay = this.pbr('clay_roof_tiles_03', 3, 0.8);
-    for (const m of [plaster, concrete]) this.windowize(m);
-    for (const m of [plaster, concrete, iron, clay]) { m.vertexColors = true; for (const t of [m.map!, m.normalMap!]) { t.repeat.set(1, 1); } }
-    const mats: Record<string, THREE.Material> = { plaster, concrete, iron, clay };
-    const map = new Map<string, Map<string, GeoBuf>>();
-
-    for (const [ty, hdm, flat] of list) {
-      const n = flat.length / 2; if (n < 3) continue;
-      let pts: [number, number][] = []; let cx = 0, cz = 0;
-      for (let i = 0; i < n; i++) { pts.push([flat[i * 2] / 10, flat[i * 2 + 1] / 10]); cx += pts[i][0]; cz += pts[i][1]; }
-      cx /= n; cz /= n;
-      let A = 0; for (let i = 0; i < n; i++) { const a = pts[i], b = pts[(i + 1) % n]; A += a[0] * b[1] - b[0] * a[1]; }
-      if (A < 0) { pts = pts.reverse(); A = -A; }
-      const area = A / 2; let maxH = -1e9, minH = 1e9; const hs = pts.map((p) => { const h = this.calculateRawTerrainHeight(p[0], p[1]); maxH = Math.max(maxH, h); minH = Math.min(minH, h); return h; });
-      const h = hdm / 10; const top = maxH + h;
-      const seed = WorldBuilder.hash(cx, cz);
-      const concreteWall = ty === 2 || ty === 3 || ty === 6 || ty === 7;
-      const wallKey = concreteWall ? 'concrete' : 'plaster';
-      const tint = concreteWall ? CONCRETE_TINTS[Math.floor(seed * CONCRETE_TINTS.length) % CONCRETE_TINTS.length] : HOUSE_TINTS[Math.floor(seed * HOUSE_TINTS.length) % HOUSE_TINTS.length];
-      const winV = ty === 3 || ty === 6 || ty === 7 ? 0 : 1;
-      const wb = this.chunkOf(map, cx, cz, wallKey);
-      let u = 0;
-      for (let i = 0; i < n; i++) {
-        const a = pts[i], b = pts[(i + 1) % n]; const dx = b[0] - a[0], dz = b[1] - a[1]; const len = Math.hypot(dx, dz); if (len < 0.2) continue;
-        const nx = dz / len, nz = -dx / len;
-        const ya = hs[i] - 0.5, yb = hs[(i + 1) % n] - 0.5;
-        const u0 = u / 3, u1 = (u + len) / 3; u += len;
-        const v0a = (ya - hs[i] + 0.5 + (top - ya)) / 3.2, v0b = (yb - hs[(i + 1) % n] + 0.5 + (top - yb)) / 3.2;
-        const i0 = wb.vert(a[0], ya, a[1], nx, 0, nz, u0, 0, tint, winV);
-        const i1 = wb.vert(b[0], yb, b[1], nx, 0, nz, u1, 0, tint, winV);
-        const i2 = wb.vert(b[0], top, b[1], nx, 0, nz, u1, v0b, tint, winV);
-        const i3 = wb.vert(a[0], top, a[1], nx, 0, nz, u0, v0a, tint, winV);
-        wb.tri(i0, i2, i1); wb.tri(i0, i3, i2);
-      }
-      // solid footprint for the physics (skip open canopies and outlines that overlap a drawn road)
-      if (ty !== 7 && !this.overlapsRoad(pts, cx, cz)) this.collision.addPolygon(pts.flatMap((p) => [p[0], p[1]]));
-      // roof
-      const pitched = (ty === 0 || ty === 1) && area < 230 && n <= 8;
-      const rt = ROOF_TINTS[Math.floor(WorldBuilder.hash(cz, cx) * ROOF_TINTS.length) % ROOF_TINTS.length];
-      const useClay = pitched && WorldBuilder.hash(cx * 3, cz * 7) < 0.18;
-      const rb = this.chunkOf(map, cx, cz, useClay ? 'clay' : 'iron');
-      if (pitched) {
-        let rad = 0; pts.forEach((p) => { rad += Math.hypot(p[0] - cx, p[1] - cz); }); rad /= n;
-        const k = 1 + 0.45 / Math.max(rad, 2), ridge = Math.min(2.2, 0.55 * rad + 0.4);
-        const eaves = pts.map((p) => [cx + (p[0] - cx) * k, cz + (p[1] - cz) * k]);
-        const apex = rb.vert(cx, top + ridge, cz, 0, 1, 0, cx / 3, cz / 3, rt);
-        for (let i = 0; i < n; i++) {
-          const a = eaves[i], b = eaves[(i + 1) % n];
-          const e1 = [b[0] - a[0], 0, b[1] - a[1]], e2 = [cx - a[0], ridge, cz - a[1]];
-          let nx = e1[1] * e2[2] - e1[2] * e2[1], ny = e1[2] * e2[0] - e1[0] * e2[2], nz = e1[0] * e2[1] - e1[1] * e2[0];
-          const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl; if (ny < 0) { nx = -nx; ny = -ny; nz = -nz; }
-          const ia = rb.vert(a[0], top - 0.15, a[1], nx, ny, nz, a[0] / 3, a[1] / 3, rt);
-          const ib = rb.vert(b[0], top - 0.15, b[1], nx, ny, nz, b[0] / 3, b[1] / 3, rt);
-          const ap = rb.vert(cx, top + ridge, cz, nx, ny, nz, cx / 3, cz / 3, rt);
-          rb.tri(ia, ap, ib);
-        }
-        void apex;
-      } else {
-        const c2 = pts.map((p) => new THREE.Vector2(p[0], p[1]));
-        const tris = THREE.ShapeUtils.triangulateShape(c2, []);
-        const base = rb.pos.length / 3;
-        pts.forEach((p) => rb.vert(p[0], top, p[1], 0, 1, 0, p[0] / 3, p[1] / 3, rt));
-        for (const t of tris) { const [a, b, d] = t; const cr = (pts[b][0] - pts[a][0]) * (pts[d][1] - pts[a][1]) - (pts[b][1] - pts[a][1]) * (pts[d][0] - pts[a][0]); if (cr < 0) rb.tri(base + a, base + b, base + d); else rb.tri(base + a, base + d, base + b); }
-      }
-      // spatial hash for tree/lamp rejection
-      const gk = Math.floor(cx / 40) * 100003 + Math.floor(cz / 40); let l = this.bGrid.get(gk); if (!l) { l = []; this.bGrid.set(gk, l); } l.push(cx, cz, Math.sqrt(area) * 0.6 + 1.5);
-      void minH;
-    }
-    this.emit(map, mats, true, true, 1700, true);
-  }
-
-  /** Window grid + glazing, drawn procedurally over the real plaster/concrete textures. */
-  private windowize(m: THREE.MeshStandardMaterial): void {
-    m.onBeforeCompile = (sh) => {
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aWin; varying float vWin; varying vec2 vWUv;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWin = aWin; vWUv = uv;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vWin; varying vec2 vWUv;')
-        .replace('#include <map_fragment>', `#include <map_fragment>
-          float bay = fract(vWUv.x), flr = fract(vWUv.y);
-          float winM = step(0.3, bay) * step(bay, 0.7) * step(0.34, flr) * step(flr, 0.8) * vWin * step(0.3, vWUv.y);
-          float doorM = step(0.36, bay) * step(bay, 0.64) * step(flr, 0.7) * step(vWUv.y, 0.7) * vWin * step(0.75, fract(floor(vWUv.x) * 0.618));
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.04, 0.07, 0.1), winM * 0.92);
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.12, 0.08, 0.06), doorM * 0.9);`)
-        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-          roughnessFactor = mix(roughnessFactor, 0.06, winM * 0.9);`);
-    };
-  }
+  public static hash(a: number, b: number): number { const s = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453; return s - Math.floor(s); }
 
   // ------------------------------------------------------------------ trees
   private buildTrees(scene: THREE.Scene, buf: ArrayBuffer): void {
     const dv = new DataView(buf); const n = buf.byteLength / 9;
     const trunk = new THREE.CylinderGeometry(0.2, 0.32, 3.2, 5); trunk.translate(0, 1.6, 0);
-    const mkCanopy = (r: number, y: number) => { const g = new THREE.IcosahedronGeometry(r, 1); g.translate(0, y, 0); return g; };
+    const mkCanopy = (r: number, y: number) => { const g = new THREE.IcosahedronGeometry(r, 0); g.translate(0, y, 0); return g; };
     const paint = (g: THREE.BufferGeometry, c: THREE.Color) => { const a = new Float32Array(g.attributes['position'].count * 3); for (let i = 0; i < a.length; i += 3) { a[i] = c.r; a[i + 1] = c.g; a[i + 2] = c.b; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g.toNonIndexed(); };
     const geo = mergeGeometries([paint(trunk, new THREE.Color(0x4a3524)), paint(mkCanopy(2.4, 4.4), new THREE.Color(0xffffff)), paint(mkCanopy(1.7, 5.8), new THREE.Color(0xffffff))].map((g) => { g.deleteAttribute('uv'); return g; }))!;
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, flatShading: true });
     const byChunk = new Map<string, { x: number; z: number; c: number }[]>();
-    for (let i = 0; i < n; i++) {
-      const x = dv.getFloat32(i * 9, true), z = dv.getFloat32(i * 9 + 4, true), c = dv.getUint8(i * 9 + 8);
+    const all: { x: number; z: number; c: number }[] = this.streets.streetTrees.slice();
+    for (let i = 0; i < n; i++) all.push({ x: dv.getFloat32(i * 9, true), z: dv.getFloat32(i * 9 + 4, true), c: dv.getUint8(i * 9 + 8) });
+    for (const { x, z, c } of all) {
       if (this.roadAt(x, z)) continue;
       if (this.nearBuilding(x, z)) continue;
       this.collision.addCircle(x, z, 0.38);
@@ -614,7 +571,7 @@ export class WorldBuilder {
         im.setMatrixAt(i, m4);
         const r = WorldBuilder.hash(t.x * 2, t.z * 3);
         if (t.c === 5) col.setRGB(0.1 + r * 0.06, 0.25 + r * 0.14, 0.1 + r * 0.05);
-        else if (t.c === 8 && r > 0.82) col.setRGB(0.55, 0.38, 0.75); // jacaranda blossom
+        else if (t.c === 10 || (t.c === 8 && r > 0.82)) col.setRGB(0.5 + r * 0.1, 0.34, 0.74); // jacaranda blossom
         else col.setRGB(0.22 + r * 0.12, 0.42 + r * 0.14, 0.18 + r * 0.06);
         im.setColorAt(i, col);
       });
@@ -625,7 +582,7 @@ export class WorldBuilder {
     });
   }
 
-  private overlapsRoad(pts: [number, number][], cx: number, cz: number): boolean {
+  public overlapsRoad(pts: [number, number][], cx: number, cz: number): boolean {
     if (this.roadAt(cx, cz)) return true;
     for (let i = 0; i < pts.length; i++) {
       const a = pts[i], b = pts[(i + 1) % pts.length];
@@ -672,16 +629,15 @@ export class WorldBuilder {
     }
     this.lampSpots = spots.slice(0, 2500);
     for (const l of this.lampSpots) this.collision.addCircle(l.x, l.z, 0.28);
-    const poles = new THREE.InstancedMesh(pole, poleM, this.lampSpots.length), heads = new THREE.InstancedMesh(headG, headM, this.lampSpots.length);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
-    this.lampSpots.forEach((s, i) => {
-      // arm points toward the road: rot is set so +x of the lamp faces the carriageway
-      q.setFromAxisAngle(up, s.rot);
-      m4.compose(new THREE.Vector3(s.x, this.calculateRawTerrainHeight(s.x, s.z), s.z), q, new THREE.Vector3(1, 1, 1));
-      poles.setMatrixAt(i, m4); heads.setMatrixAt(i, m4);
+    const byChunk = new Map<string, { x: number; z: number; rot: number }[]>();
+    for (const l of this.lampSpots) { const k = `${Math.floor(l.x / CHUNK)},${Math.floor(l.z / CHUNK)}`; let a = byChunk.get(k); if (!a) { a = []; byChunk.set(k, a); } a.push(l); }
+    byChunk.forEach((list, key) => {
+      const poles = new THREE.InstancedMesh(pole, poleM, list.length), heads = new THREE.InstancedMesh(headG, headM, list.length);
+      list.forEach((s, i) => { q.setFromAxisAngle(up, s.rot); m4.compose(new THREE.Vector3(s.x, this.calculateRawTerrainHeight(s.x, s.z) + (this.onPavement(s.x, s.z) ? 0.3 : 0), s.z), q, new THREE.Vector3(1, 1, 1)); poles.setMatrixAt(i, m4); heads.setMatrixAt(i, m4); });
+      poles.computeBoundingSphere(); heads.computeBoundingSphere(); const [ix, iz] = key.split(',').map(Number);
+      for (const o of [poles, heads]) { this.registerChunk(o, (ix + 0.5) * CHUNK, (iz + 0.5) * CHUNK, CHUNK * 0.75, 900); this.roadInfrastructureGroup.add(o); }
     });
-    poles.castShadow = true; poles.frustumCulled = false; heads.frustumCulled = false;
-    this.roadInfrastructureGroup.add(poles, heads);
   }
 
   // ------------------------------------------------------------------ labels

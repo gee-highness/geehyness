@@ -101,6 +101,7 @@ export class SceneManager {
     pmremGenerator.dispose();
 
     this.container.appendChild(this.renderer.domElement);
+    (window as unknown as { __shesha?: unknown }).__shesha = { info: () => ({ ...this.renderer.info.render, geometries: this.renderer.info.memory.geometries, textures: this.renderer.info.memory.textures, pr: this.pixelRatio }) };
   }
 
   private initLighting(): void {
@@ -163,6 +164,7 @@ export class SceneManager {
     // Dim HDRI sky & IBL as the sun sinks below the horizon
     const daylight = THREE.MathUtils.clamp(0.06 + env.sunPosition[1] / 900, 0.06, 1.0);
     this.scene.backgroundIntensity = daylight;
+    if (this.worldBuilder.city) this.worldBuilder.city.night.value = THREE.MathUtils.clamp(1 - (daylight - 0.06) / 0.3, 0, 1);
     this.scene.environmentIntensity = daylight;
     if (this.scene.fog) {
       (this.scene.fog as THREE.FogExp2).color = skyCol.clone().lerp(new THREE.Color(0xdbe5e8), 0.8).multiplyScalar(Math.max(0.05, daylight));
@@ -184,6 +186,11 @@ export class SceneManager {
 
     this.worldBuilder.update(vehicle.position.x, vehicle.position.z);
     this.roadTraffic?.update(dt, vehicle.position.x, vehicle.position.z);
+    const clouds = this.worldBuilder.streets?.clouds;
+    if (clouds) {
+      clouds.position.set(vehicle.position.x, 0, vehicle.position.z);
+      for (const c of clouds.children) { c.position.x += dt * 6; if (c.position.x > 4500) c.position.x -= 9000; }
+    }
 
     // 1. Position and orientation of vehicle body
     this.vehicleMeshGroup.position.copy(vehicle.position);

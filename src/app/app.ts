@@ -157,6 +157,13 @@ export class App implements AfterViewInit, OnDestroy {
       this.trafficSimulator = new TrafficSimulator(this.sceneManager.scene);
 
       // Drop the car on the real MR3 (Ngwane St, eastbound) once the world has streamed in
+      (window as unknown as { __shesha: Record<string, unknown> }).__shesha = {
+        ...((window as unknown as { __shesha?: Record<string, unknown> }).__shesha ?? {}),
+        tp: (x: number, z: number, yaw: number) => {
+          const wb = this.sceneManager.worldBuilder; this.vehicle.position.set(x, wb.groundHeightAt(x, z) + 1, z);
+          this.vehicle.velocity.set(0, 0, 0); this.vehicle.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+        },
+      };
       this.sceneManager.worldBuilder.onReady(() => {
         const sp = this.sceneManager.worldBuilder.meta.spawn;
         this.vehicle.position.set(sp.x, this.sceneManager.worldBuilder.calculateRawTerrainHeight(sp.x, sp.z) + 0.9, sp.z);
