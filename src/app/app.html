@@ -9,6 +9,7 @@
       (openPhotoMode)="togglePhotoMode()"
       (cycleCamera)="onCycleCamera()"
       (openPipeline)="showPipeline.set(true)"
+      (openCars)="showCars.set(true)"
     ></app-hud>
   }
 
@@ -52,6 +53,10 @@
       (exitPhotoMode)="togglePhotoMode()"
       (capturePhoto)="captureHighResPhoto()"
     ></app-photo-mode>
+  }
+
+  @if (showCars()) {
+    <app-car-select [current]="currentCar().id" (choose)="onChooseCar($event)" (closeModal)="showCars.set(false)"></app-car-select>
   }
 
   @if (!started()) {

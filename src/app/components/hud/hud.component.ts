@@ -126,6 +126,7 @@ export class HudComponent {
 
   // Outputs for opening modals / cycling modes
   openMap = output<void>();
+  openCars = output<void>();
   openTuning = output<void>();
   toggleTelemetry = output<void>();
   openPhotoMode = output<void>();
@@ -138,6 +139,7 @@ export class HudComponent {
   @ViewChild('gaugeCanvas', { static: false }) gaugeCanvasRef!: ElementRef<HTMLCanvasElement>;
 
   readonly actions = [
+    { id: 'cars', label: 'Choose car', key: 'V', icon: 'directions_car', color: 'text-rose-300' },
     { id: 'map', label: 'Map', key: 'M', icon: 'map', color: 'text-amber-300' },
     { id: 'garage', label: 'Garage', key: 'G', icon: 'tune', color: 'text-cyan-300' },
     { id: 'telemetry', label: 'Telemetry', key: 'T', icon: 'query_stats', color: 'text-emerald-300' },
@@ -159,6 +161,7 @@ export class HudComponent {
 
   public fire(id: string): void {
     switch (id) {
+      case 'cars': this.openCars.emit(); break;
       case 'map': this.openMap.emit(); break;
       case 'garage': this.openTuning.emit(); break;
       case 'telemetry': this.toggleTelemetry.emit(); break;

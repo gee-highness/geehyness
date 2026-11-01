@@ -3,6 +3,8 @@ import { CameraRig } from './camera-rig';
 import { WorldBuilder } from './world-builder';
 import { ParticleSystem } from './particle-system';
 import { AssetLibrary } from './asset-library';
+import { RoadTraffic } from './road-traffic';
+import { CAR_CATALOG, CarDef } from '../cars';
 import { CarFactory } from './car-factory';
 import { RaycastVehicle } from '../physics/raycast-vehicle';
 import { VehicleArchetypeConfig, VisualCustomization } from '../../models/vehicle.types';
@@ -22,6 +24,9 @@ export class SceneManager {
   private modelWheels: THREE.Object3D[] = [];
   private modelTail: THREE.MeshStandardMaterial | null = null;
   private modelSpin = 0;
+  private modelSpinSign = 1;
+  private modelRadius = 0.33;
+  private roadTraffic?: RoadTraffic;
   private vehicleParts!: ReturnType<typeof CarFactory.createVehicleMesh>;
 
   // Lighting & Sky
@@ -42,7 +47,7 @@ export class SceneManager {
     this.worldBuilder.buildWorld(this.scene);
 
     this.particleSystem = new ParticleSystem(this.scene);
-    AssetLibrary.dressWorld(this.scene, this.worldBuilder);
+    this.worldBuilder.onReady(() => { this.roadTraffic = new RoadTraffic(this.scene, this.worldBuilder); });
   }
 
   private detectSoftwareGl(): void {
@@ -120,7 +125,7 @@ export class SceneManager {
     this.scene.fog = new THREE.FogExp2(0xb9d3e6, 0.00035);
   }
 
-  public spawnVehicle(config: VehicleArchetypeConfig, visuals: VisualCustomization): void {
+  public spawnVehicle(config: VehicleArchetypeConfig, visuals: VisualCustomization, def: CarDef = CAR_CATALOG[0]): void {
     if (this.vehicleMeshGroup) {
       this.scene.remove(this.vehicleMeshGroup);
     }
@@ -130,8 +135,8 @@ export class SceneManager {
     this.modelWheels = [];
     this.modelTail = null;
     const parts = this.vehicleParts;
-    AssetLibrary.attachPlayerCar(this.vehicleMeshGroup, config.wheelBaseM, visuals.bodyColor).then((r) => {
-      if (r && parts === this.vehicleParts) { this.modelWheels = r.wheels; this.modelTail = r.tail; }
+    AssetLibrary.attachPlayerCar(this.vehicleMeshGroup, def, config.wheelBaseM, visuals.bodyColor).then((r) => {
+      if (r && parts === this.vehicleParts) { this.modelWheels = r.wheels; this.modelTail = r.tail; this.modelSpinSign = r.spinSign; this.modelRadius = r.radius; }
     });
   }
 
@@ -165,6 +170,7 @@ export class SceneManager {
     if (!this.vehicleMeshGroup || !this.vehicleParts) return;
 
     this.worldBuilder.update(vehicle.position.x, vehicle.position.z);
+    this.roadTraffic?.update(dt, vehicle.position.x, vehicle.position.z);
 
     // 1. Position and orientation of vehicle body
     this.vehicleMeshGroup.position.copy(vehicle.position);
@@ -219,7 +225,7 @@ export class SceneManager {
     // 2b. Real Ferrari wheels: steer (front) + roll
     if (this.modelWheels.length === 4) {
       const fwd = vehicle.velocity.dot(new THREE.Vector3(0, 0, 1).applyQuaternion(vehicle.quaternion));
-      this.modelSpin -= (fwd / 0.358) * dt;
+      this.modelSpin += this.modelSpinSign * (fwd / this.modelRadius) * dt;
       this.modelWheels.forEach((w, i) => {
         w.rotation.x = this.modelSpin;
         w.rotation.y = i < 2 ? -vehicle.steerInput * THREE.MathUtils.degToRad(30) : 0;

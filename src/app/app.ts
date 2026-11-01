@@ -31,6 +31,8 @@ import { RaycastVehicle } from './game/physics/raycast-vehicle';
 import { TrafficSimulator } from './services/traffic.service';
 
 // Components
+import { CarSelectComponent } from './components/car-select/car-select.component';
+import { CAR_CATALOG, CarDef } from './game/cars';
 import { IntroComponent } from './components/intro/intro.component';
 import { HudComponent } from './components/hud/hud.component';
 import { TelemetryComponent } from './components/telemetry/telemetry.component';
@@ -47,6 +49,7 @@ import { TouchControlsComponent } from './components/touch-controls/touch-contro
     MatIconModule,
     HudComponent,
     IntroComponent,
+    CarSelectComponent,
     TelemetryComponent,
     TuningComponent,
     PhotoModeComponent,
@@ -82,6 +85,21 @@ export class App implements AfterViewInit, OnDestroy {
   readonly showPipeline = signal<boolean>(false);
   readonly isPhotoMode = signal<boolean>(false);
   readonly started = signal<boolean>(false);
+  readonly showCars = signal<boolean>(false);
+  readonly currentCar = signal<CarDef>(CAR_CATALOG[0]);
+
+  public onChooseCar(def: CarDef): void {
+    this.currentCar.set(def);
+    this.tuningService.setArchetype(def.archetype);
+    const config = this.tuningService.getActiveConfig();
+    const old = this.vehicle;
+    this.vehicle = new RaycastVehicle(config, this.tuningService.tuning());
+    this.vehicle.position.copy(old.position); this.vehicle.position.y += 0.6;
+    const yaw = new THREE.Euler().setFromQuaternion(old.quaternion, 'YXZ').y;
+    this.vehicle.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+    this.sceneManager.spawnVehicle(config, this.tuningService.visuals(), def);
+    this.showCars.set(false);
+  }
   public begin(): void { this.audioService.unlockAudio(); this.started.set(true); }
   readonly showTouchControls = signal<boolean>(false);
 
@@ -133,7 +151,7 @@ export class App implements AfterViewInit, OnDestroy {
       this.vehicle = new RaycastVehicle(config, tuning);
 
       // Spawn 3D Vehicle mesh in Three.js
-      this.sceneManager.spawnVehicle(config, this.tuningService.visuals());
+      this.sceneManager.spawnVehicle(config, this.tuningService.visuals(), this.currentCar());
 
       // Create Traffic Simulator (paused until it follows the real OSM road graph)
       this.trafficSimulator = new TrafficSimulator(this.sceneManager.scene);
@@ -333,6 +351,7 @@ export class App implements AfterViewInit, OnDestroy {
     this.audioService.unlockAudio();
     if (!this.started()) { if (event.code === 'Enter') this.begin(); return; }
 
+    if (event.code === 'KeyV') { this.showCars.update((v) => !v); return; }
     switch (event.code) {
       case 'ArrowLeft':
       case 'KeyA':
