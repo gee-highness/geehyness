@@ -33,6 +33,10 @@ export class GeoBuf {
     if (withWin) g.setAttribute('aWin', new THREE.BufferAttribute(this.w.slice(0, n), 1));
     g.setIndex(new THREE.BufferAttribute(this.ix.slice(0, this.ic), 1));
     g.computeBoundingSphere();
+    // static world geometry: once the GPU has it, drop the JS copy (roughly halves resident memory)
+    const free = function (this: THREE.BufferAttribute): void { (this as unknown as { array: unknown }).array = null; };
+    for (const a of Object.values(g.attributes)) (a as THREE.BufferAttribute).onUpload(free);
+    g.index?.onUpload(free);
     return g;
   }
 }
