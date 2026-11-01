@@ -209,6 +209,10 @@ export class WorldBuilder {
 
   /** Streams chunks in/out by distance so mobile GPUs stay happy. */
   public update(px: number, pz: number): void {
+    for (const t of this.terrainTiles) {
+      const d = Math.hypot(t.cx - px, t.cz - pz);
+      t.lod0.visible = d < 2400; t.lod1.visible = d >= 2400 && d < 5200;
+    }
     for (const c of this.chunks) {
       const d = Math.hypot(c.cx - px, c.cz - pz) - c.r;
       c.obj.visible = d < (c.obj.userData['far'] ?? 3000);
@@ -312,23 +316,7 @@ export class WorldBuilder {
 
   // ------------------------------------------------------------------ terrain
   private buildTerrain(scene: THREE.Scene, groundTex: THREE.Texture): void {
-    const [x0, , z0] = this.meta.bounds; const S = this.TS;
-    const nx = this.tnx, nz = this.tnz;
-    const pos = new Float32Array(nx * nz * 3), uv = new Float32Array(nx * nz * 2);
-    const W = this.meta.gw * this.meta.px, Hh = this.meta.gh * this.meta.px;
-    for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
-      const x = x0 + i * S, z = z0 + j * S, k = j * nx + i;
-      pos[k * 3] = x; pos[k * 3 + 1] = this.tH[k]; pos[k * 3 + 2] = z;
-      uv[k * 2] = (x - x0) / W; uv[k * 2 + 1] = 1 - (z - z0) / Hh;
-    }
-    const idx = new Uint32Array((nx - 1) * (nz - 1) * 6); let n = 0;
-    for (let j = 0; j < nz - 1; j++) for (let i = 0; i < nx - 1; i++) {
-      const a = j * nx + i, b = a + 1, c = a + nx, d = c + 1;
-      idx[n++] = a; idx[n++] = c; idx[n++] = b; idx[n++] = b; idx[n++] = c; idx[n++] = d;
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-    g.setIndex(new THREE.BufferAttribute(idx, 1)); g.computeVertexNormals();
+    const detail0 = 0; void detail0;
     const detail = WorldBuilder.loadTiled('assets/tex/leafy_grass_diff.jpg', 1, 1, true);
     const rock = WorldBuilder.loadTiled('assets/tex/red_laterite_soil_stones_diff.jpg', 1, 1, true);
     const mat = new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95, metalness: 0 });
@@ -344,9 +332,59 @@ export class WorldBuilder {
           float lum = mix(l1, lr, redness);
           diffuseColor.rgb *= (0.45 + lum * 1.35) * (0.7 + l2 * 0.8);`);
     };
-    this.terrainMesh = new THREE.Mesh(g, mat);
-    this.terrainMesh.name = 'RealTerrain'; this.terrainMesh.receiveShadow = true; this.terrainMesh.frustumCulled = false;
-    scene.add(this.terrainMesh);
+    this.buildTerrainTiles(scene, mat);
+  }
+
+  public terrainTiles: { lod0: THREE.Mesh; lod1: THREE.Mesh; cx: number; cz: number }[] = [];
+
+  /** 1280 m tiles, each with a fine (80 m) and a coarse (320 m) mesh; skirts hide LOD seams. */
+  private buildTerrainTiles(scene: THREE.Scene, mat: THREE.Material): void {
+    const [x0, , z0] = this.meta.bounds, S = this.TS, nx = this.tnx, nz = this.tnz, TC = 16;
+    const W = this.meta.gw * this.meta.px, Hh = this.meta.gh * this.meta.px;
+    const H = (i: number, j: number) => this.tH[Math.max(0, Math.min(nz - 1, j)) * nx + Math.max(0, Math.min(nx - 1, i))];
+    const make = (i0: number, j0: number, step: number): THREE.Mesh => {
+      const iMax = Math.min(i0 + TC, nx - 1), jMax = Math.min(j0 + TC, nz - 1);
+      const cols: number[] = [], rows: number[] = [];
+      for (let i = i0; i < iMax; i += step) cols.push(i); cols.push(iMax);
+      for (let j = j0; j < jMax; j += step) rows.push(j); rows.push(jMax);
+      const cw = cols.length, rw = rows.length, count = cw * rw;
+      const skirt = 2 * (cw + rw);
+      const pos = new Float32Array((count + skirt) * 3), nor = new Float32Array((count + skirt) * 3), uv = new Float32Array((count + skirt) * 2);
+      const put = (k: number, i: number, j: number, drop: number) => {
+        const x = x0 + i * S, z = z0 + j * S, hL = H(i - step, j), hR = H(i + step, j), hU = H(i, j - step), hD = H(i, j + step);
+        const nxv = hL - hR, nzv = hU - hD, ny = 2 * S * step, il = 1 / Math.hypot(nxv, ny, nzv);
+        pos[k * 3] = x; pos[k * 3 + 1] = H(i, j) - drop; pos[k * 3 + 2] = z;
+        nor[k * 3] = nxv * il; nor[k * 3 + 1] = ny * il; nor[k * 3 + 2] = nzv * il;
+        uv[k * 2] = (x - x0) / W; uv[k * 2 + 1] = 1 - (z - z0) / Hh;
+      };
+      for (let r = 0; r < rw; r++) for (let c = 0; c < cw; c++) put(r * cw + c, cols[c], rows[r], 0);
+      const idx: number[] = [];
+      for (let r = 0; r < rw - 1; r++) for (let c = 0; c < cw - 1; c++) {
+        const a = r * cw + c, b = a + 1, cc = a + cw, d = cc + 1; idx.push(a, cc, b, b, cc, d);
+      }
+      // skirts (vertical flaps dropped 14 m) around the four edges
+      let k = count; const drop = 14;
+      const edge = (pts: [number, number, number][], flip: boolean) => {
+        const base = k;
+        for (const [i, j] of pts) { put(k, i, j, drop); k++; }
+        for (let q = 0; q < pts.length - 1; q++) {
+          const a = pts[q][2], b = pts[q + 1][2], sa = base + q, sb = base + q + 1;
+          if (flip) idx.push(a, b, sa, b, sb, sa); else idx.push(a, sa, b, b, sa, sb);
+        }
+      };
+      edge(cols.map((i, c) => [i, rows[0], c] as [number, number, number]), false);
+      edge(cols.map((i, c) => [i, rows[rw - 1], (rw - 1) * cw + c] as [number, number, number]), true);
+      edge(rows.map((j, r) => [cols[0], j, r * cw] as [number, number, number]), true);
+      edge(rows.map((j, r) => [cols[cw - 1], j, r * cw + cw - 1] as [number, number, number]), false);
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      g.setIndex(new THREE.BufferAttribute(new Uint32Array(idx), 1)); g.computeBoundingSphere();
+      const m = new THREE.Mesh(g, mat); m.receiveShadow = true; m.visible = false; scene.add(m); return m;
+    };
+    for (let j0 = 0; j0 < nz - 1; j0 += TC) for (let i0 = 0; i0 < nx - 1; i0 += TC) {
+      this.terrainTiles.push({ lod0: make(i0, j0, 1), lod1: make(i0, j0, 4), cx: x0 + (i0 + TC / 2) * S, cz: z0 + (j0 + TC / 2) * S });
+    }
+    this.terrainMesh = this.terrainTiles[0].lod0;
   }
 
   // ------------------------------------------------------------------ roads
@@ -430,7 +468,7 @@ export class WorldBuilder {
         cum += seg;
       }
     }
-    this.emit(map, mats, false, false, 4500, false, (m) => { if (m.material === asph) this.roadMeshes.push(m); });
+    this.emit(map, mats, false, false, 2600, false, (m) => { if (m.material === asph) this.roadMeshes.push(m); });
     // Planar UV: uv = metres, textures repeat 1/tile
     for (const m of [asph, dirt]) for (const t of [m.map!, m.normalMap!]) t.repeat.set(1 / m.userData['tile'], 1 / m.userData['tile']);
     for (const k of ['mark1', 'mark2']) { const t = (mats[k] as THREE.MeshStandardMaterial).map!; t.repeat.set(1, 1); }
@@ -530,7 +568,7 @@ export class WorldBuilder {
       const gk = Math.floor(cx / 40) * 100003 + Math.floor(cz / 40); let l = this.bGrid.get(gk); if (!l) { l = []; this.bGrid.set(gk, l); } l.push(cx, cz, Math.sqrt(area) * 0.6 + 1.5);
       void minH;
     }
-    this.emit(map, mats, true, true, 2600, true);
+    this.emit(map, mats, true, true, 1700, true);
   }
 
   /** Window grid + glazing, drawn procedurally over the real plaster/concrete textures. */
@@ -580,7 +618,7 @@ export class WorldBuilder {
         else col.setRGB(0.22 + r * 0.12, 0.42 + r * 0.14, 0.18 + r * 0.06);
         im.setColorAt(i, col);
       });
-      im.userData['far'] = 1800; im.computeBoundingSphere();
+      im.userData['far'] = 1100; im.computeBoundingSphere();
       const [cxI, czI] = key.split(',').map(Number);
       this.chunks.push({ obj: im, cx: (cxI + 0.5) * CHUNK, cz: (czI + 0.5) * CHUNK, r: CHUNK * 0.75 });
       this.foliageGroup.add(im);
