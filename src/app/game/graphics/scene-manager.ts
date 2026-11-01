@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Weather } from './weather';
 import { Pedestrians } from './pedestrians';
+import { TrafficSignals } from './traffic-signals';
 import { QualityTier } from '../../services/settings.service';
 import { CameraRig } from './camera-rig';
 import { WorldBuilder } from './world-builder';
@@ -33,6 +34,7 @@ export class SceneManager {
   private modelRadius = 0.33;
   private roadTraffic?: RoadTraffic;
   private pedestrians?: Pedestrians;
+  private signals?: TrafficSignals;
   private pedFraction = 1;
   private vehicleParts!: ReturnType<typeof CarFactory.createVehicleMesh>;
 
@@ -66,7 +68,7 @@ export class SceneManager {
 
     this.particleSystem = new ParticleSystem(this.scene);
     this.weather = new Weather(this.scene);
-    this.worldBuilder.onReady(() => { this.roadTraffic = new RoadTraffic(this.scene, this.worldBuilder); this.pedestrians = new Pedestrians(this.scene, this.worldBuilder); this.pedestrians.setCount(this.pedFraction); });
+    this.worldBuilder.onReady(() => { this.signals = new TrafficSignals(this.scene, this.worldBuilder); this.roadTraffic = new RoadTraffic(this.scene, this.worldBuilder); this.roadTraffic.signals = this.signals; this.pedestrians = new Pedestrians(this.scene, this.worldBuilder); this.pedestrians.setCount(this.pedFraction); });
   }
 
   private detectSoftwareGl(): void {
@@ -236,6 +238,8 @@ export class SceneManager {
     if (!this.vehicleMeshGroup || !this.vehicleParts) return;
 
     this.worldBuilder.update(vehicle.position.x, vehicle.position.z);
+    (window as unknown as { __shesha?: Record<string, unknown> }).__shesha!['sig'] = this.signals;
+    this.signals?.update(dt);
     this.roadTraffic?.update(dt, vehicle.position.x, vehicle.position.z);
     this.pedestrians?.update(dt, vehicle.position.x, vehicle.position.z, vehicle.velocity.x, vehicle.velocity.z);
     (window as unknown as { __shesha?: Record<string, unknown> }).__shesha!['peds'] = () => this.pedestrians?.debug();

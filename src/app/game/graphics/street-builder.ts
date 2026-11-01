@@ -227,8 +227,7 @@ export class StreetBuilder {
       const b = this.buf(px, pz, 'props'); const yy = w.calculateRawTerrainHeight(px, pz) + (way.sw ? StreetBuilder.PAVE_LIFT : 0) + w.roadLift(way.c);
       const rot = Math.atan2(tz, tx);
       this.box(b, px, yy, pz, 0.16, 4.6, 0.16, rot, [0.25, 0.26, 0.28]); this.box(b, px, yy + 3.5, pz, 0.45, 1.15, 0.35, rot, [0.08, 0.08, 0.09]);
-      const state = Math.floor(rnd(sx * 0.7 + sz) * 3); const cols = [[1, 0.1, 0.08], [1, 0.7, 0.1], [0.1, 0.9, 0.3]];
-      for (let k = 0; k < 3; k++) { const lit = k === state; const c = lit ? cols[k] : cols[k].map((v) => v * 0.18); this.box(b, px + nx * 0.19, yy + 4.35 - k * 0.37, pz + nz * 0.19, 0.04, 0.24, 0.24, rot, c); }
+      // lamps are animated by TrafficSignals (instanced), the pole and housing stay static
       w.collision.addCircle(px, pz, 0.2);
     }
   }

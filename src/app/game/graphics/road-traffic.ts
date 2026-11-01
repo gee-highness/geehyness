@@ -3,6 +3,7 @@ import { AssetLibrary } from './asset-library';
 import type { WorldBuilder } from './world-builder';
 import { CAR_CATALOG, TRAFFIC_MODELS } from '../cars';
 import type { DynamicCollider } from '../physics/collision';
+import type { TrafficSignals } from './traffic-signals';
 
 interface Agent { lift?: number; dzs: number[]; cruise: number; obj: THREE.Group; pts: number[]; seg: number; s: number; speed: number; w: number; cum: number[]; len: number; }
 
@@ -12,6 +13,7 @@ export class RoadTraffic {
   private candidates: number[] = [];
   private timer = 0;
   private readonly N = 26;
+  public signals?: TrafficSignals;
 
   constructor(private scene: THREE.Scene, private world: WorldBuilder) {
     world.roadWays.forEach((w, i) => { if (w.c <= 4 && w.p.length >= 6) this.candidates.push(i); });
@@ -79,7 +81,9 @@ export class RoadTraffic {
       const hd = a.obj.userData['hd'] as [number, number] | undefined;
       let blocked = false;
       if (hd) { const ahead = -(hx * hd[0] + hz * hd[1]), side = Math.abs(-hx * hd[1] + hz * hd[0]); blocked = ahead > 0 && ahead < 14 + a.speed * 0.8 && side < 2.4; }
-      a.speed = blocked ? Math.max(0, a.speed - 14 * dt) : Math.min(a.cruise, a.speed + 4 * dt);
+      let want = a.cruise;
+      if (hd && this.signals) { const sd = this.signals.stopDistance(a.obj.position.x, a.obj.position.z, hd[0], hd[1], a.speed); if (sd !== null) want = Math.min(want, Math.sqrt(2 * 3.5 * Math.max(0, sd - 2.5))); }
+      a.speed = blocked ? Math.max(0, a.speed - 14 * dt) : a.speed > want ? Math.max(want, a.speed - 7 * dt) : Math.min(want, a.speed + 4 * dt);
       a.s += a.speed * dt;
       if (a.s >= a.len - 1 || Math.hypot(a.obj.position.x - px, a.obj.position.z - pz) > 800) { this.respawn(a, px, pz); continue; }
       let i = a.seg; while (i + 1 < a.cum.length - 1 && a.cum[i + 1] < a.s) i++; while (i > 0 && a.cum[i] > a.s) i--; a.seg = i;
