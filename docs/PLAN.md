@@ -22,6 +22,16 @@ Status key: [x] done · [~] in progress · [ ] queued · [data] waits for the re
 - [x] F3 Cop AI (`police.ts`): PATROL -> ALERT (investigate last known position) -> CHASE (road-graph pursuit, radio to nearby units) -> SEARCH -> PATROL; line of sight over building footprints, field of view; siren + strobe; bust = close and slow for 2.2 s; escape = nobody chasing for 18 s.
 - [ ] F4 Cop headlights as real light cones, roadblocks, helicopter, difficulty levels, scoring; AI traffic that reacts to sirens.
 
+## G. Online (parked, design only - NOT started)
+Goal: when online, other human players are the police; the AI cops are only fillers when there are too few humans.
+- Roles: one or more ROBBERS (current player behaviour) and any number of COPS. Same world seed + same OSM data on every client.
+- The cop AI is already isolated behind `Police` (state, `colliders()`, `status`): a human cop replaces one `Cop` entry, so detection is
+  evaluated server-side from the robber's `Stealth {visRadius, noiseRadius}` against each human cop's position, heading and line of sight.
+- Authority: small authoritative server (WebSocket) owning role, busted/escaped, time of day and weather; clients send input + pose at 20 Hz,
+  render others with interpolation; physics stays client-side with server sanity checks.
+- Needed first: a lobby/role screen, pose sync (position, yaw, speed, lights, horn, siren), shared clock, bust/escape rules on the server, voice or quick-chat.
+- Not now: leave `Police` as the single place to extend.
+
 ## C. Roofs observed in the satellite imagery (target distribution)
 | Area / type | Look | Share |
 |---|---|---|
