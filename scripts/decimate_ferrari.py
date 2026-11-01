@@ -13,7 +13,7 @@ for gname in list(scene.geometry.keys()):
         del scene.geometry[gname]; continue
     f = len(g.faces)
     if f > 600:
-        ratio = 0.16 if f > 20000 else 0.3
+        ratio = 0.26 if f > 20000 else 0.45
         v, ff = fs.simplify(np.asarray(g.vertices, np.float32), np.asarray(g.faces, np.int32), target_reduction=1 - ratio)
         m = trimesh.Trimesh(v, ff, process=False)
         try: m.visual = trimesh.visual.TextureVisuals(material=g.visual.material)
