@@ -22,11 +22,13 @@ interface WorldMeta {
   signals: [number, number][];
   snaps: Record<string, [number, number]>;
 }
-interface RoadWay { c: number; w: number; u: number; o: number; n: string; p: number[]; sw?: number; bay?: number }
+interface Surf { way: RoadWay; h: number; elev: boolean; px: number; pz: number; d: number }
+interface RoadWay { c: number; w: number; u: number; o: number; n: string; p: number[]; sw?: number; bay?: number; dz?: number[]; br?: number; bk?: number }
 
 import { GeoBuf } from './geo-buf';
 import { CityBuilder } from './city-builder';
 import { StreetBuilder } from './street-builder';
+import { BridgeBuilder } from './bridge-builder';
 
 export const WORLD: { current?: WorldBuilder } = {};
 const CHUNK = 800;
@@ -62,6 +64,7 @@ export class WorldBuilder {
   private bGrid = new Map<number, number[]>();
   public city!: CityBuilder;
   public streets!: StreetBuilder;
+  private bridges = new BridgeBuilder(this);
 
   /** Register a chunk object for distance streaming. */
   /** r = 1.5 x half-size of the chunk's square. */
@@ -183,25 +186,43 @@ export class WorldBuilder {
     return this.groundCls[iz * m.gw + ix] || 1;
   }
 
-  /** Nearest drivable road under (x,z) within its half-width. */
-  public roadAt(x: number, z: number): RoadWay | null {
+  /** Road elevation (m above the road's own ground level) along segment starting at index s of the point list. */
+  public dzAt(w: RoadWay, s: number, t: number): number {
+    if (!w.dz) return 0; const k = s / 2; return ((w.dz[k] ?? 0) * (1 - t) + (w.dz[k + 1] ?? w.dz[k] ?? 0) * t) / 10;
+  }
+  public isElevated(w: RoadWay): boolean { return !!w.dz; }
+
+  /**
+   * The drivable surface under (x,z). Roads can be stacked (overpasses), so when a height hint is given the
+   * highest surface the car could actually be standing on (<= hint + 1.5 m) wins; otherwise the highest overall.
+   */
+  public roadSurface(x: number, z: number, yHint?: number): { way: RoadWay; h: number; elev: boolean; px: number; pz: number } | null {
     const cx = Math.floor(x / 50), cz = Math.floor(z / 50);
-    let best: RoadWay | null = null, bd = 1e9;
+    let best: Surf | null = null; let lowest: Surf | null = null;
     for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
       const list = this.cellRoads.get((cx + a) * 100003 + (cz + b));
       if (!list) continue;
       for (let k = 0; k < list.length; k += 2) {
         const w = this.roadWays[list[k]]; if (w.c >= 8) continue;
         const p = w.p, s = list[k + 1];
-        const ax = p[s] / 10, az = p[s + 1] / 10, bx = p[s + 2] / 10, bz = p[s + 3] / 10;
-        const dx = bx - ax, dz = bz - az, l2 = dx * dx + dz * dz || 1;
-        const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2));
-        const d = Math.hypot(x - (ax + t * dx), z - (az + t * dz));
-        if (d < w.w / 2 + 0.3 && d < bd) { bd = d; best = w; }
+        const ax = p[s] / 10, az = p[s + 1] / 10, dx = p[s + 2] / 10 - ax, dz2 = p[s + 3] / 10 - az, l2 = dx * dx + dz2 * dz2 || 1;
+        const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz2) / l2));
+        const qx = ax + t * dx, qz = az + t * dz2, d = Math.hypot(x - qx, z - qz);
+        if (d >= w.w / 2 + 0.3) continue;
+        const dzv = this.dzAt(w, s, t), elev = dzv > 0.25;
+        const h = this.calculateRawTerrainHeight(elev ? qx : x, elev ? qz : z) + WorldBuilder.ROAD_LIFT[w.c] + dzv; // decks are flat across their width
+        const cand: Surf = { way: w, h, elev, px: qx, pz: qz, d };
+        if (!lowest || h < lowest.h) lowest = cand;
+        if (yHint !== undefined && h > yHint + 1.5) continue;
+        if (!best || h > best.h + 0.3 || (Math.abs(h - best.h) <= 0.3 && d < best.d)) best = cand;
       }
     }
-    return best;
+    const r = best ?? (yHint !== undefined ? lowest : null);
+    return r ? { way: r.way, h: r.h, elev: r.elev, px: r.px, pz: r.pz } : null;
   }
+
+  /** Nearest drivable road under (x,z) within its half-width (highest if stacked). */
+  public roadAt(x: number, z: number): RoadWay | null { return this.roadSurface(x, z)?.way ?? null; }
 
   public classifySurfaceAt(x: number, z: number, _h?: number): number {
     const r = this.roadAt(x, z);
@@ -209,25 +230,31 @@ export class WorldBuilder {
     return this.groundClassAt(x, z);
   }
 
-  /** Height of the drivable surface (terrain + road lift) at a point. */
-  public groundHeightAt(x: number, z: number): number {
-    const road = this.roadAt(x, z);
+  /** Height of the drivable surface (terrain + road lift + overpass elevation) at a point. */
+  public groundHeightAt(x: number, z: number, y?: number): number {
+    const rs = this.roadSurface(x, z, y);
+    if (rs) return rs.h;
     const base = this.calculateRawTerrainHeight(x, z);
-    if (road) return base + WorldBuilder.ROAD_LIFT[road.c];
     return this.onPavement(x, z) ? base + WorldBuilder.ROAD_LIFT[4] + 0.15 : base;
   }
 
-  public queryGround(x: number, z: number): GroundQueryResult {
-    const road = this.roadAt(x, z);
+  public queryGround(x: number, z: number, y?: number): GroundQueryResult {
+    const rs = this.roadSurface(x, z, y); const road = rs?.way ?? null;
     const pave = !road && this.onPavement(x, z);
-    const height = this.calculateRawTerrainHeight(x, z) + (road ? WorldBuilder.ROAD_LIFT[road.c] : pave ? WorldBuilder.ROAD_LIFT[4] + 0.15 : 0);
-    const e = 2.5;
-    const hL = this.calculateRawTerrainHeight(x - e, z), hR = this.calculateRawTerrainHeight(x + e, z);
-    const hD = this.calculateRawTerrainHeight(x, z - e), hU = this.calculateRawTerrainHeight(x, z + e);
-    const normal = new THREE.Vector3(hL - hR, 2 * e, hD - hU).normalize();
+    const height = rs ? rs.h : this.calculateRawTerrainHeight(x, z) + (pave ? WorldBuilder.ROAD_LIFT[4] + 0.15 : 0);
+    const e = 2.5; let normal: THREE.Vector3;
+    if (rs?.elev) {
+      const hx1 = this.roadSurface(x - e, z, y)?.h ?? height, hx2 = this.roadSurface(x + e, z, y)?.h ?? height, hz1 = this.roadSurface(x, z + e, y)?.h ?? height, hz2 = this.roadSurface(x, z - e, y)?.h ?? height;
+      normal = new THREE.Vector3(hx1 - hx2, 2 * e, hz2 - hz1).normalize();
+    } else {
+      const hL = this.calculateRawTerrainHeight(x - e, z), hR = this.calculateRawTerrainHeight(x + e, z);
+      const hD = this.calculateRawTerrainHeight(x, z - e), hU = this.calculateRawTerrainHeight(x, z + e);
+      normal = new THREE.Vector3(hL - hR, 2 * e, hD - hU).normalize();
+    }
     const cls = road ? (road.u ? 7 : 11) : pave ? 8 : this.groundClassAt(x, z);
     const names: Record<number, string> = { 1: 'Bushveld', 2: 'Grassland', 3: 'Pasture', 4: 'Farmland', 5: 'Forest floor', 6: 'Rock', 7: 'Dirt road', 8: 'Town ground', 9: 'Industrial ground', 10: 'Sand', 11: 'Asphalt', 12: 'Wetland' };
-    return { height, normal, surfaceClass: cls, surfaceName: road && road.n ? road.n : pave ? 'Pavement' : (names[cls] ?? 'Ground') };
+    const nm = road && road.n ? road.n : road && rs?.elev ? 'Overpass' : pave ? 'Pavement' : (names[cls] ?? 'Ground');
+    return { height, normal, surfaceClass: cls, surfaceName: nm };
   }
 
   public districtAt(x: number, z: number): string {
@@ -485,12 +512,12 @@ export class WorldBuilder {
 
     for (const w of this.roadWays) {
       // resample to <= 16 m
-      const pts: [number, number][] = [];
+      const pts: [number, number][] = []; const dzs: number[] = []; const dzv = w.dz ? w.dz.map((v) => v / 10) : null;
       for (let i = 0; i + 1 < w.p.length; i += 2) {
         const x = w.p[i] / 10, z = w.p[i + 1] / 10;
-        if (i === 0) { pts.push([x, z]); continue; }
+        if (i === 0) { pts.push([x, z]); dzs.push(dzv ? dzv[0] : 0); continue; }
         const [px, pz] = pts[pts.length - 1]; const L = Math.hypot(x - px, z - pz), n = Math.max(1, Math.ceil(L / 8));
-        for (let k = 1; k <= n; k++) pts.push([px + ((x - px) * k) / n, pz + ((z - pz) * k) / n]);
+        for (let k = 1; k <= n; k++) { pts.push([px + ((x - px) * k) / n, pz + ((z - pz) * k) / n]); dzs.push(dzv ? dzv[i / 2 - 1] + (dzv[i / 2] - dzv[i / 2 - 1]) * (k / n) : 0); }
       }
       if (pts.length < 2) continue;
       const hw = w.w / 2; const L: [number, number][] = [], R: [number, number][] = [];
@@ -502,25 +529,32 @@ export class WorldBuilder {
       const isDirt = w.u === 1 || w.c >= 7, isWater = w.c === 9;
       const matKey = isWater ? 'water' : (isDirt ? 'dirt' : 'asph');
       const y0 = YOFF[w.c], dash = w.w >= 6.2;
+      // deck heights: elevated sections are flat across their width (terrain at the centreline + lift + overpass dz)
+      const yc = pts.map((p, i) => this.calculateRawTerrainHeight(p[0], p[1]) + y0 + dzs[i]);
+      const yl = L.map((p, i) => (dzs[i] > 0.25 ? yc[i] : this.calculateRawTerrainHeight(p[0], p[1]) + y0));
+      const yr = R.map((p, i) => (dzs[i] > 0.25 ? yc[i] : this.calculateRawTerrainHeight(p[0], p[1]) + y0));
+      if (w.br && w.c <= 6) { const maxDz = Math.max(...dzs); this.bridges.addWay(pts, L, R, yl, yr, yc, hw, !w.bk && maxDz > 0.25); }
       let cum = 0;
       for (let i = 0; i + 1 < pts.length; i++) {
         const mx = (pts[i][0] + pts[i + 1][0]) / 2, mz = (pts[i][1] + pts[i + 1][1]) / 2;
         const seg = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
         const buf = this.chunkOf(map, mx, mz, matKey, RC);
         const q = [L[i], R[i], L[i + 1], R[i + 1]];
-        const ids = q.map((p) => buf.vert(p[0], this.calculateRawTerrainHeight(p[0], p[1]) + y0, p[1], 0, 1, 0, p[0], p[1], [1, 1, 1]));
+        const qy = [yl[i], yr[i], yl[i + 1], yr[i + 1]];
+        const ids = q.map((p, qi) => buf.vert(p[0], qy[qi], p[1], 0, 1, 0, p[0], p[1], [1, 1, 1]));
         buf.tri(ids[0], ids[2], ids[1]); buf.tri(ids[1], ids[2], ids[3]);
         if (w.c <= 4 && !isDirt) {
           const mb = this.chunkOf(map, mx, mz, 'mark', RC); const uo = dash ? 0.5 : 0;
-          const mid = [mb.vert(L[i][0], this.calculateRawTerrainHeight(L[i][0], L[i][1]) + y0 + 0.02, L[i][1], 0, 1, 0, uo, cum / 12, [1, 1, 1]),
-            mb.vert(R[i][0], this.calculateRawTerrainHeight(R[i][0], R[i][1]) + y0 + 0.02, R[i][1], 0, 1, 0, uo + 0.5, cum / 12, [1, 1, 1]),
-            mb.vert(L[i + 1][0], this.calculateRawTerrainHeight(L[i + 1][0], L[i + 1][1]) + y0 + 0.02, L[i + 1][1], 0, 1, 0, uo, (cum + seg) / 12, [1, 1, 1]),
-            mb.vert(R[i + 1][0], this.calculateRawTerrainHeight(R[i + 1][0], R[i + 1][1]) + y0 + 0.02, R[i + 1][1], 0, 1, 0, uo + 0.5, (cum + seg) / 12, [1, 1, 1])];
+          const mid = [mb.vert(L[i][0], yl[i] + 0.02, L[i][1], 0, 1, 0, uo, cum / 12, [1, 1, 1]),
+            mb.vert(R[i][0], yr[i] + 0.02, R[i][1], 0, 1, 0, uo + 0.5, cum / 12, [1, 1, 1]),
+            mb.vert(L[i + 1][0], yl[i + 1] + 0.02, L[i + 1][1], 0, 1, 0, uo, (cum + seg) / 12, [1, 1, 1]),
+            mb.vert(R[i + 1][0], yr[i + 1] + 0.02, R[i + 1][1], 0, 1, 0, uo + 0.5, (cum + seg) / 12, [1, 1, 1])];
           mb.tri(mid[0], mid[2], mid[1]); mb.tri(mid[1], mid[2], mid[3]);
         }
         cum += seg;
       }
     }
+    this.bridges.finish();
     this.emit(map, mats, false, false, 1900, false, (m) => { if (m.material === asph) this.roadMeshes.push(m); }, RC);
     // Planar UV: uv = metres, textures repeat 1/tile
     for (const m of [asph, dirt]) for (const t of [m.map!, m.normalMap!]) t.repeat.set(1 / m.userData['tile'], 1 / m.userData['tile']);
@@ -616,7 +650,7 @@ export class WorldBuilder {
     const headM = new THREE.MeshBasicMaterial({ color: 0xfff1c0 });
     const spots: { x: number; z: number; rot: number }[] = [];
     for (const w of this.roadWays) {
-      if (w.c > 3) continue;
+      if (w.c > 3 || w.dz) continue;
       let acc = 0;
       for (let i = 0; i + 3 < w.p.length; i += 2) {
         const ax = w.p[i] / 10, az = w.p[i + 1] / 10, bx = w.p[i + 2] / 10, bz = w.p[i + 3] / 10; const L = Math.hypot(bx - ax, bz - az); if (L < 0.5) continue;

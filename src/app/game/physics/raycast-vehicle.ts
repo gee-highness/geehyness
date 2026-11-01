@@ -105,7 +105,7 @@ export class RaycastVehicle {
   /**
    * Fixed-step physics update.
    */
-  public updatePhysics(dt: number, groundQuery: (x: number, z: number) => { height: number; normal: THREE.Vector3; surfaceClass: number; surfaceName?: string }): void {
+  public updatePhysics(dt: number, groundQuery: (x: number, z: number, y?: number) => { height: number; normal: THREE.Vector3; surfaceClass: number; surfaceName?: string }): void {
     this._forward.set(0, 0, 1).applyQuaternion(this.quaternion);
     this._up.set(0, 1, 0).applyQuaternion(this.quaternion);
     this._right.set(1, 0, 0).applyQuaternion(this.quaternion);
@@ -130,7 +130,7 @@ export class RaycastVehicle {
       const wheelPos = this.position.clone().add(offsetWorld);
 
       // Raycast downward
-      const ground = groundQuery(wheelPos.x, wheelPos.z);
+      const ground = groundQuery(wheelPos.x, wheelPos.z, wheelPos.y);
       const restLength = this.config.suspensionRestLengthM;
       const rayDist = wheelPos.y - ground.height;
 
@@ -290,7 +290,7 @@ export class RaycastVehicle {
     new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(),
     new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(),
   ];
-  private enforceGround(groundQuery: (x: number, z: number) => { height: number; normal: THREE.Vector3; surfaceClass: number }): void {
+  private enforceGround(groundQuery: (x: number, z: number, y?: number) => { height: number; normal: THREE.Vector3; surfaceClass: number }): void {
     const hl = this.config.wheelBaseM / 2 + 0.85, hw = this.config.trackWidthM / 2 + 0.05, low = -0.26;
     const offs = [
       [-hw, -0.05, this.config.wheelBaseM / 2], [hw, -0.05, this.config.wheelBaseM / 2], [-hw, -0.05, -this.config.wheelBaseM / 2], [hw, -0.05, -this.config.wheelBaseM / 2],
@@ -299,12 +299,12 @@ export class RaycastVehicle {
     let lift = 0;
     for (let i = 0; i < 8; i++) {
       const p = this._pts[i].set(offs[i][0], offs[i][1], offs[i][2]).applyQuaternion(this.quaternion).add(this.position);
-      const g = groundQuery(p.x, p.z).height;
+      const g = groundQuery(p.x, p.z, p.y).height;
       const floor = i < 4 ? g + 0.06 : g + 0.03; // wheel mounts keep a little more air than the bumper corners
       lift = Math.max(lift, floor - p.y);
     }
     // centre of mass too, and a deep-void safety net (bad teleport / NaN recovery)
-    const gc = groundQuery(this.position.x, this.position.z).height;
+    const gc = groundQuery(this.position.x, this.position.z, this.position.y).height;
     lift = Math.max(lift, gc + 0.2 - this.position.y);
     if (!isFinite(this.position.y) || this.position.y < gc - 3) { this.position.y = gc + 1; this.velocity.y = 0; return; }
     if (lift > 0) {

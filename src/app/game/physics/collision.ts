@@ -13,14 +13,16 @@ export class CollisionWorld {
   private readonly CELL = 32;
   private polys: Float32Array[] = [];
   private polyBox: number[] = [];
+  private polyY: number[] = []; // [y0,y1] per polygon (absolute metres); +-1e9 = always
+  private circleY: number[] = [];
   private circles: number[] = [];
   private polyGrid = new Map<number, number[]>();
   private circleGrid = new Map<number, number[]>();
 
   private key(cx: number, cz: number): number { return cx * 100003 + cz; }
 
-  addPolygon(pts: number[]): void {
-    const idx = this.polys.length; this.polys.push(Float32Array.from(pts));
+  addPolygon(pts: number[], y0 = -1e9, y1 = 1e9): void {
+    const idx = this.polys.length; this.polys.push(Float32Array.from(pts)); this.polyY.push(y0, y1);
     let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
     for (let i = 0; i < pts.length; i += 2) { x0 = Math.min(x0, pts[i]); x1 = Math.max(x1, pts[i]); z0 = Math.min(z0, pts[i + 1]); z1 = Math.max(z1, pts[i + 1]); }
     this.polyBox.push(x0, z0, x1, z1);
@@ -29,8 +31,8 @@ export class CollisionWorld {
     }
   }
 
-  addCircle(x: number, z: number, r: number): void {
-    const idx = this.circles.length / 3; this.circles.push(x, z, r);
+  addCircle(x: number, z: number, r: number, y0 = -1e9, y1 = 1e9): void {
+    const idx = this.circles.length / 3; this.circles.push(x, z, r); this.circleY.push(y0, y1);
     const k = this.key(Math.floor(x / this.CELL), Math.floor(z / this.CELL)); let l = this.circleGrid.get(k); if (!l) { l = []; this.circleGrid.set(k, l); } l.push(idx);
   }
 
@@ -62,7 +64,7 @@ export class CollisionWorld {
     const count = Math.max(3, Math.round(L / (rad * 1.2)));
     const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(v.quaternion);
     const m = v.config.massKg, Iy = (m * (L * L + (rad * 2) ** 2)) / 12;
-    const c = { nx: 0, nz: 0, pen: 0 };
+    const c = { nx: 0, nz: 0, pen: 0 }; const py = v.position.y;
 
     const apply = (cx: number, cz: number, nx: number, nz: number, pen: number, otherVx: number, otherVz: number, otherMass: number, kind: 'static' | 'car', id: number) => {
       const rx = cx - v.position.x, rz = cz - v.position.z;
@@ -95,11 +97,13 @@ export class CollisionWorld {
           const key = this.key(gx + a, gz + b);
           const pl = this.polyGrid.get(key);
           if (pl) for (const i of pl) {
+            if (py > this.polyY[i * 2 + 1] + 1.3 || py < this.polyY[i * 2] - 1.3) continue; // different level (bridge vs road below)
             const bb = i * 4; if (cx < this.polyBox[bb] - rad || cx > this.polyBox[bb + 2] + rad || cz < this.polyBox[bb + 1] - rad || cz > this.polyBox[bb + 3] + rad) continue;
             if (this.polyContact(i, cx, cz, rad, c)) apply(cx, cz, c.nx, c.nz, c.pen, 0, 0, 0, 'static', i);
           }
           const cl = this.circleGrid.get(key);
           if (cl) for (const i of cl) {
+            if (py > this.circleY[i * 2 + 1] + 1.3 || py < this.circleY[i * 2] - 1.3) continue;
             const ox = this.circles[i * 3], oz = this.circles[i * 3 + 1], orr = this.circles[i * 3 + 2];
             const dx = cx - ox, dz = cz - oz, d = Math.hypot(dx, dz), need = rad + orr;
             if (d < need) { const inv = 1 / Math.max(d, 1e-5); apply(cx, cz, dx * inv, dz * inv, need - d, 0, 0, 0, 'static', -2); }

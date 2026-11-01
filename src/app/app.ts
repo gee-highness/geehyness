@@ -171,6 +171,16 @@ export class App implements AfterViewInit, OnDestroy {
           if (!best) return null; this.vehicle.position.set(best.px, wb.groundHeightAt(best.px, best.pz) + 1, best.pz); this.vehicle.velocity.set(0, 0, 0);
           this.vehicle.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), best.yaw); return [Math.round(best.px), Math.round(best.pz), best.n];
         },
+        tpOver: (x: number, z: number, under: boolean) => {
+          const wb = this.sceneManager.worldBuilder; let best: { px: number; pz: number; yaw: number; d: number; dz: number } | null = null;
+          for (const w of wb.roadWays) { if (!w.dz) continue; const mx = Math.max(...w.dz); if (mx < 40) continue; const k = w.dz.indexOf(mx); const i = Math.min(k, w.p.length / 2 - 2) * 2;
+            const px = w.p[i] / 10, pz = w.p[i + 1] / 10, d = Math.hypot(px - x, pz - z); if (!best || d < best.d) best = { px, pz, yaw: Math.atan2(w.p[i + 2] - w.p[i], w.p[i + 3] - w.p[i + 1]), d, dz: mx / 10 }; }
+          if (!best) return null;
+          // deck: stand on it; under: stand on whatever lower surface exists at the same x,z
+          const y = under ? wb.groundHeightAt(best.px, best.pz, -50) : wb.groundHeightAt(best.px, best.pz);
+          this.vehicle.position.set(best.px, y + 1, best.pz); this.vehicle.velocity.set(0, 0, 0);
+          this.vehicle.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), best.yaw); return [Math.round(best.px), Math.round(best.pz), best.dz, Math.round(y * 10) / 10];
+        },
         tp: (x: number, z: number, yaw: number) => {
           const wb = this.sceneManager.worldBuilder; this.vehicle.position.set(x, wb.groundHeightAt(x, z) + 1, z);
           this.vehicle.velocity.set(0, 0, 0); this.vehicle.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
@@ -329,8 +339,8 @@ export class App implements AfterViewInit, OnDestroy {
     this.vehicle.tuning = this.tuningService.tuning();
 
     // Query Ground Height & Normals from WorldBuilder
-    this.vehicle.updatePhysics(dt, (x, z) => {
-      return this.sceneManager.worldBuilder.queryGround(x, z);
+    this.vehicle.updatePhysics(dt, (x, z, y) => {
+      return this.sceneManager.worldBuilder.queryGround(x, z, y);
     });
 
     // Solid world: buildings, trees, poles and other cars

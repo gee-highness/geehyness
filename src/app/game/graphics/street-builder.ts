@@ -81,7 +81,7 @@ export class StreetBuilder {
   private sidewalks(): void {
     const w = this.w; const lift = (c: number) => w.roadLift(c);
     for (const way of w.roadWays) {
-      if (way.c < 1 || way.c > 6 || way.u) continue;
+      if (way.c < 1 || way.c > 6 || way.u || way.dz) continue;
       const pts = this.resample(way.p, 8); if (pts.length < 2) continue;
       const sw = way.c <= 2 ? 2.6 : way.c <= 4 ? 2.1 : 1.6, hw = way.w / 2;
       const L: [number, number][][] = [[], []];
@@ -124,7 +124,7 @@ export class StreetBuilder {
   private parkingBays(): void {
     const w = this.w, BAY = 5.6, LANE = 2.4;
     for (const way of w.roadWays) {
-      if (!way.bay) continue;
+      if (!way.bay || way.dz) continue;
       const pts = this.resample(way.p, 2); if (pts.length < 2) continue; const hw = way.w / 2;
       for (const side of [1, -1]) {
         let acc = BAY; let slot = 0;
@@ -162,7 +162,7 @@ export class StreetBuilder {
   private poles(): void {
     const w = this.w; const wood = [0.36, 0.26, 0.17], arm = [0.3, 0.22, 0.15];
     for (const way of w.roadWays) {
-      if (way.c < 4 || way.c > 6 || way.u) continue;
+      if (way.c < 4 || way.c > 6 || way.u || way.dz) continue;
       const pts = this.resample(way.p, 4); let acc = 0; let prev: [number, number, number] | null = null;
       for (let i = 0; i + 1 < pts.length; i++) {
         const L = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]); acc += L;
@@ -204,7 +204,7 @@ export class StreetBuilder {
   private signals(): void {
     const w = this.w;
     for (const [sx, sz] of w.meta.signals) {
-      const road = w.nearestRoadSegment(sx, sz, 6); if (!road || road.dist > 25) continue;
+      const road = w.nearestRoadSegment(sx, sz, 6); if (!road || road.dist > 25 || road.way.dz) continue;
       const { tx, tz, way } = road; const nx = -tz, nz = tx;
       const y = w.calculateRawTerrainHeight(sx, sz) + w.roadLift(way.c);
       // zebra crossing 7 m before and after the junction centre
@@ -236,7 +236,7 @@ export class StreetBuilder {
   private carsAndTrees(): void {
     const w = this.w; const parked = this.parkedList;
     for (const way of w.roadWays) {
-      if (way.c < 3 || way.c > 6 || way.u) continue;
+      if (way.c < 3 || way.c > 6 || way.u || way.dz) continue;
       const pts = this.resample(way.p, 3); let acc = 0, accT = 0, k = 0;
       for (let i = 0; i + 1 < pts.length; i++) {
         const L = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]); const tx = (pts[i + 1][0] - pts[i][0]) / L, tz = (pts[i + 1][1] - pts[i][1]) / L;

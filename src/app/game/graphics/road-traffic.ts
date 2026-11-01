@@ -4,7 +4,7 @@ import type { WorldBuilder } from './world-builder';
 import { CAR_CATALOG, TRAFFIC_MODELS } from '../cars';
 import type { DynamicCollider } from '../physics/collision';
 
-interface Agent { cruise: number; obj: THREE.Group; pts: number[]; seg: number; s: number; speed: number; w: number; cum: number[]; len: number; }
+interface Agent { lift?: number; dzs: number[]; cruise: number; obj: THREE.Group; pts: number[]; seg: number; s: number; speed: number; w: number; cum: number[]; len: number; }
 
 /** Ambient traffic that drives the real OSM road geometry, on the left (Eswatini). */
 export class RoadTraffic {
@@ -30,7 +30,7 @@ export class RoadTraffic {
       if (wheels.length === 4) { car.updateWorldMatrix(true, true); const p = wheels.map((w) => w.getWorldPosition(new THREE.Vector3())); s = 2.7 / (Math.abs((p[0].z + p[1].z) / 2 - (p[2].z + p[3].z) / 2) || 1); }
       const g = new THREE.Group(); car.scale.setScalar(s); car.position.y = 0.33 - 0.3 * s; g.add(car); g.visible = false;
       this.scene.add(g);
-      this.agents.push({ cruise: 12, obj: g, pts: [], seg: 0, s: 0, speed: 0, w: 6, cum: [], len: 0 });
+      this.agents.push({ dzs: [], cruise: 12, obj: g, pts: [], seg: 0, s: 0, speed: 0, w: 6, cum: [], len: 0 });
     }
   }
 
@@ -43,10 +43,13 @@ export class RoadTraffic {
       if (d < 160 || d > 650) continue;
       let pts: number[] = [];
       for (let i = 0; i < p.length; i += 2) pts.push(p[i] / 10, p[i + 1] / 10);
-      if (!way.o && Math.random() < 0.5) { const r: number[] = []; for (let i = pts.length - 2; i >= 0; i -= 2) r.push(pts[i], pts[i + 1]); pts = r; }
+      let rev = false;
+      if (!way.o && Math.random() < 0.5) { const r: number[] = []; for (let i = pts.length - 2; i >= 0; i -= 2) r.push(pts[i], pts[i + 1]); pts = r; rev = true; }
       const cum = [0]; for (let i = 2; i < pts.length; i += 2) cum.push(cum[cum.length - 1] + Math.hypot(pts[i] - pts[i - 2], pts[i + 1] - pts[i - 1]));
       const len = cum[cum.length - 1]; if (len < 40) continue;
-      a.pts = pts; a.cum = cum; a.len = len; a.w = way.w; a.seg = 0;
+      let dzs = way.dz ? way.dz.map((v) => v / 10) : pts.map(() => 0);
+      if (rev) dzs = dzs.slice().reverse();
+      a.pts = pts; a.cum = cum; a.len = len; a.w = way.w; a.seg = 0; a.dzs = dzs; a.lift = this.world.roadLift(way.c);
       // start at the picked vertex's distance (reverse-aware nearest vertex)
       let best = 0, bd = 1e9; for (let i = 0; i < pts.length; i += 2) { const dd = Math.hypot(pts[i] - x, pts[i + 1] - z); if (dd < bd) { bd = dd; best = i / 2; } }
       a.s = cum[best] * 0.98; a.cruise = (way.c <= 2 ? 15 : 9) + Math.random() * 6; a.speed = a.cruise;
@@ -84,8 +87,10 @@ export class RoadTraffic {
       const L = Math.hypot(x1 - x0, z1 - z0) || 1, t = (a.s - a.cum[i]) / L, dx = (x1 - x0) / L, dz = (z1 - z0) / L;
       const off = Math.min(a.w / 4, 2.2); // keep left
       const x = x0 + (x1 - x0) * t + dz * off, z = z0 + (z1 - z0) * t - dx * off;
-      const h = this.world.calculateRawTerrainHeight(x, z) + 0.12;
-      const hf = this.world.calculateRawTerrainHeight(x + dx * 1.6, z + dz * 1.6), hb = this.world.calculateRawTerrainHeight(x - dx * 1.6, z - dz * 1.6);
+      const dzI = a.dzs.length > i + 1 ? a.dzs[i] + (a.dzs[i + 1] - a.dzs[i]) * t : 0, elev = dzI > 0.25;
+      const tg = (px: number, pz: number) => this.world.calculateRawTerrainHeight(elev ? x : px, elev ? z : pz);
+      const h = tg(x, z) + (a.lift ?? 0.1) + dzI;
+      const hf = tg(x + dx * 1.6, z + dz * 1.6) + (a.lift ?? 0.1) + dzI + (a.dzs[i + 1] - a.dzs[i]) / L * 1.6, hb = tg(x - dx * 1.6, z - dz * 1.6) + (a.lift ?? 0.1) + dzI - (a.dzs[i + 1] - a.dzs[i]) / L * 1.6;
       a.obj.position.set(x, h, z); a.obj.userData['hd'] = [dx, dz];
       a.obj.quaternion.setFromAxisAngle(up, Math.atan2(dx, dz)).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.atan2(hf - hb, 3.2)));
       a.obj.userData['spin'] = ((a.obj.userData['spin'] as number) || 0) + (a.speed / 0.33) * dt;

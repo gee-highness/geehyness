@@ -244,7 +244,7 @@ export class SceneManager {
 
     // 2a. Seat the real model on the actual surface: tyres touch the ground whatever the suspension is doing
     if (this.modelHolder) {
-      const gy = this.worldBuilder.groundHeightAt(vehicle.position.x, vehicle.position.z);
+      const gy = this.worldBuilder.groundHeightAt(vehicle.position.x, vehicle.position.z, vehicle.position.y);
       this.modelHolder.position.y = (gy + this.modelRadius - vehicle.position.y) - this.modelWheelCy;
     }
 

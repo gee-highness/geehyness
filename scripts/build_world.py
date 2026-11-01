@@ -46,11 +46,18 @@ for e in load("roads"):
         else: u = 0
         br = 1 if (t.get("bridge") or t.get("tunnel") or t.get("embankment") == "yes") else 0
         w *= 1.2  # roads 20% wider for a more generous, drivable feel
-        roads.append({"c": c, "w": round(w, 1), "u": u, "b": br, "o": 1 if t.get("oneway") == "yes" else 0,
+        try: ly = int(t.get("layer", 0))
+        except ValueError: ly = 0
+        isbr = 1 if t.get("bridge") and t.get("bridge") != "low_water_crossing" else 0
+        if isbr and ly == 0: ly = 1
+        istn = 1 if t.get("tunnel") in ("yes", "culvert", "building_passage") else 0
+        if istn and ly == 0: ly = -1
+        roads.append({"ly": ly, "bk": isbr, "tn": istn, "lk": 1 if t["highway"].endswith("_link") else 0, "nd": e.get("nodes", []), "ref": t.get("ref", ""),
+                      "c": c, "w": round(w, 1), "u": u, "b": br, "o": 1 if t.get("oneway") == "yes" else 0,
                       "r": t.get("ref", ""), "n": t.get("name", ""), "p": [dm(v) for pt in g for v in pt]})
         if c <= 3: nodes_major.extend((x, z, t.get("ref", "")) for x, z in g)
     elif t.get("waterway") in ("river", "stream"):
-        roads.append({"c": 9, "w": 6.0 if t["waterway"] == "river" else 2.2, "u": 0, "b": 0, "o": 0, "r": "", "n": t.get("name", ""),
+        roads.append({"ly": 0, "bk": 0, "tn": 0, "lk": 0, "nd": e.get("nodes", []), "ref": "", "c": 9, "w": 6.0 if t["waterway"] == "river" else 2.2, "u": 0, "b": 0, "o": 0, "r": "", "n": t.get("name", ""),
                       "p": [dm(v) for pt in g for v in pt]})
     else:
         kind = t.get("natural") or t.get("landuse") or t.get("leisure")
@@ -162,7 +169,102 @@ DH = defaultdict(int)
 for cx, cz in cent: DH[(int(cx // 60), int(cz // 60))] += 1
 def density(cx, cz):
     k = (int(cx // 60), int(cz // 60)); return sum(DH.get((k[0] + a, k[1] + b), 0) for a in (-1, 0, 1) for b in (-1, 0, 1))
+# (road elevation solved below)
 # parking lanes: every town street (not the MR3 trunk/primary, not dirt) gets a 2.4 m lane each side
+
+# ---------------- overpass elevation: real clearances where a bridge crosses a lower road, ramps at a legal gradient
+import heapq
+CLEAR, SLOPE_MAJOR, SLOPE_MINOR, DZMAX = 6.6, 0.06, 0.08, 14.0
+def seg_closest(ax, az, bx, bz, cx, cz, dx, dz):
+    """closest approach between 2D segments AB and CD: (distance, t along AB)."""
+    best = (1e9, 0.0)
+    for t in [i / 8 for i in range(9)]:
+        px, pz = ax + (bx - ax) * t, az + (bz - az) * t
+        ex, ez = dx - cx, dz - cz; l2 = ex * ex + ez * ez or 1e-9
+        u = max(0, min(1, ((px - cx) * ex + (pz - cz) * ez) / l2)); d = math.hypot(px - cx - ex * u, pz - cz - ez * u)
+        if d < best[0]: best = (d, t)
+    # refine around the best t
+    t0 = best[1]
+    for dt in (0.06, 0.03, 0.015, 0.007):
+        for t in (t0 - dt, t0 + dt):
+            t = max(0, min(1, t)); px, pz = ax + (bx - ax) * t, az + (bz - az) * t
+            ex, ez = dx - cx, dz - cz; l2 = ex * ex + ez * ez or 1e-9
+            u = max(0, min(1, ((px - cx) * ex + (pz - cz) * ez) / l2)); d = math.hypot(px - cx - ex * u, pz - cz - ez * u)
+            if d < best[0]: best = (d, t); t0 = t
+    return best
+LOW = defaultdict(list)  # grid of drivable lower-layer segments
+for wi, r in enumerate(roads):
+    if r["ly"] <= 0 and not r["tn"] and r["c"] <= 6:
+        p = r["p"]
+        for i in range(0, len(p) - 3, 2):
+            ax, az, bx, bz = p[i] / 10, p[i + 1] / 10, p[i + 2] / 10, p[i + 3] / 10
+            for gx in range(int(min(ax, bx) // 60), int(max(ax, bx) // 60) + 1):
+                for gz in range(int(min(az, bz) // 60), int(max(az, bz) // 60) + 1): LOW[(gx, gz)].append((wi, ax, az, bx, bz))
+synth = [-1]
+req = {}  # (way index, vertex index) -> required dz
+for wi, r in enumerate(roads):
+    if r["ly"] < 1 or r["tn"] or r["c"] > 8: continue
+    p = r["p"]; nd = list(r["nd"]) if len(r["nd"]) == len(p) // 2 else [0] * (len(p) // 2)
+    newp, newnd, newreq = [], [], []
+    for i in range(0, len(p) - 2, 2):
+        ax, az, bx, bz = p[i] / 10, p[i + 1] / 10, p[i + 2] / 10, p[i + 3] / 10
+        newp += [p[i], p[i + 1]]; newnd.append(nd[i // 2]); newreq.append(0.0)
+        hits = {}
+        for gx in range(int(min(ax, bx) // 60) - 1, int(max(ax, bx) // 60) + 2):
+            for gz in range(int(min(az, bz) // 60) - 1, int(max(az, bz) // 60) + 2):
+                for (lw, cx, cz, dx, dz) in LOW.get((gx, gz), ()):
+                    if lw == wi: continue
+                    L = roads[lw]
+                    if L["ly"] >= r["ly"]: continue
+                    d, t = seg_closest(ax, az, bx, bz, cx, cz, dx, dz)
+                    if d < (r["w"] + L["w"]) / 2 * 0.9 and 0.02 < t < 0.98:
+                        key = round(t, 2); need = CLEAR * (r["ly"] - L["ly"])
+                        hits[key] = max(hits.get(key, 0), need)
+        for t in sorted(hits):
+            newp += [int(round((p[i] + (p[i + 2] - p[i]) * t))), int(round((p[i + 1] + (p[i + 3] - p[i + 1]) * t)))]
+            synth[0] -= 1; newnd.append(synth[0]); newreq.append(hits[t])
+    newp += [p[-2], p[-1]]; newnd.append(nd[-1]); newreq.append(0.0)
+    r["p"], r["nd"] = newp, newnd
+    for k, q in enumerate(newreq):
+        if q > 0: req[(wi, k)] = q
+# propagate elevation along connected carriageway (ramps) at a legal gradient
+best = {}
+heap = []
+for (wi, k), q in req.items():
+    n = roads[wi]["nd"][k]; best[n] = max(best.get(n, 0), q); heapq.heappush(heap, (-q, n, wi))
+INC = defaultdict(list)  # node -> (way, vertex)
+for wi, r in enumerate(roads):
+    if r["tn"] or r["c"] > 8: continue
+    for k, n in enumerate(r["nd"]): INC[n].append((wi, k))
+def allowed(W, B):
+    if W is B: return True
+    if W["c"] > 6: return False
+    return (W["ref"] and W["ref"] == B["ref"]) or (W["n"] and W["n"] == B["n"]) or W["lk"] or (W["c"] <= B["c"] and not W["n"] and not B["n"])
+while heap:
+    negq, n, src = heapq.heappop(heap)
+    q = -negq
+    if q < best.get(n, 0) - 1e-6: continue
+    Bw = roads[src]
+    for (wi, k) in INC[n]:
+        Wy = roads[wi]
+        if Wy["ly"] < 0 or not allowed(Wy, Bw): continue
+        for kk in (k - 1, k + 1):
+            if kk < 0 or kk >= len(Wy["nd"]): continue
+            m = Wy["nd"][kk]; L = math.hypot(Wy["p"][kk * 2] - Wy["p"][k * 2], Wy["p"][kk * 2 + 1] - Wy["p"][k * 2 + 1]) / 10
+            nq = q - (SLOPE_MAJOR if Wy["c"] <= 4 else SLOPE_MINOR) * L
+            if nq > 0.05 and nq > best.get(m, 0) + 1e-6:
+                best[m] = nq; heapq.heappush(heap, (-nq, m, src))
+nel = 0
+for wi, r in enumerate(roads):
+    dzv = [min(DZMAX, best.get(n, 0.0)) for n in r["nd"]] if r["nd"] and len(r["nd"]) == len(r["p"]) // 2 else []
+    if dzv and max(dzv) > 0.25:
+        r["dz"] = [int(round(v * 10)) for v in dzv]; nel += 1
+    r["br"] = 1 if (r["bk"] and r["c"] <= 6) or (dzv and max(dzv) > 0.25) else 0
+    r["nd"] = None
+    for k in ("ref", "lk", "tn"): r.pop(k, None)
+    r.pop("nd", None)
+print("elevated ways:", nel, "max dz", max([max(r.get("dz", [0])) for r in roads]) / 10)
+
 def way_density(r):
     p = r["p"]; vals = [density(p[i] / 10, p[i + 1] / 10) for i in range(0, len(p), 2)]
     return sum(vals) / max(1, len(vals))
