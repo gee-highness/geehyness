@@ -43,11 +43,11 @@ parking lots, tanks/silos, speed humps, HUD/intro/car-select UI, haptics fixes, 
 
 World coordinates: metres, **x east, z south**, origin Manzini (−26.4966, 31.3826). Heights in decimetres in the JSON.
 
-## Raw data the converter needs (NOT in the repo — re-upload to rebuild the world)
+## Raw data the converter needs — now in the repo under `data/` (see `data/README.md` for the exact unzip + rebuild commands)
 - `eswatini-osm.zip` → `roads.json, bld_manzini.json, bld_ezulwini.json, points.json` (Overpass, from Termux).
 - `eswatini-osm2.zip` → `barriers, trees, power, leisure, misc, bld_lobamba, bld_malkerns, bld_matsapha1/2, bld_mbabane1/2`.
 - Rebuild: `fetch_dem.py` then `python3 -I scripts/build_world.py <osm> /tmp/dem.json public/assets/world <osm2>` (takes ~3–5 min; run in background).
-The generated files in `public/assets/world/` are already committed, so the game runs without them.
+The generated files in `public/assets/world/` are also committed, so the game runs without rebuilding.
 
 ## Run / test / build
 ```
