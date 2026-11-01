@@ -271,13 +271,17 @@ export class WorldBuilder {
 
   /** Height of the drivable surface (terrain + road lift + overpass elevation) at a point. */
   public groundHeightAt(x: number, z: number, y?: number): number {
+    const roofH = y === undefined ? null : this.collision.roofAt(x, z, y);
     const rs = this.roadSurface(x, z, y);
+    if (roofH !== null && (!rs || roofH > rs.h)) return roofH;
     if (rs) return rs.h;
     const base = this.calculateRawTerrainHeight(x, z);
     return this.onPavement(x, z) ? base + WorldBuilder.ROAD_LIFT[4] + 0.15 : base;
   }
 
   public queryGround(x: number, z: number, y?: number): GroundQueryResult {
+    const roofH = y === undefined ? null : this.collision.roofAt(x, z, y);
+    if (roofH !== null) { const r0 = this.roadSurface(x, z, y); if (!r0 || roofH > r0.h) return { height: roofH, normal: new THREE.Vector3(0, 1, 0), surfaceClass: 9, surfaceName: 'Rooftop' }; }
     const rs = this.roadSurface(x, z, y); const road = rs?.way ?? null;
     const pave = !road && this.onPavement(x, z);
     let height = rs ? rs.h : this.calculateRawTerrainHeight(x, z) + (pave ? WorldBuilder.ROAD_LIFT[4] + 0.15 : 0);

@@ -13,6 +13,7 @@ export class CollisionWorld {
   private readonly CELL = 32;
   private polys: Float32Array[] = [];
   private polyBox: number[] = [];
+  private polyRoof: boolean[] = []; // solid flat roof the car may land on / drive over
   private polyY: number[] = []; // [y0,y1] per polygon (absolute metres); +-1e9 = always
   private circleY: number[] = [];
   private circles: number[] = [];
@@ -21,8 +22,8 @@ export class CollisionWorld {
 
   private key(cx: number, cz: number): number { return cx * 100003 + cz; }
 
-  addPolygon(pts: number[], y0 = -1e9, y1 = 1e9): void {
-    const idx = this.polys.length; this.polys.push(Float32Array.from(pts)); this.polyY.push(y0, y1);
+  addPolygon(pts: number[], y0 = -1e9, y1 = 1e9, roof = false): void {
+    const idx = this.polys.length; this.polys.push(Float32Array.from(pts)); this.polyY.push(y0, y1); this.polyRoof.push(roof);
     let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
     for (let i = 0; i < pts.length; i += 2) { x0 = Math.min(x0, pts[i]); x1 = Math.max(x1, pts[i]); z0 = Math.min(z0, pts[i + 1]); z1 = Math.max(z1, pts[i + 1]); }
     this.polyBox.push(x0, z0, x1, z1);
@@ -34,6 +35,20 @@ export class CollisionWorld {
   addCircle(x: number, z: number, r: number, y0 = -1e9, y1 = 1e9): void {
     const idx = this.circles.length / 3; this.circles.push(x, z, r); this.circleY.push(y0, y1);
     const k = this.key(Math.floor(x / this.CELL), Math.floor(z / this.CELL)); let l = this.circleGrid.get(k); if (!l) { l = []; this.circleGrid.set(k, l); } l.push(idx);
+  }
+
+  /** Height of a flat roof under (x,z) that a car at height y can be standing on, or null. */
+  roofAt(x: number, z: number, y: number): number | null {
+    const l = this.polyGrid.get(this.key(Math.floor(x / this.CELL), Math.floor(z / this.CELL))); if (!l) return null;
+    let best: number | null = null;
+    for (const i of l) {
+      if (!this.polyRoof[i]) continue; const top = this.polyY[i * 2 + 1]; if (y < top - 1.5 || (best !== null && top <= best)) continue;
+      const bb = i * 4; if (x < this.polyBox[bb] || x > this.polyBox[bb + 2] || z < this.polyBox[bb + 1] || z > this.polyBox[bb + 3]) continue;
+      const p = this.polys[i], n = p.length / 2; let inside = false;
+      for (let a = 0, b = n - 1; a < n; b = a++) if ((p[a * 2 + 1] > z) !== (p[b * 2 + 1] > z) && x < ((p[b * 2] - p[a * 2]) * (z - p[a * 2 + 1])) / (p[b * 2 + 1] - p[a * 2 + 1]) + p[a * 2]) inside = !inside;
+      if (inside) best = top;
+    }
+    return best;
   }
 
   get polygonCount(): number { return this.polys.length; }
@@ -97,7 +112,7 @@ export class CollisionWorld {
           const key = this.key(gx + a, gz + b);
           const pl = this.polyGrid.get(key);
           if (pl) for (const i of pl) {
-            if (py > this.polyY[i * 2 + 1] + 1.3 || py < this.polyY[i * 2] - 1.3) continue; // different level (bridge vs road below)
+            if (py > this.polyY[i * 2 + 1] + (this.polyRoof[i] ? -0.6 : 1.3) || py < this.polyY[i * 2] - 1.3) continue; // different level (bridge vs road below); on a roof you clear the walls
             const bb = i * 4; if (cx < this.polyBox[bb] - rad || cx > this.polyBox[bb + 2] + rad || cz < this.polyBox[bb + 1] - rad || cz > this.polyBox[bb + 3] + rad) continue;
             if (this.polyContact(i, cx, cz, rad, c)) apply(cx, cz, c.nx, c.nz, c.pen, 0, 0, 0, 'static', i);
           }

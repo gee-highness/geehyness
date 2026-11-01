@@ -266,7 +266,7 @@ export class CityBuilder {
     else this.gableRoof(rb, wallBuf, ocx, ocz, ux, uz, vx, vz, halfU, halfV, top, st.rtint, st.pitch, st.tint, winCode, roof === 'lowgable');
 
     // collision footprint + tree rejection
-    if (use !== 17 && !w.overlapsRoad(pts, cx, cz)) w.collision.addPolygon(pts.flatMap((p) => [p[0], p[1]]));
+    if (use !== 17 && !w.overlapsRoad(pts, cx, cz)) w.collision.addPolygon(pts.flatMap((p) => [p[0], p[1]]), Math.min(...hs) - 1, top, roof === 'flat' && area > 30);
 
     // walled compound + hedge for houses in town (detail only when close)
     if ((use === 0 || use === 1 || use === 13) && area > 70 && Math.hypot(cx + 750, cz + 210) < 3400 && r < 0.8) this.compound(cx, cz, ocx, ocz, ux, uz, vx, vz, halfU, halfV, r, hs);
