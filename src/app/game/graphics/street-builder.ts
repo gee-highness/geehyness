@@ -20,8 +20,10 @@ export class StreetBuilder {
 
   constructor(private w: WorldBuilder) {}
 
+  private static size(mat: string): number { return mat === 'props' || mat === 'decal' ? 300 : CH; }
   private buf(x: number, z: number, mat: string): GeoBuf {
-    const k = `${Math.floor(x / CH)},${Math.floor(z / CH)}`;
+    const sz = StreetBuilder.size(mat);
+    const k = `${sz}:${Math.floor(x / sz)},${Math.floor(z / sz)}`;
     let m = this.bufs.get(k); if (!m) { m = new Map(); this.bufs.set(k, m); }
     let b = m.get(mat); if (!b) { b = new GeoBuf(); m.set(mat, b); }
     return b;
@@ -42,12 +44,12 @@ export class StreetBuilder {
     this.carsAndTrees();
 
     this.bufs.forEach((m, key) => {
-      const [ix, iz] = key.split(',').map(Number); const cx = (ix + 0.5) * CH, cz = (iz + 0.5) * CH;
+      const [szs, rest] = key.split(':'); const sz = Number(szs); const [ix, iz] = rest.split(',').map(Number); const cx = (ix + 0.5) * sz, cz = (iz + 0.5) * sz;
       m.forEach((buf, mk) => {
         if (buf.empty) return;
         const mesh = new THREE.Mesh(buf.toGeometry(mk === 'props', false), mats[mk]);
         mesh.name = 'street:' + mk; mesh.receiveShadow = true;
-        w.registerChunk(mesh, cx, cz, CH * 0.75, mk === 'props' ? 450 : mk === 'decal' ? 550 : 750);
+        w.registerChunk(mesh, cx, cz, sz * 0.75, mk === 'props' ? 420 : mk === 'decal' ? 450 : 750);
         w.landmarksGroup.add(mesh);
       });
     });
@@ -231,7 +233,7 @@ export class StreetBuilder {
       const parts = cache.get(c.m); if (!parts) continue;
       const y = w.calculateRawTerrainHeight(c.x, c.z) + w.roadLift(4) - 0.02;
       M.compose(new THREE.Vector3(c.x, y, c.z), Q.setFromAxisAngle(up, c.rot), new THREE.Vector3(1, 1, 1));
-      const key = `${Math.floor(c.x / CH)},${Math.floor(c.z / CH)}`; let arr = byChunk.get(key); if (!arr) { arr = []; byChunk.set(key, arr); }
+      const key = `${Math.floor(c.x / 250)},${Math.floor(c.z / 250)}`; let arr = byChunk.get(key); if (!arr) { arr = []; byChunk.set(key, arr); }
       for (const p of parts) arr.push(p.clone().applyMatrix4(M));
       const fx = Math.sin(c.rot), fz = Math.cos(c.rot); for (const o of [-1.3, 0, 1.3]) w.collision.addCircle(c.x + fx * o, c.z + fz * o, 0.95);
     }
@@ -240,7 +242,7 @@ export class StreetBuilder {
     byChunk.forEach((geos, key) => {
       const g = mergeGeometries(geos); if (!g) return; g.computeBoundingSphere();
       const [ix, iz] = key.split(',').map(Number); const mesh = new THREE.Mesh(g, mat); mesh.name = 'parkedcars'; mesh.castShadow = true;
-      w.registerChunk(mesh, (ix + 0.5) * CH, (iz + 0.5) * CH, CH * 0.75, 330); w.landmarksGroup.add(mesh);
+      w.registerChunk(mesh, (ix + 0.5) * 250, (iz + 0.5) * 250, 250 * 0.75, 300); w.landmarksGroup.add(mesh);
     });
   }
 

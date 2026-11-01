@@ -14,7 +14,7 @@ const c = (id: string, name: string, cls: CarClass, archetype: VehicleArchetypeI
   ({ id, name, cls, file: `assets/models/cars/${id}.glb`, archetype, blurb, wheels: K, ...extra });
 
 export const CAR_CATALOG: CarDef[] = [
-  c('ferrari', 'Ferrari 458 Italia', 'Sports', 'RWD_DRIFT', 'Mid-engine V8 icon. Paintable.', { flip: true, paintable: true, wheels: ['wheel_fl', 'wheel_fr', 'wheel_rl', 'wheel_rr'] }),
+  c('ferrari', 'Ferrari 458 Italia', 'Sports', 'RWD_DRIFT', 'Mid-engine V8 icon. Paintable.', { file: 'assets/models/cars/ferrari-lod.glb', flip: true, paintable: true, wheels: ['wheel_fl', 'wheel_fr', 'wheel_rl', 'wheel_rr'] }),
   c('sedan-sports', 'Sports Sedan', 'Sports', 'AWD_GRIP', 'Four-door pace with all-wheel grip.'),
   c('hatchback-sports', 'Hot Hatch', 'Sports', 'AWD_GRIP', 'Light, nimble and loud.'),
   c('race', 'GT Racer', 'Race', 'AWD_GRIP', 'Track-bred touring car.'),

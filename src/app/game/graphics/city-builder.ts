@@ -31,8 +31,10 @@ export class CityBuilder {
 
   constructor(private w: WorldBuilder) {}
 
+  private static size(mat: string): number { return mat === 'props' || mat === 'sign' ? 300 : CH; }
   private buf(cx: number, cz: number, mat: string): GeoBuf {
-    const k = `${Math.floor(cx / CH)},${Math.floor(cz / CH)}`;
+    const sz = CityBuilder.size(mat);
+    const k = `${sz}:${Math.floor(cx / sz)},${Math.floor(cz / sz)}`;
     let m = this.walls.get(k); if (!m) { m = new Map(); this.walls.set(k, m); }
     let b = m.get(mat); if (!b) { b = new GeoBuf(); m.set(mat, b); }
     return b;
@@ -112,13 +114,13 @@ export class CityBuilder {
     this.makeMaterials(signs);
     for (const b of list) this.addBuilding(b);
     this.walls.forEach((m, key) => {
-      const [ix, iz] = key.split(',').map(Number); const cx = (ix + 0.5) * CH, cz = (iz + 0.5) * CH;
+      const [szs, rest] = key.split(':'); const sz = Number(szs); const [ix, iz] = rest.split(',').map(Number); const cx = (ix + 0.5) * sz, cz = (iz + 0.5) * sz;
       m.forEach((buf, mk) => {
         if (buf.empty) return;
         const isProp = mk === 'props' || mk === 'sign';
         const mesh = new THREE.Mesh(buf.toGeometry(mk !== 'sign', !isProp), this.mats[mk]);
         mesh.name = 'bld:' + mk; mesh.castShadow = !isProp; mesh.receiveShadow = true;
-        this.w.registerChunk(mesh, cx, cz, CH * 0.75, isProp ? 430 : 1150);
+        this.w.registerChunk(mesh, cx, cz, sz * 0.75, isProp ? 420 : 1150);
         this.w.landmarksGroup.add(mesh);
       });
     });

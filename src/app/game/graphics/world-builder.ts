@@ -58,14 +58,15 @@ export class WorldBuilder {
   private dem!: Float32Array;
   private groundCls!: Uint8Array;
   private cellRoads = new Map<number, number[]>();
-  private chunks: { obj: THREE.Object3D; cx: number; cz: number; r: number }[] = [];
+  private chunks: { obj: THREE.Object3D; cx: number; cz: number; r: number; half: number }[] = [];
   private bGrid = new Map<number, number[]>();
   public city!: CityBuilder;
   public streets!: StreetBuilder;
 
   /** Register a chunk object for distance streaming. */
+  /** r = 1.5 x half-size of the chunk's square. */
   public registerChunk(obj: THREE.Object3D, cx: number, cz: number, r: number, far: number): void {
-    obj.userData['far'] = far; this.chunks.push({ obj, cx, cz, r });
+    obj.userData['far'] = far; this.chunks.push({ obj, cx, cz, r, half: r / 1.5 });
   }
   public addFootprint(cx: number, cz: number, r: number): void {
     const gk = Math.floor(cx / 40) * 100003 + Math.floor(cz / 40); let l = this.bGrid.get(gk); if (!l) { l = []; this.bGrid.set(gk, l); } l.push(cx, cz, r);
@@ -259,8 +260,8 @@ export class WorldBuilder {
       t.lod0.visible = d < 2400; t.lod1.visible = d >= 2400 && d < 5200;
     }
     for (const c of this.chunks) {
-      const d = Math.hypot(c.cx - px, c.cz - pz) - c.r;
-      c.obj.visible = d < (c.obj.userData['far'] ?? 3000);
+      const dx = Math.max(Math.abs(c.cx - px) - c.half, 0), dz = Math.max(Math.abs(c.cz - pz) - c.half, 0); // exact distance to the chunk's box
+      c.obj.visible = Math.hypot(dx, dz) < (c.obj.userData['far'] ?? 3000);
     }
   }
 
@@ -455,7 +456,7 @@ export class WorldBuilder {
         const mesh = new THREE.Mesh(buf.toGeometry(withColor, withWin), mats[mk]);
         mesh.name = 'road:' + mk; mesh.receiveShadow = shadow; mesh.castShadow = shadow; mesh.userData['far'] = far;
         onMesh?.(mesh);
-        this.chunks.push({ obj: mesh, cx, cz, r: size * 0.72 });
+        this.chunks.push({ obj: mesh, cx, cz, r: size * 0.75, half: size / 2 });
         this.landmarksGroup.add(mesh);
       });
     });
@@ -581,7 +582,7 @@ export class WorldBuilder {
       });
       im.userData['far'] = 650; im.computeBoundingSphere();
       const [cxI, czI] = key.split(',').map(Number);
-      this.chunks.push({ obj: im, cx: (cxI + 0.5) * CHUNK, cz: (czI + 0.5) * CHUNK, r: CHUNK * 0.75 });
+      this.chunks.push({ obj: im, cx: (cxI + 0.5) * CHUNK, cz: (czI + 0.5) * CHUNK, r: CHUNK * 0.75, half: CHUNK / 2 });
       this.foliageGroup.add(im);
     });
   }
@@ -655,7 +656,7 @@ export class WorldBuilder {
       const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
       const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthWrite: false, fog: false }));
       s.scale.set(26, 4.9, 1); s.position.set(p.p[0], this.calculateRawTerrainHeight(p.p[0], p.p[1]) + 20, p.p[1]);
-      s.userData['far'] = 700; this.chunks.push({ obj: s, cx: p.p[0], cz: p.p[1], r: 0 });
+      s.userData['far'] = 700; this.chunks.push({ obj: s, cx: p.p[0], cz: p.p[1], r: 0, half: 0 });
       this.landmarksGroup.add(s);
     }
   }
