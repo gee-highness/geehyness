@@ -14,7 +14,8 @@ parking lots, tanks/silos, speed humps, HUD/intro/car-select UI, haptics fixes, 
 
 **NOT yet verified (do these first):**
 1. Slope-grounding fix (walls/fences/hedges, pylon legs, tank rims, props on true surface, AI cars) — code is in, render check not seen.
-2. Performance numbers after the last two optimisation commits. Previous measure (headless, slow CPU): heap 624 MB (was 1.28 GB),
+2. Performance numbers after the last two optimisation commits (**measured at the end of the session**: world-sync 15.4 → 6.1 ms/frame after typed-array buffers; physics ~1.0–1.4 ms; JS heap ~700 MB (still high — find the remaining big allocators); 177 draw calls; but **~644k triangles in the Manzini test view — run `__shesha.breakdown()` there to find what is still heavy, likely trees/parking-lot cars/props**; all measured on a slow headless CPU, so real phones are unknown).
+   Original note: Previous measure (headless, slow CPU): heap 624 MB (was 1.28 GB),
    physics 1.0 ms, but "sync" 15 ms from building-generation spikes. Fix applied (typed-array `GeoBuf`, skip <14 m² buildings, 1.6 ms stream budget) — re-measure.
 3. APK has not been rebuilt since the *second OSM batch* + optimisation + grounding work. Rebuild and send.
 4. The "under the deck" bug fix (car snapping onto a bridge from below) was made but not re-rendered.
