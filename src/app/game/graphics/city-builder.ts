@@ -117,7 +117,7 @@ export class CityBuilder {
         if (buf.empty) return;
         const isProp = mk === 'props' || mk === 'sign';
         const mesh = new THREE.Mesh(buf.toGeometry(mk !== 'sign', !isProp), this.mats[mk]);
-        mesh.castShadow = !isProp; mesh.receiveShadow = true;
+        mesh.name = 'bld:' + mk; mesh.castShadow = !isProp; mesh.receiveShadow = true;
         this.w.registerChunk(mesh, cx, cz, CH * 0.75, isProp ? 520 : 1350);
         this.w.landmarksGroup.add(mesh);
       });
@@ -163,6 +163,8 @@ export class CityBuilder {
     n = pts.length; const area = A / 2, r = seed / 1000, w = this.w;
     let maxH = -1e9; const hs = pts.map((p) => { const h = w.calculateRawTerrainHeight(p[0], p[1]); maxH = Math.max(maxH, h); return h; });
     const st = this.style(use, r, area, n);
+    const boost = st.wall === 'plaster' ? 1.5 : st.wall === 'concrete' ? 1.45 : st.wall === 'brick' ? 1.35 : 1.5;
+    st.tint = st.tint.map((v) => v * boost);
     const h = hdm / 10; const top = maxH + h;
     const wallBuf = this.buf(cx, cz, st.wall);
     const winCode = st.win + Math.min(0.99, r);

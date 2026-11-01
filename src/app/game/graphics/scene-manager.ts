@@ -101,7 +101,7 @@ export class SceneManager {
     pmremGenerator.dispose();
 
     this.container.appendChild(this.renderer.domElement);
-    (window as unknown as { __shesha?: unknown }).__shesha = { info: () => ({ ...this.renderer.info.render, geometries: this.renderer.info.memory.geometries, textures: this.renderer.info.memory.textures, pr: this.pixelRatio }) };
+    (window as unknown as { __shesha?: unknown }).__shesha = { breakdown: () => this.breakdown(), info: () => ({ ...this.renderer.info.render, geometries: this.renderer.info.memory.geometries, textures: this.renderer.info.memory.textures, pr: this.pixelRatio }) };
   }
 
   private initLighting(): void {
@@ -278,6 +278,15 @@ export class SceneManager {
 
     // 7. Update particles
     this.particleSystem.update(dt);
+  }
+
+  private breakdown(): Record<string, number> {
+    const out: Record<string, number> = {};
+    this.scene.traverseVisible((o) => {
+      const m = o as THREE.Mesh; if (!m.isMesh) return; const g = m.geometry; const t = (g.index ? g.index.count : g.attributes['position'].count) / 3 * ((o as THREE.InstancedMesh).count ?? 1);
+      const k = o.name || (m.material as THREE.Material).type + ':' + ((m.material as THREE.MeshStandardMaterial).map ? 'tex' : 'plain'); out[k] = (out[k] ?? 0) + t; out['calls:' + k] = (out['calls:' + k] ?? 0) + 1;
+    });
+    return out;
   }
 
   public trafficColliders() { return this.roadTraffic?.colliders() ?? []; }

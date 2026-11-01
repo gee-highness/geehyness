@@ -78,15 +78,15 @@ export class WorldBuilder {
   }
   public nearBuildingPublic(x: number, z: number): boolean { return this.nearBuilding(x, z); }
   /** Nearest road segment (class <= maxC): unit tangent, way and distance. */
-  public nearestRoadSegment(x: number, z: number, maxC: number): { tx: number; tz: number; way: RoadWay; dist: number } | null {
-    const cx = Math.floor(x / 50), cz = Math.floor(z / 50); let best: { tx: number; tz: number; way: RoadWay; dist: number } | null = null;
+  public nearestRoadSegment(x: number, z: number, maxC: number): { tx: number; tz: number; way: RoadWay; dist: number; px: number; pz: number } | null {
+    const cx = Math.floor(x / 50), cz = Math.floor(z / 50); let best: { tx: number; tz: number; way: RoadWay; dist: number; px: number; pz: number } | null = null;
     for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
       const list = this.cellRoads.get((cx + a) * 100003 + (cz + b)); if (!list) continue;
       for (let k = 0; k < list.length; k += 2) {
         const way = this.roadWays[list[k]]; if (way.c > maxC) continue; const p = way.p, i = list[k + 1];
         const ax = p[i] / 10, az = p[i + 1] / 10, dx = p[i + 2] / 10 - ax, dz = p[i + 3] / 10 - az, l2 = dx * dx + dz * dz || 1;
         const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2)); const d = Math.hypot(x - ax - t * dx, z - az - t * dz);
-        if (!best || d < best.dist) { const l = Math.sqrt(l2); best = { tx: dx / l, tz: dz / l, way, dist: d }; }
+        if (!best || d < best.dist) { const l = Math.sqrt(l2); best = { tx: dx / l, tz: dz / l, way, dist: d, px: ax + t * dx, pz: az + t * dz }; }
       }
     }
     return best;
@@ -427,7 +427,7 @@ export class WorldBuilder {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
       g.setIndex(new THREE.BufferAttribute(new Uint32Array(idx), 1)); g.computeBoundingSphere();
-      const m = new THREE.Mesh(g, mat); m.receiveShadow = true; m.visible = false; scene.add(m); return m;
+      const m = new THREE.Mesh(g, mat); m.name = 'terrain'; m.receiveShadow = true; m.visible = false; scene.add(m); return m;
     };
     for (let j0 = 0; j0 < nz - 1; j0 += TC) for (let i0 = 0; i0 < nx - 1; i0 += TC) {
       this.terrainTiles.push({ lod0: make(i0, j0, 1), lod1: make(i0, j0, 4), cx: x0 + (i0 + TC / 2) * S, cz: z0 + (j0 + TC / 2) * S });
@@ -449,7 +449,7 @@ export class WorldBuilder {
       m.forEach((buf, mk) => {
         if (buf.empty) return;
         const mesh = new THREE.Mesh(buf.toGeometry(withColor, withWin), mats[mk]);
-        mesh.receiveShadow = shadow; mesh.castShadow = shadow; mesh.userData['far'] = far;
+        mesh.name = 'road:' + mk; mesh.receiveShadow = shadow; mesh.castShadow = shadow; mesh.userData['far'] = far;
         onMesh?.(mesh);
         this.chunks.push({ obj: mesh, cx, cz, r: CHUNK * 0.75 });
         this.landmarksGroup.add(mesh);
@@ -563,7 +563,7 @@ export class WorldBuilder {
     }
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color();
     byChunk.forEach((list, key) => {
-      const im = new THREE.InstancedMesh(geo, mat, list.length); im.castShadow = true;
+      const im = new THREE.InstancedMesh(geo, mat, list.length); im.name = 'trees'; im.castShadow = true;
       list.forEach((t, i) => {
         const s = 0.7 + WorldBuilder.hash(t.x, t.z) * 0.9;
         q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), WorldBuilder.hash(t.z, t.x) * 6.28);
@@ -633,7 +633,7 @@ export class WorldBuilder {
     const byChunk = new Map<string, { x: number; z: number; rot: number }[]>();
     for (const l of this.lampSpots) { const k = `${Math.floor(l.x / CHUNK)},${Math.floor(l.z / CHUNK)}`; let a = byChunk.get(k); if (!a) { a = []; byChunk.set(k, a); } a.push(l); }
     byChunk.forEach((list, key) => {
-      const poles = new THREE.InstancedMesh(pole, poleM, list.length), heads = new THREE.InstancedMesh(headG, headM, list.length);
+      const poles = new THREE.InstancedMesh(pole, poleM, list.length), heads = new THREE.InstancedMesh(headG, headM, list.length); poles.name = heads.name = 'lamps';
       list.forEach((s, i) => { q.setFromAxisAngle(up, s.rot); m4.compose(new THREE.Vector3(s.x, this.calculateRawTerrainHeight(s.x, s.z) + (this.onPavement(s.x, s.z) ? 0.3 : 0), s.z), q, new THREE.Vector3(1, 1, 1)); poles.setMatrixAt(i, m4); heads.setMatrixAt(i, m4); });
       poles.computeBoundingSphere(); heads.computeBoundingSphere(); const [ix, iz] = key.split(',').map(Number);
       for (const o of [poles, heads]) { this.registerChunk(o, (ix + 0.5) * CHUNK, (iz + 0.5) * CHUNK, CHUNK * 0.75, 900); this.roadInfrastructureGroup.add(o); }

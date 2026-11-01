@@ -46,7 +46,7 @@ export class StreetBuilder {
       m.forEach((buf, mk) => {
         if (buf.empty) return;
         const mesh = new THREE.Mesh(buf.toGeometry(mk === 'props', false), mats[mk]);
-        mesh.receiveShadow = true;
+        mesh.name = 'street:' + mk; mesh.receiveShadow = true;
         w.registerChunk(mesh, cx, cz, CH * 0.75, mk === 'props' ? 650 : mk === 'decal' ? 700 : 900);
         w.landmarksGroup.add(mesh);
       });
@@ -239,7 +239,7 @@ export class StreetBuilder {
     const mat = (atlas.material as THREE.Material).clone();
     byChunk.forEach((geos, key) => {
       const g = mergeGeometries(geos); if (!g) return; g.computeBoundingSphere();
-      const [ix, iz] = key.split(',').map(Number); const mesh = new THREE.Mesh(g, mat); mesh.castShadow = true;
+      const [ix, iz] = key.split(',').map(Number); const mesh = new THREE.Mesh(g, mat); mesh.name = 'parkedcars'; mesh.castShadow = true;
       w.registerChunk(mesh, (ix + 0.5) * CH, (iz + 0.5) * CH, CH * 0.75, 700); w.landmarksGroup.add(mesh);
     });
   }
