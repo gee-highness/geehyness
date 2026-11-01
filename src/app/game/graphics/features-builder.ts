@@ -19,6 +19,7 @@ export class FeaturesBuilder {
   constructor(private w: WorldBuilder, private f: Features) {}
 
   private buf(x: number, z: number, mat: string): GeoBuf {
+    if (mat === 'props') return this.w.propBuf(x, z);
     const k = `${Math.floor(x / SZ)},${Math.floor(z / SZ)}:${mat}`; let b = this.bufs.get(k); if (!b) { b = new GeoBuf(); this.bufs.set(k, b); } return b;
   }
   private h(x: number, z: number): number { return this.w.calculateRawTerrainHeight(x, z); }

@@ -52,6 +52,8 @@ export class SceneManager {
 
     this.worldBuilder = new WorldBuilder();
     this.worldBuilder.buildWorld(this.scene);
+    this.worldBuilder.shadowsOn = this.renderer.shadowMap.enabled;
+    if (!this.renderer.shadowMap.enabled) this.makeBlobShadow();
 
     this.particleSystem = new ParticleSystem(this.scene);
     this.worldBuilder.onReady(() => { this.roadTraffic = new RoadTraffic(this.scene, this.worldBuilder); });
@@ -192,6 +194,12 @@ export class SceneManager {
       for (const c of clouds.children) { c.position.x += dt * 6; if (c.position.x > 4500) c.position.x -= 9000; }
     }
 
+    if (this.blob) {
+      const gy = this.worldBuilder.groundHeightAt(vehicle.position.x, vehicle.position.z, vehicle.position.y);
+      this.blob.position.set(vehicle.position.x, gy + 0.05, vehicle.position.z);
+      this.blob.rotation.y = Math.atan2(2 * (vehicle.quaternion.w * vehicle.quaternion.y + vehicle.quaternion.x * vehicle.quaternion.z), 1 - 2 * (vehicle.quaternion.y * vehicle.quaternion.y + vehicle.quaternion.z * vehicle.quaternion.z));
+    }
+
     // 1. Position and orientation of vehicle body
     this.vehicleMeshGroup.position.copy(vehicle.position);
     this.vehicleMeshGroup.quaternion.copy(vehicle.quaternion);
@@ -289,6 +297,16 @@ export class SceneManager {
     return out;
   }
 
+  /** Cheap soft contact shadow under the car where real shadow maps are off (phones). */
+  private blob?: THREE.Mesh;
+  private makeBlobShadow(): void {
+    const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d')!;
+    const gr = g.createRadialGradient(64, 64, 6, 64, 64, 62); gr.addColorStop(0, 'rgba(0,0,0,.62)'); gr.addColorStop(0.55, 'rgba(0,0,0,.34)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    const t = new THREE.CanvasTexture(c);
+    this.blob = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6, fog: false }));
+    this.blob.scale.set(2.9, 1, 5.4); this.blob.renderOrder = 2; this.scene.add(this.blob);
+  }
+
   public trafficColliders() { return this.roadTraffic?.colliders() ?? []; }
   public hitTraffic(id: number, impact: number): void { this.roadTraffic?.hit(id, impact); }
 
@@ -307,13 +325,16 @@ export class SceneManager {
     if (this.govTimer < 700) return;
     this.govTimer = 0;
     let pr = this.pixelRatio;
-    if (this.frameMs > 21.5) pr = Math.max(0.5, pr - (this.frameMs > 30 ? 0.2 : 0.1));
-    else if (this.frameMs < 15.5 && pr < this.maxPixelRatio) pr = Math.min(this.maxPixelRatio, pr + 0.05);
+    if (this.frameMs > 18.4) pr = Math.max(0.5, pr - (this.frameMs > 26 ? 0.2 : 0.08)); // aim for 60 fps (16.7 ms)
+    else if (this.frameMs < 13.6 && pr < this.maxPixelRatio) pr = Math.min(this.maxPixelRatio, pr + 0.04);
     if (Math.abs(pr - this.pixelRatio) > 0.001) {
       this.pixelRatio = pr; this.renderer.setPixelRatio(pr);
       this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     }
   }
+
+  public get fps(): number { return Math.round(1000 / Math.max(1, this.frameMs)); }
+  public get resolution(): number { return this.pixelRatio; }
 
   public render(dtMs = 16): void {
     this.govern(dtMs);

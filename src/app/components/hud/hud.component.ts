@@ -62,6 +62,10 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
         </div>
       </div>
 
+      @if (showFps()) {
+        <div class="absolute left-4 top-[74px] hud-card px-3 py-1.5 text-[11px] font-mono pointer-events-none" [class.text-emerald-300]="fpsText().startsWith('6') || fpsText().startsWith('5')" [class.text-amber-300]="!fpsText().startsWith('6') && !fpsText().startsWith('5')">{{ fpsText() }}</div>
+      }
+
       <!-- Event banner -->
       @if (festivalService.activeNotification(); as notif) {
         <div class="absolute left-1/2 -translate-x-1/2 top-5 banner-in px-8 py-2.5 rounded-2xl text-center text-zinc-950 bg-gradient-to-r from-amber-300 via-amber-400 to-orange-400 shadow-[0_10px_40px_rgba(251,146,60,.5)]">
@@ -156,6 +160,8 @@ export class HudComponent {
   readonly currentDistrictName = signal<string>('Manzini Centre');
   readonly gpsCoordinates = signal<string>('31.36° E, -26.48° S');
   readonly hintVisible = signal<boolean>(true);
+  readonly showFps = signal<boolean>(false);
+  readonly fpsText = signal<string>('');
   @ViewChild('gaugeCanvas', { static: false }) gaugeCanvasRef!: ElementRef<HTMLCanvasElement>;
 
   readonly actions = [

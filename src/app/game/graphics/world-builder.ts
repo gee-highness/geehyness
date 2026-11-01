@@ -66,6 +66,20 @@ export class WorldBuilder {
   private chunks: { obj: THREE.Object3D; cx: number; cz: number; r: number; half: number }[] = [];
   private bGrid = new Map<number, number[]>();
   public city!: CityBuilder;
+  public shadowsOn = false;
+  private propBufs = new Map<string, GeoBuf>();
+  /** One shared 400 m props buffer per cell for every load-time builder (street, extras, features): fewer draw calls. */
+  public propBuf(x: number, z: number): GeoBuf {
+    const k = `${Math.floor(x / 400)},${Math.floor(z / 400)}`; let b = this.propBufs.get(k); if (!b) { b = new GeoBuf(); this.propBufs.set(k, b); } return b;
+  }
+  public flushProps(): void {
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0.12, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+    this.propBufs.forEach((buf, key) => {
+      if (buf.empty) return; const [ix, iz] = key.split(',').map(Number); const m = new THREE.Mesh(buf.toGeometry(true, false), mat); m.name = 'props'; m.receiveShadow = true;
+      this.registerChunk(m, (ix + 0.5) * 400, (iz + 0.5) * 400, 400 * 0.75, 450); this.landmarksGroup.add(m);
+    });
+    this.propBufs.clear();
+  }
   public streets!: StreetBuilder;
   public features?: FeaturesBuilder;
   private barrierCells = new Set<number>();
@@ -90,7 +104,7 @@ export class WorldBuilder {
   /** Register a chunk object for distance streaming. */
   /** r = 1.5 x half-size of the chunk's square. */
   public registerChunk(obj: THREE.Object3D, cx: number, cz: number, r: number, far: number): void {
-    obj.userData['far'] = far; this.chunks.push({ obj, cx, cz, r, half: r / 1.5 });
+    obj.userData['far'] = far; obj.visible = false; this.visDirty = true; this.chunks.push({ obj, cx, cz, r, half: r / 1.5 });
   }
   public addFootprint(cx: number, cz: number, r: number): void {
     const gk = Math.floor(cx / 40) * 100003 + Math.floor(cz / 40); let l = this.bGrid.get(gk); if (!l) { l = []; this.bGrid.set(gk, l); } l.push(cx, cz, r);
@@ -230,8 +244,9 @@ export class WorldBuilder {
         const p = w.p, s = list[k + 1];
         const ax = p[s] / 10, az = p[s + 1] / 10, dx = p[s + 2] / 10 - ax, dz2 = p[s + 3] / 10 - az, l2 = dx * dx + dz2 * dz2 || 1;
         const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz2) / l2));
-        const qx = ax + t * dx, qz = az + t * dz2, d = Math.hypot(x - qx, z - qz);
-        if (d >= w.w / 2 + 0.3) continue;
+        const qx = ax + t * dx, qz = az + t * dz2, ddx = x - qx, ddz = z - qz, lim = w.w / 2 + 0.3, d2 = ddx * ddx + ddz * ddz;
+        if (d2 >= lim * lim) continue;
+        const d = Math.sqrt(d2);
         const dzv = this.dzAt(w, s, t), elev = dzv > 0.25;
         const h = this.calculateRawTerrainHeight(elev ? qx : x, elev ? qz : z) + WorldBuilder.ROAD_LIFT[w.c] + dzv; // decks are flat across their width
         const cand: Surf = { way: w, h, elev, px: qx, pz: qz, d };
@@ -295,27 +310,35 @@ export class WorldBuilder {
     return best;
   }
 
-  /** Road polylines near a point, for the live minimap. */
+  /** Road polylines near a point, for the live minimap (uses the segment grid, not a scan of every way). */
   public nearbyRoads(x: number, z: number, r: number): { c: number; pts: number[] }[] {
-    const out: { c: number; pts: number[] }[] = [];
-    for (const w of this.roadWays) {
-      const p = w.p; let hit = false;
-      for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] / 10 - x) < r && Math.abs(p[i + 1] / 10 - z) < r) { hit = true; break; }
-      if (hit) out.push({ c: w.c, pts: p });
+    const seen = new Set<number>(); const out: { c: number; pts: number[] }[] = [];
+    const c0x = Math.floor((x - r) / 50), c1x = Math.floor((x + r) / 50), c0z = Math.floor((z - r) / 50), c1z = Math.floor((z + r) / 50);
+    for (let a = c0x; a <= c1x; a++) for (let b = c0z; b <= c1z; b++) {
+      const list = this.cellRoads.get(a * 100003 + b); if (!list) continue;
+      for (let k = 0; k < list.length; k += 2) { const wi = list[k]; if (seen.has(wi)) continue; seen.add(wi); const w = this.roadWays[wi]; out.push({ c: w.c, pts: w.p }); }
     }
     return out;
   }
 
-  /** Streams chunks in/out by distance so mobile GPUs stay happy. */
+  private visDirty = true; private visX = 1e9; private visZ = 1e9; private visT = 0; private shadowT = 0;
+  /** Streams chunks in/out by distance. Visibility only re-evaluates after moving ~12 m or 250 ms; new chunks force a refresh. */
   public update(px: number, pz: number): void {
     this.city?.update(px, pz);
+    this.streets?.updateCars(px, pz);
+    const now = performance.now();
+    if (!this.visDirty && Math.hypot(px - this.visX, pz - this.visZ) < 12 && now - this.visT < 250) return;
+    this.visDirty = false; this.visX = px; this.visZ = pz; this.visT = now;
     for (const t of this.terrainTiles) {
       const d = Math.hypot(t.cx - px, t.cz - pz);
       t.lod0.visible = d < 2400; t.lod1.visible = d >= 2400 && d < 5200;
     }
+    const doShadow = this.shadowsOn && now - this.shadowT > 600; if (doShadow) this.shadowT = now;
     for (const c of this.chunks) {
       const dx = Math.max(Math.abs(c.cx - px) - c.half, 0), dz = Math.max(Math.abs(c.cz - pz) - c.half, 0); // exact distance to the chunk's box
-      c.obj.visible = Math.hypot(dx, dz) < (c.obj.userData['far'] ?? 3000);
+      const d = Math.hypot(dx, dz);
+      c.obj.visible = d < (c.obj.userData['far'] ?? 3000);
+      if (doShadow && c.obj.visible) c.obj.castShadow = d < 230; // only nearby geometry casts into the shadow map
     }
   }
 
@@ -346,6 +369,7 @@ export class WorldBuilder {
     this.streets.build(scene);
     new ExtrasBuilder(this, roads.rails ?? [], roads.crossings ?? []).build(scene);
     if (feats) { this.features = new FeaturesBuilder(this, feats as Features); this.features.build(); }
+    this.flushProps();
     this.city.prime();
     this.buildTrees(scene, tbuf);
     this.buildStreetFurniture(scene);
@@ -425,22 +449,17 @@ export class WorldBuilder {
   private buildTerrain(scene: THREE.Scene, groundTex: THREE.Texture): void {
     const detail0 = 0; void detail0;
     const detail = WorldBuilder.loadTiled('assets/tex/leafy_grass_diff.jpg', 1, 1, true);
-    const rock = WorldBuilder.loadTiled('assets/tex/red_laterite_soil_stones_diff.jpg', 1, 1, true);
-    const conc = WorldBuilder.loadTiled('assets/tex/concrete_pavement_diff.jpg', 1, 1, true);
     const mat = new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95, metalness: 0 });
     mat.onBeforeCompile = (sh) => {
-      sh.uniforms['detailTex'] = { value: detail }; sh.uniforms['rockTex'] = { value: rock }; sh.uniforms['concTex'] = { value: conc };
+      sh.uniforms['detailTex'] = { value: detail };
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vW;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvW = (modelMatrix * vec4(transformed,1.0)).xyz;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vW; uniform sampler2D detailTex; uniform sampler2D rockTex; uniform sampler2D concTex;')
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vW; uniform sampler2D detailTex;')
         .replace('#include <map_fragment>', `#include <map_fragment>
-          vec3 d1 = texture2D(detailTex, vW.xz*0.16).rgb; vec3 d2 = texture2D(detailTex, vW.xz*0.0113+7.0).rgb; vec3 r1 = texture2D(rockTex, vW.xz*0.11).rgb;
-          float l1 = dot(d1, vec3(0.333)), l2 = dot(d2, vec3(0.333)), lr = dot(r1, vec3(0.333));
-          float redness = clamp((diffuseColor.r - diffuseColor.g) * 3.0, 0.0, 1.0);
-          float lc = dot(texture2D(concTex, vW.xz*0.21).rgb, vec3(0.333)) * 1.25;
+          float l1 = dot(texture2D(detailTex, vW.xz*0.16).rgb, vec3(0.333)), l2 = dot(texture2D(detailTex, vW.xz*0.0113+7.0).rgb, vec3(0.333));
           float sat = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)) - min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b));
           float urban = 1.0 - smoothstep(0.03, 0.12, sat);
-          float lum = mix(mix(l1, lr, redness), lc, urban);
+          float lum = mix(l1, 0.6 + (l1 - 0.35) * 0.45, urban);
           diffuseColor.rgb *= (0.45 + lum * 1.35) * (0.7 + l2 * 0.8);`);
     };
     this.buildTerrainTiles(scene, mat);
@@ -514,7 +533,7 @@ export class WorldBuilder {
         const mesh = new THREE.Mesh(buf.toGeometry(withColor, withWin), mats[mk]);
         mesh.name = 'road:' + mk; mesh.receiveShadow = shadow; mesh.castShadow = shadow; mesh.userData['far'] = far;
         onMesh?.(mesh);
-        this.chunks.push({ obj: mesh, cx, cz, r: size * 0.75, half: size / 2 });
+        mesh.visible = false; this.visDirty = true; this.chunks.push({ obj: mesh, cx, cz, r: size * 0.75, half: size / 2 });
         this.landmarksGroup.add(mesh);
       });
     });
@@ -647,7 +666,7 @@ export class WorldBuilder {
       });
       im.userData['far'] = 650; im.computeBoundingSphere();
       const [cxI, czI] = key.split(',').map(Number);
-      this.chunks.push({ obj: im, cx: (cxI + 0.5) * CHUNK, cz: (czI + 0.5) * CHUNK, r: CHUNK * 0.75, half: CHUNK / 2 });
+      im.visible = false; this.visDirty = true; this.chunks.push({ obj: im, cx: (cxI + 0.5) * CHUNK, cz: (czI + 0.5) * CHUNK, r: CHUNK * 0.75, half: CHUNK / 2 });
       this.foliageGroup.add(im);
     });
   }

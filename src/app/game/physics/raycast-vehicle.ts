@@ -46,6 +46,13 @@ export class RaycastVehicle {
   public wheels: WheelState[];
 
   // Reusable math scratch vectors (zero-allocation in loop)
+  // scratch objects: the physics step must not allocate (garbage-collection hitches ruin 60 fps on phones)
+  private _tq = new THREE.Vector3(); private _nf = new THREE.Vector3(); private _off = new THREE.Vector3(); private _wp = new THREE.Vector3();
+  private _sf = new THREE.Vector3(); private _ta = new THREE.Vector3(); private _po = new THREE.Vector3(); private _wv = new THREE.Vector3();
+  private _wf = new THREE.Vector3(); private _wr = new THREE.Vector3(); private _lf = new THREE.Vector3(); private _tb = new THREE.Vector3();
+  private _wb = new THREE.Vector3(); private _ab = new THREE.Vector3(); private _ax = new THREE.Vector3();
+  private _q1 = new THREE.Quaternion(); private _q2 = new THREE.Quaternion(); private _qs = new THREE.Quaternion(); private _qw = new THREE.Quaternion();
+  private static Y = new THREE.Vector3(0, 1, 0);
   private _forward = new THREE.Vector3();
   private _up = new THREE.Vector3();
   private _right = new THREE.Vector3();
@@ -105,7 +112,7 @@ export class RaycastVehicle {
   /**
    * Fixed-step physics update.
    */
-  public updatePhysics(dt: number, groundQuery: (x: number, z: number, y?: number) => { height: number; normal: THREE.Vector3; surfaceClass: number; surfaceName?: string }): void {
+  public updatePhysics(dt: number, groundQuery: (x: number, z: number, y?: number) => { height: number; normal: THREE.Vector3; surfaceClass: number; surfaceName?: string }, terrainHeight?: (x: number, z: number) => number): void {
     this._forward.set(0, 0, 1).applyQuaternion(this.quaternion);
     this._up.set(0, 1, 0).applyQuaternion(this.quaternion);
     this._right.set(1, 0, 0).applyQuaternion(this.quaternion);
@@ -114,11 +121,10 @@ export class RaycastVehicle {
     const speedKmh = Math.abs(speedMs * 3.6);
 
     // 1. Suspension & Wheel Raycasting
-    const totalTorque = new THREE.Vector3();
+    const totalTorque = this._tq.set(0, 0, 0);
     let groundedWheels = 0;
 
-    const gravityForce = new THREE.Vector3(0, -9.81 * this.config.massKg, 0);
-    const netForce = gravityForce.clone();
+    const netForce = this._nf.set(0, -9.81 * this.config.massKg, 0);
 
     // Anti-Roll Bar calculation (transfer load between left and right)
     const arbFront = (this.wheels[0].compressionM - this.wheels[1].compressionM) * this.tuning.antiRollBarFront * 100;
@@ -126,8 +132,8 @@ export class RaycastVehicle {
 
     for (let i = 0; i < 4; i++) {
       const w = this.wheels[i];
-      const offsetWorld = this._wheelOffset[i].clone().applyQuaternion(this.quaternion);
-      const wheelPos = this.position.clone().add(offsetWorld);
+      const offsetWorld = this._off.copy(this._wheelOffset[i]).applyQuaternion(this.quaternion);
+      const wheelPos = this._wp.copy(this.position).add(offsetWorld);
 
       // Raycast downward
       const ground = groundQuery(wheelPos.x, wheelPos.z, wheelPos.y);
@@ -161,15 +167,14 @@ export class RaycastVehicle {
         const normalForce = Math.max(0, springForce + damperForce + arbOffset);
         w.verticalLoadN = normalForce;
 
-        const suspForceVec = ground.normal.clone().multiplyScalar(normalForce);
+        const suspForceVec = this._sf.copy(ground.normal).multiplyScalar(normalForce);
         netForce.add(suspForceVec);
 
         // Calculate lever arm torque
-        const torqueArm = offsetWorld.clone().cross(suspForceVec);
-        totalTorque.add(torqueArm);
+        totalTorque.add(this._ta.copy(offsetWorld).cross(suspForceVec));
 
         // 2. Pacejka Tire Friction & Slip
-        const patchOffset = offsetWorld.clone(); patchOffset.y = ground.height - this.position.y;
+        const patchOffset = this._po.copy(offsetWorld); patchOffset.y = ground.height - this.position.y;
         this.computeTireForces(w, i, speedMs, normalForce, ground, dt, netForce, totalTorque, patchOffset);
       } else {
         w.compressionM = 0;
@@ -206,7 +211,7 @@ export class RaycastVehicle {
     // 3. Aerodynamics (Downforce & Drag)
     const dynPressure = 0.5 * 1.225 * Math.pow(Math.max(0, speedMs), 2);
     const aeroDownforceN = (this.tuning.aeroDownforceFrontKg + this.tuning.aeroDownforceRearKg) * 9.81 * (dynPressure / 500);
-    netForce.add(new THREE.Vector3(0, -aeroDownforceN, 0));
+    netForce.y -= aeroDownforceN;
 
     // Active Aero wing tilt
     if (this.brake > 0.4 && speedKmh > 90) {
@@ -218,27 +223,27 @@ export class RaycastVehicle {
     }
 
     const aeroDragN = dynPressure * this.config.dragCoefficient * 2.2;
-    netForce.add(this._forward.clone().multiplyScalar(-Math.sign(speedMs) * aeroDragN));
+    netForce.addScaledVector(this._forward, -Math.sign(speedMs) * aeroDragN);
 
     // 4. Engine & Transmission updates
     this.updatePowertrain(dt, speedMs);
 
     // 5. Integrate Linear & Angular accelerations
     const linearAccel = netForce.divideScalar(this.config.massKg);
-    this.velocity.add(linearAccel.clone().multiplyScalar(dt));
+    this.velocity.addScaledVector(linearAccel, dt);
 
     // Rigid-body rotation with a box inertia tensor (pitch, yaw, roll differ), solved in the body frame
     const m = this.config.massKg, L = this.config.wheelBaseM * 1.65, Wd = this.config.trackWidthM * 1.1, Ht = 1.35;
-    const inv = this.quaternion.clone().invert();
-    const tb = totalTorque.clone().applyQuaternion(inv);
-    const wb = this.angularVelocity.clone().applyQuaternion(inv);
+    const inv = this._q1.copy(this.quaternion).invert();
+    const tb = this._tb.copy(totalTorque).applyQuaternion(inv);
+    const wb = this._wb.copy(this.angularVelocity).applyQuaternion(inv);
     const Ix = (m * (Ht * Ht + L * L)) / 12, Iy = (m * (Wd * Wd + L * L)) / 12, Iz = (m * (Wd * Wd + Ht * Ht)) / 12;
-    const ab = new THREE.Vector3(
+    const ab = this._ab.set(
       (tb.x - (Iz - Iy) * wb.y * wb.z) / Ix,
       (tb.y - (Ix - Iz) * wb.z * wb.x) / Iy,
       (tb.z - (Iy - Ix) * wb.x * wb.y) / Iz
     );
-    this.angularVelocity.add(ab.applyQuaternion(this.quaternion).multiplyScalar(dt));
+    this.angularVelocity.addScaledVector(ab.applyQuaternion(this.quaternion), dt);
     this.angularVelocity.multiplyScalar(Math.pow(0.985, dt * 60)); // small structural damping only
 
     // Parking sleep: a stationary car must not creep or jitter
@@ -249,19 +254,19 @@ export class RaycastVehicle {
     }
 
     // Apply linear translation
-    this.position.add(this.velocity.clone().multiplyScalar(dt));
+    this.position.addScaledVector(this.velocity, dt);
 
     // Apply rotation (angular velocity is in the world frame, so pre-multiply)
     const angLen = this.angularVelocity.length();
     if (angLen > 1e-6) {
-      this.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(this.angularVelocity.clone().divideScalar(angLen), angLen * dt));
+      this.quaternion.premultiply(this._q2.setFromAxisAngle(this._ax.copy(this.angularVelocity).divideScalar(angLen), angLen * dt));
       this.quaternion.normalize();
     }
 
-    this.enforceGround(groundQuery);
+    this.enforceGround(groundQuery, terrainHeight);
 
     // Keep car upright stabilization if flipped
-    const roll = this._up.dot(new THREE.Vector3(0, 1, 0));
+    const roll = this._up.y;
     if (roll < 0.3) {
       // Auto righting assist
       const rightingTorque = new THREE.Vector3(0, 1, 0).cross(this._up).multiplyScalar(-dt * 4);
@@ -290,21 +295,21 @@ export class RaycastVehicle {
     new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(),
     new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(),
   ];
-  private enforceGround(groundQuery: (x: number, z: number, y?: number) => { height: number; normal: THREE.Vector3; surfaceClass: number }): void {
-    const hl = this.config.wheelBaseM / 2 + 0.85, hw = this.config.trackWidthM / 2 + 0.05, low = -0.26;
-    const offs = [
-      [-hw, -0.05, this.config.wheelBaseM / 2], [hw, -0.05, this.config.wheelBaseM / 2], [-hw, -0.05, -this.config.wheelBaseM / 2], [hw, -0.05, -this.config.wheelBaseM / 2],
-      [-hw, low, hl], [hw, low, hl], [-hw, low, -hl], [hw, low, -hl],
-    ];
+  private enforceGround(groundQuery: (x: number, z: number, y?: number) => { height: number; normal: THREE.Vector3; surfaceClass: number }, terrainHeight?: (x: number, z: number) => number): void {
+    const hl = this.config.wheelBaseM / 2 + 0.85, hw = this.config.trackWidthM / 2 + 0.05, low = -0.26, hb = this.config.wheelBaseM / 2;
     let lift = 0;
     for (let i = 0; i < 8; i++) {
-      const p = this._pts[i].set(offs[i][0], offs[i][1], offs[i][2]).applyQuaternion(this.quaternion).add(this.position);
+      const bumper = i >= 4, sx = i % 2 ? hw : -hw, sz = (i >> 1) % 2 ? (bumper ? -hl : -hb) : (bumper ? hl : hb);
+      const p = this._pts[i].set(sx, bumper ? low : -0.05, sz).applyQuaternion(this.quaternion).add(this.position);
+      // cheap terrain test first; the (costlier) road/deck query only matters near the surface
+      const th = terrainHeight ? terrainHeight(p.x, p.z) : -1e9;
+      if (terrainHeight && p.y > th + 1.1) continue;
       const g = groundQuery(p.x, p.z, p.y).height;
-      const floor = i < 4 ? g + 0.06 : g + 0.03; // wheel mounts keep a little more air than the bumper corners
-      lift = Math.max(lift, floor - p.y);
+      lift = Math.max(lift, (bumper ? g + 0.03 : g + 0.06) - p.y);
     }
     // centre of mass too, and a deep-void safety net (bad teleport / NaN recovery)
-    const gc = groundQuery(this.position.x, this.position.z, this.position.y).height;
+    const thc = terrainHeight ? terrainHeight(this.position.x, this.position.z) : -1e9;
+    const gc = terrainHeight && this.position.y > thc + 1.6 ? thc : groundQuery(this.position.x, this.position.z, this.position.y).height;
     lift = Math.max(lift, gc + 0.2 - this.position.y);
     if (!isFinite(this.position.y) || this.position.y < gc - 3) { this.position.y = gc + 1; this.velocity.y = 0; return; }
     if (lift > 0) {
@@ -333,12 +338,12 @@ export class RaycastVehicle {
       steerRad = -this.steerInput * THREE.MathUtils.degToRad(35) * lockMultiplier;
     }
 
-    const wheelRot = this.quaternion.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), steerRad));
-    const wheelForward = new THREE.Vector3(0, 0, 1).applyQuaternion(wheelRot);
-    const wheelRight = new THREE.Vector3(1, 0, 0).applyQuaternion(wheelRot);
+    const wheelRot = this._qw.copy(this.quaternion).multiply(this._qs.setFromAxisAngle(RaycastVehicle.Y, steerRad));
+    const wheelForward = this._wf.set(0, 0, 1).applyQuaternion(wheelRot);
+    const wheelRight = this._wr.set(1, 0, 0).applyQuaternion(wheelRot);
 
     // Wheel contact velocity
-    const wheelVel = this.velocity.clone().add(this.angularVelocity.clone().cross(offsetWorld));
+    const wheelVel = this._wv.copy(this.angularVelocity).cross(offsetWorld).add(this.velocity);
     const vLong = wheelVel.dot(wheelForward);
     const vLat = wheelVel.dot(wheelRight);
 
@@ -399,14 +404,14 @@ export class RaycastVehicle {
     }
 
     w.lateralForceN = latForceMagnitude;
-    const latForceVec = wheelRight.clone().multiplyScalar(-latForceMagnitude);
+    const latForceVec = this._lf.copy(wheelRight).multiplyScalar(-latForceMagnitude);
     netForce.add(latForceVec);
-    totalTorque.add(offsetWorld.clone().cross(latForceVec));
+    totalTorque.add(this._ta.copy(offsetWorld).cross(latForceVec));
 
     w.longitudinalForceN = longForceN;
-    const longForceVec = wheelForward.clone().multiplyScalar(longForceN);
+    const longForceVec = this._lf.copy(wheelForward).multiplyScalar(longForceN);
     netForce.add(longForceVec);
-    totalTorque.add(offsetWorld.clone().cross(longForceVec));
+    totalTorque.add(this._ta.copy(offsetWorld).cross(longForceVec));
 
     // Skid detection & tire heat
     w.isSkidding = w.slipAngleDeg > 12 || Math.abs(longForceN) > normalForceN * 0.95;

@@ -23,6 +23,7 @@ export class StreetBuilder {
 
   private static size(mat: string): number { return mat === 'props' || mat === 'decal' ? 300 : CH; }
   private buf(x: number, z: number, mat: string): GeoBuf {
+    if (mat === 'props') return this.w.propBuf(x, z);
     const sz = StreetBuilder.size(mat);
     const k = `${sz}:${Math.floor(x / sz)},${Math.floor(z / sz)}`;
     let m = this.bufs.get(k); if (!m) { m = new Map(); this.bufs.set(k, m); }
@@ -259,32 +260,63 @@ export class StreetBuilder {
     this.placeParked(parked.slice(0, 1100));
   }
 
+  // ------------------------------------------------------------------ parked cars (streamed: built near the player only)
+  private carCells = new Map<string, { m: string; x: number; z: number; rot: number }[]>();
+  private carMeshes = new Map<string, THREE.Mesh>();
+  private carParts = new Map<string, THREE.BufferGeometry[]>();
+  private carMat?: THREE.Material;
+  private lodMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.35 });
+  private carLodCells = new Map<string, THREE.Mesh>();
+  private bodyT = new THREE.BoxGeometry(1.8, 0.8, 4.3).translate(0, 0.78, 0);
+  private cabinT = new THREE.BoxGeometry(1.55, 0.62, 2.3).translate(0, 1.5, -0.15);
+  private static PAL = [[0.9, 0.9, 0.9], [0.62, 0.64, 0.68], [0.12, 0.12, 0.13], [0.7, 0.1, 0.1], [0.12, 0.25, 0.6], [0.8, 0.75, 0.6], [0.2, 0.4, 0.25]];
+
+  /** Registers parking spots (cheap data only); geometry is created lazily by updateCars(). */
   public async placeParked(list: { m: string; x: number; z: number; rot: number }[]): Promise<void> {
-    const w = this.w; const byChunk = new Map<string, THREE.BufferGeometry[]>(); const cache = new Map<string, THREE.BufferGeometry[]>();
+    const w = this.w;
     for (const m of new Set(list.map((l) => l.m))) {
+      if (this.carParts.has(m)) continue;
       const model = await AssetLibrary.load(`assets/models/cars/${m}.glb`).catch(() => null); if (!model) continue;
       model.updateWorldMatrix(true, true);
       const bb = new THREE.Box3().setFromObject(model); const s = 4.3 / Math.max(0.5, bb.max.z - bb.min.z);
       const parts: THREE.BufferGeometry[] = [];
       model.traverse((o) => { const me = o as THREE.Mesh; if (me.isMesh) { const g = me.geometry.clone(); g.applyMatrix4(me.matrixWorld); g.scale(s, s, s); g.translate(0, -bb.min.y * s, 0); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k); parts.push(g.index ? g.toNonIndexed() : g); } });
-      cache.set(m, parts);
+      this.carParts.set(m, parts);
     }
-    const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
+    if (!this.carMat) { const atlas = (await AssetLibrary.load('assets/models/cars/sedan.glb')).getObjectByProperty('isMesh', true) as THREE.Mesh; this.carMat = (atlas.material as THREE.Material).clone(); }
+    const tint = (g: THREE.BufferGeometry, c: number[]) => { const n = g.attributes['position'].count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) { a[i * 3] = c[0]; a[i * 3 + 1] = c[1]; a[i * 3 + 2] = c[2]; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); g.deleteAttribute('uv'); return g; };
+    const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0); const lod = new Map<string, THREE.BufferGeometry[]>();
     for (const c of list) {
-      const parts = cache.get(c.m); if (!parts) continue;
+      if (!this.carParts.has(c.m)) continue;
+      const key = `${Math.floor(c.x / 160)},${Math.floor(c.z / 160)}`; let arr = this.carCells.get(key); if (!arr) { arr = []; this.carCells.set(key, arr); } arr.push(c);
       const y = w.calculateRawTerrainHeight(c.x, c.z) + w.roadLift(4) - 0.02;
       M.compose(new THREE.Vector3(c.x, y, c.z), Q.setFromAxisAngle(up, c.rot), new THREE.Vector3(1, 1, 1));
-      const key = `${Math.floor(c.x / 250)},${Math.floor(c.z / 250)}`; let arr = byChunk.get(key); if (!arr) { arr = []; byChunk.set(key, arr); }
-      for (const p of parts) arr.push(p.clone().applyMatrix4(M));
+      const lk = `${Math.floor(c.x / 300)},${Math.floor(c.z / 300)}`; let la = lod.get(lk); if (!la) { la = []; lod.set(lk, la); }
+      const col = StreetBuilder.PAL[Math.floor(rnd(c.x * 0.7 + c.z * 1.3) * StreetBuilder.PAL.length)];
+      la.push(tint(this.bodyT.clone().applyMatrix4(M), col), tint(this.cabinT.clone().applyMatrix4(M), [col[0] * 0.5, col[1] * 0.55, col[2] * 0.6]));
       const fx = Math.sin(c.rot), fz = Math.cos(c.rot); for (const o of [-1.3, 0, 1.3]) w.collision.addCircle(c.x + fx * o, c.z + fz * o, 0.95);
     }
-    const atlas = (await AssetLibrary.load('assets/models/cars/sedan.glb')).getObjectByProperty('isMesh', true) as THREE.Mesh;
-    const mat = (atlas.material as THREE.Material).clone();
-    byChunk.forEach((geos, key) => {
-      const g = mergeGeometries(geos); if (!g) return; g.computeBoundingSphere();
-      const [ix, iz] = key.split(',').map(Number); const mesh = new THREE.Mesh(g, mat); mesh.name = 'parkedcars'; mesh.castShadow = true;
-      w.registerChunk(mesh, (ix + 0.5) * 250, (iz + 0.5) * 250, 250 * 0.75, 300); w.landmarksGroup.add(mesh);
+    lod.forEach((geos, key) => {
+      const g = mergeGeometries(geos.map((q) => (q.index ? q.toNonIndexed() : q))); if (!g) return; g.computeBoundingSphere();
+      const [ix, iz] = key.split(',').map(Number); const mesh = new THREE.Mesh(g, this.lodMat); mesh.name = 'parkedcars-lod';
+      w.registerChunk(mesh, (ix + 0.5) * 300, (iz + 0.5) * 300, 300 * 0.75, 400); w.landmarksGroup.add(mesh);
     });
+  }
+
+  /** Build detailed parked-car meshes for cells within ~220 m, free the ones beyond ~420 m. Cheap; call from the world update. */
+  public updateCars(px: number, pz: number): void {
+    const w = this.w; let built = 0;
+    for (const [key, list] of this.carCells) {
+      const [ix, iz] = key.split(',').map(Number); const dx = Math.max(Math.abs((ix + 0.5) * 160 - px) - 80, 0), dz = Math.max(Math.abs((iz + 0.5) * 160 - pz) - 80, 0), d = Math.hypot(dx, dz);
+      const have = this.carMeshes.get(key);
+      if (d < 230 && !have && built < 2 && this.carMat) {
+        const geos: THREE.BufferGeometry[] = []; const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
+        for (const c of list) { const parts = this.carParts.get(c.m); if (!parts) continue; const y = w.calculateRawTerrainHeight(c.x, c.z) + w.roadLift(4) - 0.02; M.compose(new THREE.Vector3(c.x, y, c.z), Q.setFromAxisAngle(up, c.rot), new THREE.Vector3(1, 1, 1)); for (const p of parts) geos.push(p.clone().applyMatrix4(M)); }
+        const g = geos.length ? mergeGeometries(geos) : null; if (!g) { this.carMeshes.set(key, new THREE.Mesh()); continue; }
+        for (const q of geos) q.dispose(); g.computeBoundingSphere();
+        const mesh = new THREE.Mesh(g, this.carMat); mesh.name = 'parkedcars'; mesh.frustumCulled = true; w.landmarksGroup.add(mesh); this.carMeshes.set(key, mesh); built++;
+      } else if (d > 430 && have) { if (have.geometry) have.geometry.dispose(); w.landmarksGroup.remove(have); this.carMeshes.delete(key); }
+    }
   }
 
   // ------------------------------------------------------------------ clouds
@@ -294,9 +326,9 @@ export class StreetBuilder {
     for (let i = 0; i < 9; i++) { const x = 30 + rnd(i * 3.1) * 68, y = 50 + rnd(i * 7.3) * 28, r = 22 + rnd(i * 5.9) * 22; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(255,255,255,.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); }
     const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
     const grp = new THREE.Group();
-    for (let i = 0; i < 12; i++) {
-      const m = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.85, depthWrite: false, fog: false });
-      const s = new THREE.Sprite(m); const sc = 900 + rnd(i * 2.3) * 900; s.scale.set(sc, sc * 0.45, 1);
+    for (let i = 0; i < 7; i++) {
+      const m = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.8, depthWrite: false, fog: false });
+      const s = new THREE.Sprite(m); const sc = 700 + rnd(i * 2.3) * 700; s.scale.set(sc, sc * 0.45, 1);
       s.position.set((rnd(i * 4.7) - 0.5) * 9000, 850 + rnd(i * 1.9) * 500, (rnd(i * 8.1) - 0.5) * 9000); grp.add(s);
     }
     this.clouds = grp; scene.add(grp);

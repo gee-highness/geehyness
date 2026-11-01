@@ -16,6 +16,7 @@ export class ExtrasBuilder {
 
   private static size(mat: string): number { return mat === 'ballast' ? CH : 300; }
   private buf(x: number, z: number, mat: string): GeoBuf {
+    if (mat === 'props') return this.w.propBuf(x, z);
     const sz = ExtrasBuilder.size(mat); const k = `${sz}:${Math.floor(x / sz)},${Math.floor(z / sz)}:${mat}`;
     let b = this.bufs.get(k); if (!b) { b = new GeoBuf(); this.bufs.set(k, b); } return b;
   }

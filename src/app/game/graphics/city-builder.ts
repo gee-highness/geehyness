@@ -131,10 +131,11 @@ export class CityBuilder {
   prime(): void { const sp = this.w.meta.spawn; this.stream(sp.x, sp.z, 1300, 1e9); }
 
   /** Called every frame: builds nearby chunks within a small time budget (keeps the frame rate smooth). */
-  update(px: number, pz: number): void { this.stream(px, pz, 1500, 3); }
+  update(px: number, pz: number): void { this.stream(px, pz, 1500, 1.6); }
 
   private stream(px: number, pz: number, radius: number, budgetMs: number): void {
     const t0 = performance.now();
+    if (!this.drainEmit(t0, budgetMs)) return;
     for (;;) {
       if (!this.cur) {
         let bestKey: string | null = null, bd = radius;
@@ -149,23 +150,28 @@ export class CityBuilder {
       const c = this.cur;
       while (c.i < c.list.length) { this.addBuilding(c.list[c.i++]); if ((c.i & 7) === 0 && performance.now() - t0 > budgetMs) return; }
       this.emitWalls(); this.cur = null;
-      if (performance.now() - t0 > budgetMs) return;
+      if (!this.drainEmit(t0, budgetMs)) return;
     }
   }
 
+  private emitQ: { buf: GeoBuf; mk: string; cx: number; cz: number; sz: number }[] = [];
   private emitWalls(): void {
     this.walls.forEach((m, key) => {
-      const [szs, rest] = key.split(':'); const sz = Number(szs); const [ix, iz] = rest.split(',').map(Number); const cx = (ix + 0.5) * sz, cz = (iz + 0.5) * sz;
-      m.forEach((buf, mk) => {
-        if (buf.empty) return;
-        const isProp = mk === 'props' || mk === 'sign';
-        const mesh = new THREE.Mesh(buf.toGeometry(mk !== 'sign', !isProp), this.mats[mk]);
-        mesh.name = 'bld:' + mk; mesh.castShadow = !isProp; mesh.receiveShadow = true;
-        this.w.registerChunk(mesh, cx, cz, sz * 0.75, isProp ? 420 : 1150);
-        this.w.landmarksGroup.add(mesh);
-      });
+      const [szs, rest] = key.split(':'); const sz = Number(szs); const [ix, iz] = rest.split(',').map(Number);
+      m.forEach((buf, mk) => { if (!buf.empty) this.emitQ.push({ buf, mk, cx: (ix + 0.5) * sz, cz: (iz + 0.5) * sz, sz }); });
     });
     this.walls.clear();
+  }
+  /** Turn queued buffers into meshes, one at a time, inside the frame budget. */
+  private drainEmit(t0: number, budgetMs: number): boolean {
+    while (this.emitQ.length) {
+      const q = this.emitQ.shift()!; const isProp = q.mk === 'props' || q.mk === 'sign';
+      const mesh = new THREE.Mesh(q.buf.toGeometry(q.mk !== 'sign', !isProp), this.mats[q.mk]);
+      mesh.name = 'bld:' + q.mk; mesh.castShadow = false; mesh.receiveShadow = true;
+      this.w.registerChunk(mesh, q.cx, q.cz, q.sz * 0.75, isProp ? 420 : 1150); this.w.landmarksGroup.add(mesh);
+      if (performance.now() - t0 > budgetMs) return false;
+    }
+    return true;
   }
 
   // ------------------------------------------------------------------ styles by use

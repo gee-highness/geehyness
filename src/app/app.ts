@@ -159,6 +159,7 @@ export class App implements AfterViewInit, OnDestroy {
       // Drop the car on the real MR3 (Ngwane St, eastbound) once the world has streamed in
       (window as unknown as { __shesha: Record<string, unknown> }).__shesha = {
         ...((window as unknown as { __shesha?: Record<string, unknown> }).__shesha ?? {}),
+        perf: () => Object.fromEntries(Object.entries(this.perf).map(([k, v]) => [k, Math.round(v * 100) / 100])),
         tpRoad: (x: number, z: number) => {
           const wb = this.sceneManager.worldBuilder; const r = wb.nearestRoadSegment(x, z, 5); if (!r) return null;
           this.vehicle.position.set(r.px, wb.groundHeightAt(r.px, r.pz) + 1, r.pz); this.vehicle.velocity.set(0, 0, 0);
@@ -205,7 +206,11 @@ export class App implements AfterViewInit, OnDestroy {
     });
   }
 
+  private perf: Record<string, number> = {};
+  private mark(k: string, t0: number): number { const t = performance.now(); this.perf[k] = (this.perf[k] ?? 0) * 0.9 + (t - t0) * 0.1; return t; }
+
   private loop = (now: number): void => {
+    let tp = performance.now();
     const frameDelta = Math.min((now - this.lastTime) / 1000, 0.1);
     this.lastTime = now;
 
@@ -218,6 +223,7 @@ export class App implements AfterViewInit, OnDestroy {
         this.stepPhysics(this.FIXED_STEP);
         this.physicsAccumulator -= this.FIXED_STEP;
       }
+      tp = this.mark('physics', tp);
 
       // Day-Night environment tick
       this.envAccum += frameDelta;
@@ -240,6 +246,7 @@ export class App implements AfterViewInit, OnDestroy {
 
       // Blended DualShock 4 Haptic update
       this.updateHaptics(telem, now);
+      tp = this.mark('audio+haptics', tp);
 
       // Posted speed limit + viewpoints (4 Hz is plenty)
       this.slowTick += frameDelta;
@@ -271,7 +278,9 @@ export class App implements AfterViewInit, OnDestroy {
         telem.speedKmh,
         pad.lookBack
       );
+      tp = this.mark('camera', tp);
       this.sceneManager.syncVehicleVisuals(this.vehicle, frameDelta);
+      tp = this.mark('sync(world,traffic,wheels)', tp);
 
       // Push telemetry snapshot to Angular UI at ~20 Hz
       this.telemetryService.pushSnapshot(telem);
@@ -293,7 +302,10 @@ export class App implements AfterViewInit, OnDestroy {
     }
 
     // Render Scene
+    tp = this.mark('hud+misc', tp);
+    if (this.hudComponent?.showFps() && now - this.fpsT > 500) { this.fpsT = now; const sm = this.sceneManager; this.hudComponent.fpsText.set(`${sm.fps} fps · ${Math.round(sm.resolution * 100)}% res · ${Math.round((this.perf['physics'] ?? 0) * 10) / 10}ms phys`); }
     this.sceneManager.render(frameDelta * 1000);
+    this.mark('render(cpu submit)', tp);
 
     this.animFrameId = requestAnimationFrame(this.loop);
   };
@@ -351,7 +363,7 @@ export class App implements AfterViewInit, OnDestroy {
     // Query Ground Height & Normals from WorldBuilder
     this.vehicle.updatePhysics(dt, (x, z, y) => {
       return this.sceneManager.worldBuilder.queryGround(x, z, y);
-    });
+    }, (x, z) => this.sceneManager.worldBuilder.calculateRawTerrainHeight(x, z));
 
     // Solid world: buildings, trees, poles and other cars
     const wb = this.sceneManager.worldBuilder;
@@ -366,6 +378,7 @@ export class App implements AfterViewInit, OnDestroy {
 
   private lastCrashRumble = 0;
   private slowTick = 0;
+  private fpsT = 0;
   private seenViews = new Set<string>();
   private envAccum = 1;
   private updateHaptics(telem: ReturnType<RaycastVehicle['getTelemetry']>, now: number): void {
@@ -415,6 +428,7 @@ export class App implements AfterViewInit, OnDestroy {
     this.audioService.unlockAudio();
     if (!this.started()) { if (event.code === 'Enter') this.begin(); return; }
 
+    if (event.code === 'KeyF') { this.hudComponent?.showFps.update((v) => !v); return; }
     if (event.code === 'KeyH') { this.hapticsService.setEnabled(!this.hapticsService.enabled()); return; }
     if (event.code === 'KeyV') { this.showCars.update((v) => !v); return; }
     switch (event.code) {
