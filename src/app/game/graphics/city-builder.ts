@@ -44,7 +44,7 @@ export class CityBuilder {
   private makeMaterials(signs: string[][]): void {
     const w = this.w;
     const plaster = w.pbr('white_plaster_rough_01', 3, 0.9), brick = w.pbr('brick_wall_02', 3, 0.85);
-    const concrete = w.pbr('concrete_wall_007', 3, 0.85), ironw = w.pbr('rusty_corrugated_iron', 3, 0.6); ironw.metalness = 0.3;
+    const concrete = w.pbr('concrete_wall_007', 3, 0.85), ironw = w.pbr('corrugated_iron', 3, 0.6); ironw.metalness = 0.25;
     const roof = w.pbr('corrugated_iron', 3, 0.5); roof.metalness = 0.45;
     for (const m of [plaster, brick, concrete, ironw]) this.windowize(m);
     for (const m of [plaster, brick, concrete, ironw, roof]) {
@@ -165,7 +165,7 @@ export class CityBuilder {
     n = pts.length; const area = A / 2, r = seed / 1000, w = this.w;
     let maxH = -1e9; const hs = pts.map((p) => { const h = w.calculateRawTerrainHeight(p[0], p[1]); maxH = Math.max(maxH, h); return h; });
     const st = this.style(use, r, area, n);
-    const boost = st.wall === 'plaster' ? 1.5 : st.wall === 'concrete' ? 1.45 : st.wall === 'brick' ? 1.35 : 1.5;
+    const boost = st.wall === 'plaster' ? 1.5 : st.wall === 'concrete' ? 1.45 : st.wall === 'brick' ? 1.35 : 1.9;
     st.tint = st.tint.map((v) => v * boost);
     const h = hdm / 10; const top = maxH + h;
     const wallBuf = this.buf(cx, cz, st.wall);
@@ -335,7 +335,8 @@ export class CityBuilder {
     const col = sid % this.signCols, row = Math.floor(sid / this.signCols);
     const ux0 = col / this.signCols, ux1 = (col + 1) / this.signCols, vy1 = 1 - row / this.signRows, vy0 = 1 - (row + 1) / this.signRows;
     const w = [1, 1, 1];
-    const i0 = b.vert(p0[0], y0, p0[1], nx, 0, nz, ux0, vy0, w), i1 = b.vert(p1[0], y0, p1[1], nx, 0, nz, ux1, vy0, w), i2 = b.vert(p1[0], y1, p1[1], nx, 0, nz, ux1, vy1, w), i3 = b.vert(p0[0], y1, p0[1], nx, 0, nz, ux0, vy1, w);
+    // seen from outside the edge runs right-to-left, so mirror U to make the text read left-to-right
+    const i0 = b.vert(p0[0], y0, p0[1], nx, 0, nz, ux1, vy0, w), i1 = b.vert(p1[0], y0, p1[1], nx, 0, nz, ux0, vy0, w), i2 = b.vert(p1[0], y1, p1[1], nx, 0, nz, ux0, vy1, w), i3 = b.vert(p0[0], y1, p0[1], nx, 0, nz, ux1, vy1, w);
     b.tri(i0, i2, i1); b.tri(i0, i3, i2);
   }
 
