@@ -716,6 +716,16 @@ export class WorldBuilder {
   }
 
   // ------------------------------------------------------------------ lamps, signals
+  private glowMat?: THREE.MeshBasicMaterial; private static _glowGeo?: THREE.BufferGeometry;
+  private static glowGeo(): THREE.BufferGeometry { return (WorldBuilder._glowGeo ??= new THREE.CircleGeometry(7, 20).rotateX(-Math.PI / 2)); }
+  private makeGlowMat(): THREE.MeshBasicMaterial {
+    const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d')!; const gr = g.createRadialGradient(64, 64, 2, 64, 64, 62);
+    gr.addColorStop(0, 'rgba(255,214,150,0.95)'); gr.addColorStop(0.35, 'rgba(255,190,110,0.38)'); gr.addColorStop(1, 'rgba(255,170,90,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    return new THREE.MeshBasicMaterial({ map: t, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 });
+  }
+  /** 0..1 night factor from the scene: fades the lamp light pools in and out. */
+  public setNightGlow(n: number): void { if (this.glowMat) this.glowMat.opacity = Math.max(0, (n - 0.15) / 0.85) * 0.9; }
   public lampSpots: { x: number; z: number; rot: number }[] = [];
   private buildStreetFurniture(scene: THREE.Scene): void {
     const poleG = new THREE.CylinderGeometry(0.1, 0.16, 9, 6); poleG.translate(0, 4.5, 0);
@@ -757,6 +767,10 @@ export class WorldBuilder {
     byChunk.forEach((list, key) => {
       const poles = new THREE.InstancedMesh(pole, poleM, list.length), heads = new THREE.InstancedMesh(headG, headM, list.length); poles.name = heads.name = 'lamps';
       list.forEach((s, i) => { q.setFromAxisAngle(up, s.rot); m4.compose(new THREE.Vector3(s.x, this.calculateRawTerrainHeight(s.x, s.z) + (this.onPavement(s.x, s.z) ? 0.3 : 0), s.z), q, new THREE.Vector3(1, 1, 1)); poles.setMatrixAt(i, m4); heads.setMatrixAt(i, m4); });
+      // stylised light pool on the ground under each lamp (additive, strength follows the night factor)
+      { this.glowMat ??= this.makeGlowMat(); const glow = new THREE.InstancedMesh(WorldBuilder.glowGeo(), this.glowMat, list.length); glow.name = 'lamp-glow'; glow.renderOrder = 3;
+        list.forEach((l2, i) => { const gx = l2.x + Math.cos(l2.rot) * 2.3, gz = l2.z - Math.sin(l2.rot) * 2.3; m4.compose(new THREE.Vector3(gx, this.groundHeightAt(gx, gz) + 0.07, gz), new THREE.Quaternion(), new THREE.Vector3(1, 1, 1)); glow.setMatrixAt(i, m4); });
+        glow.computeBoundingSphere?.(); const [gx2, gz2] = key.split(',').map(Number); this.registerChunk(glow, (gx2 + 0.5) * CHUNK, (gz2 + 0.5) * CHUNK, CHUNK * 0.75, 420); this.roadInfrastructureGroup.add(glow); }
       poles.computeBoundingSphere(); heads.computeBoundingSphere(); const [ix, iz] = key.split(',').map(Number);
       for (const o of [poles, heads]) { this.registerChunk(o, (ix + 0.5) * CHUNK, (iz + 0.5) * CHUNK, CHUNK * 0.75, 700); this.roadInfrastructureGroup.add(o); }
     });

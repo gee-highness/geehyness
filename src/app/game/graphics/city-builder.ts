@@ -109,7 +109,7 @@ export class CityBuilder {
       sh.uniforms['uNight'] = night; sh.uniforms['uNeo'] = neoU; sh.uniforms['uWinAtlas'] = { value: windowAtlas() };
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aWin; varying float vWin; varying vec2 vWUv;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWin = aWin; vWUv = uv;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vWin; varying vec2 vWUv; uniform float uNight; uniform float uNeo; uniform sampler2D uWinAtlas;\nfloat h11(float n){return fract(sin(n*12.9898)*43758.5453);}')
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vWin; varying vec2 vWUv; uniform float uNight; uniform float uNeo; uniform sampler2D uWinAtlas;\nfloat h11(float n){ n = mod(n, 997.0); return fract(sin(n*12.9898 + 0.31)*43758.5453); }')
         .replace(sh.fragmentShader.includes('/*STYLE_DONE*/') ? '/*STYLE_DONE*/' : '#include <map_fragment>', `${sh.fragmentShader.includes('/*STYLE_DONE*/') ? '/*STYLE_DONE*/' : '#include <map_fragment>'}
           float st = min(floor(vWin + 0.001), 7.0), sd = fract(vWin);
           float bay = fract(vWUv.x), flr = fract(vWUv.y), fl = floor(vWUv.y), bi = floor(vWUv.x);
@@ -132,7 +132,7 @@ export class CityBuilder {
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
           roughnessFactor = mix(roughnessFactor, 0.05, win * 0.9);`)
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-          totalEmissiveRadiance += lit * mix(vec3(1.0, 0.78, 0.42), neonCol, uNeo) * 1.6;
+          totalEmissiveRadiance += lit * mix(vec3(1.0, 0.72, 0.36), neonCol, uNeo) * 0.95;
           totalEmissiveRadiance += uNeo * smoothstep(0.92, 0.985, flr) * neonCol * 1.3 * step(0.5, st);`);
     };
   }

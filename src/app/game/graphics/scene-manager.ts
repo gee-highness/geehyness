@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Weather } from './weather';
+import { Sky, skyPalette, SkyPalette } from './sky';
 import { Pedestrians } from './pedestrians';
 import { TrafficSignals } from './traffic-signals';
 import { QualityTier } from '../../services/settings.service';
@@ -52,7 +53,9 @@ export class SceneManager {
   private quality: QualityTier = 'AUTO';
   private windKmh = 12;
   private baseDaylight = 1;
-  private neo = false;
+  private neo = false; private sunDirSky = new THREE.Vector3(0, 1, 0);
+  private sky!: Sky; private envScene!: THREE.Scene; private rim!: THREE.DirectionalLight; private envRT?: THREE.WebGLRenderTarget; private envKey = ''; private envT = 0;
+  private pal: SkyPalette = { zenith: new THREE.Color(), horizon: new THREE.Color(), sun: new THREE.Color(), sunI: 1, day: 1 }; private skyClock = 0; private skyCover = 0.55; private skyGloom = 0;
   private govTimer = 0;
 
   constructor(private container: HTMLElement) {
@@ -120,14 +123,10 @@ export class SceneManager {
   }
 
   private initLighting(): void {
-    // Real HDRI sky (Poly Haven, CC0) drives background + image-based lighting
-    new RGBELoader().load('assets/hdri/sky.hdr', (hdr) => {
-      hdr.mapping = THREE.EquirectangularReflectionMapping;
-      this.scene.background = hdr;
-      const pm = new THREE.PMREMGenerator(this.renderer);
-      this.scene.environment = pm.fromEquirectangular(hdr).texture; pm.dispose();
-      this.scene.environmentIntensity = 1.0;
-    });
+    // Procedural stylized sky replaces the HDRI: background + image-based lighting both come from it
+    this.sky = new Sky(this.scene); this.scene.background = null;
+    this.envScene = new THREE.Scene(); this.envScene.add(this.sky.envMesh);
+    this.rim = new THREE.DirectionalLight(0x9ab8ff, 0.0); this.rim.position.set(-200, 120, -300); this.scene.add(this.rim);
 
     // Warm African sunlight
     this.hemiLight = new THREE.HemisphereLight(0xbae6fd, 0x854d0e, 0.9);
@@ -214,28 +213,39 @@ export class SceneManager {
     if (!this.neo && wb.city) wb.city.neo.value = 0;
   }
 
-  public updateEnvironment(env: WorldEnvironmentState): void {
-    // Update Sun position & color
-    this.sunLight.position.set(env.sunPosition[0], Math.max(10, env.sunPosition[1]), env.sunPosition[2]);
-    this.sunLight.color.set(env.sunColorHex);
+  /** Re-bake the image-based lighting from the sky when its look has changed (throttled; a PMREM of a 50 m dome is cheap). */
+  private refreshEnvironmentMap(): void {
+    const now = performance.now(); const key = `${Math.round(this.sunDirSky.y * 8)}|${this.skyGloom.toFixed(1)}|${this.neo ? 1 : 0}`;
+    if (key === this.envKey && this.envRT) return; if (now - this.envT < 4000 && this.envRT) return; this.envKey = key; this.envT = now;
+    this.sky.update(new THREE.Vector3(), this.sunDirSky, this.pal, this.skyClock, this.skyCover, this.skyGloom, 0);
+    const pm = new THREE.PMREMGenerator(this.renderer); const rt = pm.fromScene(this.envScene, 0, 0.1, 100); pm.dispose();
+    this.scene.environment = rt.texture; this.envRT?.dispose(); this.envRT = rt;
+  }
 
-    // Update Sky & Fog
-    const skyCol = new THREE.Color(env.skyColorHex);
-    // Dim HDRI sky & IBL as the sun sinks below the horizon
+  public updateEnvironment(env: WorldEnvironmentState): void {
     this.windKmh = env.windSpeedKmh; this.weather.set(env.weather);
-    const gloom = env.weather === 'TROPICAL_RAIN' ? 0.45 : env.weather === 'OVERCAST' ? 0.7 : env.weather === 'MIST' ? 0.75 : 1;
-    let daylight = THREE.MathUtils.clamp(0.06 + env.sunPosition[1] / 900, 0.06, 1.0) * gloom;
-    if (this.neo) daylight = Math.min(daylight, 0.42) * 0.8 + 0.04;
-    this.baseDaylight = daylight;
-    this.sunLight.intensity = 2.8 * gloom * gloom;
-    this.scene.backgroundIntensity = daylight;
+    const elev = Math.sin(((env.timeOfDayHours - 6) / 24) * 2 * Math.PI);   // true solar elevation, not clamped by the env service
+    const sd = new THREE.Vector3(env.sunPosition[0], 0, env.sunPosition[2]).normalize(); sd.x *= Math.sqrt(Math.max(0.0001, 1 - elev * elev)); sd.z *= Math.sqrt(Math.max(0.0001, 1 - elev * elev)); sd.y = elev;
+    this.sunDirSky.copy(sd);
+    const gloomK = env.weather === 'TROPICAL_RAIN' ? 0.18 : env.weather === 'OVERCAST' ? 0.45 : env.weather === 'MIST' ? 0.55 : 1;
+    this.skyGloom = 1 - gloomK; this.skyCover = env.weather === 'SUNNY' ? 0.5 : env.weather === 'MIST' ? 0.7 : 0.95;
+    const pal = skyPalette(sd.y, gloomK, this.neo, this.pal);
+    const day = pal.day * (this.neo ? 0.75 : 1);
+    const gloom = 0.45 + 0.55 * gloomK;
+    // sun: warm key from the palette; shadows from it only when it is above the horizon
+    this.sunLight.position.set(sd.x * 400, Math.max(40, sd.y * 400), sd.z * 400);
+    this.sunLight.color.copy(pal.sun); this.sunLight.intensity = pal.sunI * (sd.y > -0.02 ? 1 : 0) * gloom * gloom * (this.neo ? 0.6 : 1);
+    // ambient: sky colour above, warm bounce below; cool rim light opposite the sun for the stylised edge glow
+    this.hemiLight.color.copy(pal.zenith).lerp(new THREE.Color(1, 1, 1), 0.45); this.hemiLight.groundColor.copy(pal.horizon).multiplyScalar(0.42).lerp(new THREE.Color(0.35, 0.26, 0.2), 0.3);
+    this.hemiLight.intensity = 0.28 + 0.62 * day;
+    this.rim.position.set(-sd.x * 300, 120, -sd.z * 300); this.rim.color.copy(pal.zenith).lerp(new THREE.Color(0.7, 0.8, 1), 0.5); this.rim.intensity = (0.15 + 0.35 * day) * (this.neo ? 2 : 1);
+    this.renderer.toneMappingExposure = 0.88 + 0.28 * (1 - day);
+    const daylight = Math.max(0.06, day);
+    this.baseDaylight = daylight; this.scene.environmentIntensity = 0.25 + 0.75 * daylight;
     if (this.worldBuilder.city) { this.worldBuilder.city.night.value = THREE.MathUtils.clamp(1 - (daylight - 0.06) / 0.3, 0, 1); this.worldBuilder.city.neo.value += ((this.neo ? 1 : 0) - this.worldBuilder.city.neo.value) * 0.5; }
-    this.scene.environmentIntensity = daylight;
-    if (this.scene.fog) {
-      (this.scene.fog as THREE.FogExp2).color = skyCol.clone().lerp(new THREE.Color(0xdbe5e8), 0.8).multiplyScalar(Math.max(0.05, daylight));
-      (this.scene.fog as THREE.FogExp2).density = env.fogDensity * 0.35 * (this.neo ? 1.5 : 1);
-      if (this.neo) (this.scene.fog as THREE.FogExp2).color.lerp(new THREE.Color(0x2b1b55), 0.6);
-    }
+    this.worldBuilder.setNightGlow?.(this.worldBuilder.city ? this.worldBuilder.city.night.value : 0);
+    if (this.scene.fog) { const f = this.scene.fog as THREE.FogExp2; f.color.copy(pal.horizon).multiplyScalar(0.55 + 0.45 * daylight); f.density = env.fogDensity * 0.4 * (this.neo ? 1.4 : 1); }
+    this.refreshEnvironmentMap();
 
     // Wet road puddles and mirror reflections
     for (const mesh of this.worldBuilder.roadMeshes) {
@@ -257,7 +267,8 @@ export class SceneManager {
     this.pedestrians?.update(dt, vehicle.position.x, vehicle.position.z, vehicle.velocity.x, vehicle.velocity.z);
     (window as unknown as { __shesha?: Record<string, unknown> }).__shesha!['peds'] = () => this.pedestrians?.debug();
     this.weather.update(dt, vehicle.position, this.windKmh);
-    if (this.weather.lightning > 0.01) { this.scene.backgroundIntensity = this.baseDaylight + this.weather.lightning * 1.6; this.scene.environmentIntensity = this.baseDaylight + this.weather.lightning * 1.2; }
+    this.skyClock += dt; this.sky.update(this.cameraRig.camera.position, this.sunDirSky, this.pal, this.skyClock, this.skyCover, this.skyGloom, this.weather.lightning * 0.5);
+    if (this.weather.lightning > 0.01) this.scene.environmentIntensity = this.baseDaylight + this.weather.lightning * 1.2;
     const clouds = this.worldBuilder.streets?.clouds;
     if (clouds) {
       clouds.position.set(vehicle.position.x, 0, vehicle.position.z);
