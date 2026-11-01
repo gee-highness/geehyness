@@ -23,6 +23,28 @@ interface Style { wall: 'plaster' | 'brick' | 'concrete' | 'ironw'; tint: number
  * Turns the OSM footprints + inferred uses into varied, believable buildings: wall/roof materials, window
  * styles, roof shapes, awnings, shop signs, rooftop tanks, church towers and petrol canopies.
  */
+let _winAtlas: THREE.DataTexture | null = null;
+/** Bakes the procedural window styles (1..7) into one small RGBA mask atlas, shared by every wall material. */
+function windowAtlas(): THREE.DataTexture {
+  if (_winAtlas) return _winAtlas;
+  const T = 64, W = T * 8, H = T * 2, data = new Uint8Array(W * H * 4);
+  const st_ = (a: number, x: number) => (x >= a ? 1 : 0), rng = (lo: number, v: number, hi: number) => st_(lo, v) * st_(v, hi);
+  for (let st = 1; st < 8; st++) for (let row = 0; row < 2; row++) for (let py = 0; py < T; py++) for (let px = 0; px < T; px++) {
+    const bay = (px + 0.5) / T, flr = (py + 0.5) / T, y = row === 0 ? flr : 1 + flr, g0 = row === 0 ? 1 : 0;
+    let win = 0, glass = 0, mull = 0, door = 0;
+    if (st < 2) { win = rng(0.3, bay, 0.7) * rng(0.34, flr, 0.8) * st_(0.3, y); door = rng(0.36, bay, 0.64) * st_(flr, 0.7) * st_(y, 0.7); }
+    else if (st < 3) { const shop = rng(0.06, bay, 0.94) * rng(0.1, flr, 0.78) * g0, up = rng(0.3, bay, 0.7) * rng(0.34, flr, 0.8) * (1 - g0); win = Math.max(shop, up); glass = shop; mull = g0 * rng(0.47, bay, 0.5); }
+    else if (st < 4) { win = rng(0.05, bay, 0.95) * rng(0.08, flr, 0.92); glass = win; mull = 1 - rng(0.05, bay, 0.95); }
+    else if (st < 5) { win = rng(0.12, bay, 0.88) * rng(0.66, flr, 0.86) * g0; }
+    else if (st < 6) { win = rng(0.1, bay, 0.95) * rng(0.38, flr, 0.8) * st_(0.3, y); }
+    else if (st < 7) { win = rng(0.4, bay, 0.6) * rng(0.2, flr, 0.88); }
+    else { win = rng(0.18, bay, 0.82) * rng(0.3, flr, 0.82) * st_(0.3, y); }
+    const o = ((row * T + py) * W + st * T + px) * 4; data[o] = win * 255; data[o + 1] = glass * 255; data[o + 2] = mull * 255; data[o + 3] = door * 255;
+  }
+  const t = new THREE.DataTexture(data, W, H, THREE.RGBAFormat); t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true;
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true; return (_winAtlas = t);
+}
+
 export class CityBuilder {
   public night = { value: 0 };
   private mats!: Record<string, THREE.Material>;
@@ -76,26 +98,20 @@ export class CityBuilder {
   private windowize(m: THREE.MeshStandardMaterial): void {
     const night = this.night;
     m.onBeforeCompile = (sh) => {
-      sh.uniforms['uNight'] = night;
+      sh.uniforms['uNight'] = night; sh.uniforms['uWinAtlas'] = { value: windowAtlas() };
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aWin; varying float vWin; varying vec2 vWUv;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWin = aWin; vWUv = uv;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vWin; varying vec2 vWUv; uniform float uNight;\nfloat h11(float n){return fract(sin(n*12.9898)*43758.5453);}')
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vWin; varying vec2 vWUv; uniform float uNight; uniform sampler2D uWinAtlas;\nfloat h11(float n){return fract(sin(n*12.9898)*43758.5453);}')
         .replace('#include <map_fragment>', `#include <map_fragment>
-          float st = floor(vWin + 0.001), sd = fract(vWin);
+          float st = min(floor(vWin + 0.001), 7.0), sd = fract(vWin);
           float bay = fract(vWUv.x), flr = fract(vWUv.y), fl = floor(vWUv.y), bi = floor(vWUv.x);
           float win = 0.0, door = 0.0, mull = 0.0, glass = 0.0;
           if (st > 0.5) {
-            if (st < 1.5) { win = step(0.3,bay)*step(bay,0.7)*step(0.34,flr)*step(flr,0.8)*step(0.3,vWUv.y);
-              door = step(0.36,bay)*step(bay,0.64)*step(flr,0.7)*step(vWUv.y,0.7)*step(0.75,fract(bi*0.618+sd*7.0)); }
-            else if (st < 2.5) { float g0 = 1.0 - step(0.5, fl);
-              float shop = step(0.06,bay)*step(bay,0.94)*step(0.1,flr)*step(flr,0.78)*g0;
-              float up = step(0.3,bay)*step(bay,0.7)*step(0.34,flr)*step(flr,0.8)*(1.0-g0);
-              win = max(shop, up); glass = shop; mull = g0*(step(0.47,bay)*step(bay,0.5)); }
-            else if (st < 3.5) { win = step(0.05,bay)*step(bay,0.95)*step(0.08,flr)*step(flr,0.92); glass = win; mull = 1.0 - step(0.05,bay)*step(bay,0.95); }
-            else if (st < 4.5) { win = step(0.12,bay)*step(bay,0.88)*step(0.66,flr)*step(flr,0.86)*(1.0-step(0.5,fl)); }
-            else if (st < 5.5) { win = step(0.1,bay)*step(bay,0.95)*step(0.38,flr)*step(flr,0.8)*step(0.3,vWUv.y); }
-            else if (st < 6.5) { win = step(0.4,bay)*step(bay,0.6)*step(0.2,flr)*step(flr,0.88)*step(0.5,fract(bi*0.5)); }
-            else { win = step(0.18,bay)*step(bay,0.82)*step(0.3,flr)*step(flr,0.82)*step(0.3,vWUv.y); }
+            // baked mask atlas: 8 styles across, ground floor / upper floor rows; R=window G=glass B=mullion A=door zone
+            vec2 tuv = vec2((st + clamp(bay, 0.008, 0.992)) / 8.0, (min(fl, 1.0) + clamp(flr, 0.008, 0.992)) / 2.0);
+            vec4 wm = textureGrad(uWinAtlas, tuv, dFdx(vWUv) * vec2(0.125, 0.5), dFdy(vWUv) * vec2(0.125, 0.5));
+            if (st > 5.5 && st < 6.5) wm.r *= step(0.5, fract(bi*0.5));
+            win = wm.r; glass = wm.g; mull = wm.b; door = wm.a * step(0.75, fract(bi*0.618+sd*7.0)) * step(st, 1.5);
           }
           vec3 glassCol = mix(vec3(0.05,0.08,0.11), vec3(0.16,0.3,0.36), glass * 0.8);
           float lit = step(0.55, h11(bi*13.1 + fl*7.7 + sd*91.0)) * uNight * win;
