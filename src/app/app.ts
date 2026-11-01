@@ -241,6 +241,16 @@ export class App implements AfterViewInit, OnDestroy {
       // Blended DualShock 4 Haptic update
       this.updateHaptics(telem, now);
 
+      // Posted speed limit + viewpoints (4 Hz is plenty)
+      this.slowTick += frameDelta;
+      if (this.slowTick > 0.25 && this.sceneManager.worldBuilder.ready) {
+        this.slowTick = 0; const wb = this.sceneManager.worldBuilder, vp = this.vehicle.position;
+        const lim = wb.limitAt(vp.x, vp.z, vp.y); if (lim !== this.telemetryService.speedLimit() && lim) this.telemetryService.speedLimit.set(lim);
+        for (const v of wb.meta.views ?? []) {
+          if (!this.seenViews.has(v.n) && Math.hypot(v.p[0] - vp.x, v.p[1] - vp.z) < 45) { this.seenViews.add(v.n); this.festivalService.announceViewpoint(v.n); }
+        }
+      }
+
       // Festival triggers (speed camera traps & drift zones)
       this.festivalService.checkSpeedTraps(this.vehicle.position.x, this.vehicle.position.z, telem.speedKmh);
       this.festivalService.updateDriftZoneProgress(
@@ -355,6 +365,8 @@ export class App implements AfterViewInit, OnDestroy {
   }
 
   private lastCrashRumble = 0;
+  private slowTick = 0;
+  private seenViews = new Set<string>();
   private envAccum = 1;
   private updateHaptics(telem: ReturnType<RaycastVehicle['getTelemetry']>, now: number): void {
     const h = this.hapticsService;

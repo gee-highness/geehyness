@@ -34,6 +34,8 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
     .rail-tip{position:absolute;right:54px;white-space:nowrap;background:rgba(9,9,11,.92);border:1px solid rgba(255,255,255,.12);padding:6px 10px;border-radius:8px;font-size:11px;font-weight:600;opacity:0;transform:translateX(6px);pointer-events:none;transition:.15s}
     .rail-btn:hover .rail-tip,.rail-btn:focus-visible .rail-tip{opacity:1;transform:none}
     kbd{display:inline-block;margin:0 2px;padding:1px 6px;border-radius:5px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);font:600 10px ui-monospace,monospace;color:#fde68a}
+    .limit-over{animation:lim .5s infinite alternate}
+    @keyframes lim{from{box-shadow:0 0 0 0 rgba(239,68,68,.9)}to{box-shadow:0 0 18px 8px rgba(239,68,68,.6)}}
     .banner-in{animation:bin .45s cubic-bezier(.2,1.4,.4,1)}
     @keyframes bin{from{opacity:0;transform:translate(-50%,-14px) scale(.9)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
     .hint-fade{animation:hf 14s forwards}
@@ -112,6 +114,14 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
           </div>
         </div>
       </div>
+
+      <!-- Posted speed limit -->
+      @if (telemetryService.speedLimit() > 0) {
+        <div class="absolute pointer-events-none" [ngClass]="compact() ? 'top-[72px] right-[150px]' : 'bottom-6 right-[292px] max-sm:right-[230px]'">
+          <div class="w-[58px] h-[58px] rounded-full bg-white grid place-items-center text-zinc-900 font-black text-[22px] shadow-lg border-[5px]"
+               [class.border-red-600]="true" [class.limit-over]="telemetryService.speedKmh() > telemetryService.speedLimit() + 4">{{ telemetryService.speedLimit() }}</div>
+        </div>
+      }
 
       <!-- Bottom-centre: contextual hint (fades) -->
       @if (hintVisible()) {

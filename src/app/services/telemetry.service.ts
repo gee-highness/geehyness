@@ -63,6 +63,7 @@ export class TelemetryService {
   readonly rpm = signal<number>(900);
   readonly currentGear = signal<number>(1);
   readonly currentSurface = signal<string>('Asphalt Highway');
+  readonly speedLimit = signal<number>(0);
 
   // G-Force trail history for friction circle display
   readonly gHistory = signal<{ x: number; y: number }[]>([]);

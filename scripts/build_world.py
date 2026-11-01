@@ -52,7 +52,11 @@ for e in load("roads"):
         if isbr and ly == 0: ly = 1
         istn = 1 if t.get("tunnel") in ("yes", "culvert", "building_passage") else 0
         if istn and ly == 0: ly = -1
-        roads.append({"ly": ly, "bk": isbr, "tn": istn, "lk": 1 if t["highway"].endswith("_link") else 0, "nd": e.get("nodes", []), "ref": t.get("ref", ""),
+        try: ms = int(str(t.get("maxspeed", "0")).split()[0])
+        except ValueError: ms = 0
+        sfc = t.get("surface", "")
+        rough = 1 if (t.get("smoothness", "") in ("bad", "very_bad", "horrible", "very_horrible", "impassable") or t.get("tracktype") in ("grade4", "grade5")) else 0
+        roads.append({"ms": ms, "rg": rough, "rb": 1 if t.get("junction") in ("roundabout", "circular") else 0, "ly": ly, "bk": isbr, "tn": istn, "lk": 1 if t["highway"].endswith("_link") else 0, "nd": e.get("nodes", []), "ref": t.get("ref", ""),
                       "c": c, "w": round(w, 1), "u": u, "b": br, "o": 1 if t.get("oneway") == "yes" else 0,
                       "r": t.get("ref", ""), "n": t.get("name", ""), "p": [dm(v) for pt in g for v in pt]})
         if c <= 3: nodes_major.extend((x, z, t.get("ref", "")) for x, z in g)
@@ -64,6 +68,32 @@ for e in load("roads"):
         if kind and len(g) > 3: ground_polys.append((kind, g, t))
         if t.get("natural") == "water" and len(g) > 3: water_polys.append({"p": [dm(v) for pt in g for v in pt]})
 print("roads", len(roads), "water", len(water_polys))
+
+# ---------------- railway
+rails = []
+for e in load("roads"):
+    t = e.get("tags", {})
+    if e["type"] == "way" and t.get("railway") in ("rail", "abandoned", "disused", "narrow_gauge"):
+        g = poly(e)
+        if len(g) >= 2: rails.append({"a": 0 if t["railway"] in ("rail", "narrow_gauge") else 1, "p": [dm(v) for pt in g for v in pt]})
+print("rails", len(rails))
+level_x = []
+for ri, rl in enumerate(rails):
+    p = rl["p"]
+    for i in range(0, len(p) - 3, 2):
+        ax, az, bx, bz = p[i] / 10, p[i + 1] / 10, p[i + 2] / 10, p[i + 3] / 10
+        for r in roads:
+            if r["c"] > 6 or r["ly"] != 0 or r.get("b"): continue
+            q = r["p"]
+            for k in range(0, len(q) - 3, 2):
+                cx, cz, dx, dz = q[k] / 10, q[k + 1] / 10, q[k + 2] / 10, q[k + 3] / 10
+                if max(ax, bx) < min(cx, dx) - 1 or min(ax, bx) > max(cx, dx) + 1 or max(az, bz) < min(cz, dz) - 1 or min(az, bz) > max(cz, dz) + 1: continue
+                den = (bx - ax) * (dz - cz) - (bz - az) * (dx - cx)
+                if abs(den) < 1e-6: continue
+                tt = ((cx - ax) * (dz - cz) - (cz - az) * (dx - cx)) / den; uu = ((cx - ax) * (bz - az) - (cz - az) * (bx - ax)) / den
+                if 0 <= tt <= 1 and 0 <= uu <= 1:
+                    level_x.append([round(ax + (bx - ax) * tt, 1), round(az + (bz - az) * tt, 1), round(math.atan2(dx - cx, dz - cz), 3), r["w"], 1 if rl["a"] == 0 else 0])
+print("level crossings", len(level_x))
 
 # ---------------- ground colour + class rasters (25 m)
 W, H = (X1 - X0) // PX, (Z1 - Z0) // PX
@@ -272,7 +302,7 @@ bays = 0
 for r in roads:
     if 3 <= r["c"] <= 5 and not r["u"] and not r["b"] and way_density(r) >= 7 and not (r["o"] and r["w"] > 8):
         r["w"] = round(r["w"] + 4.8, 1); r["bay"] = 1; bays += 1
-json.dump({"roads": roads, "water": water_polys}, open(f"{out}/roads.json", "w"), separators=(",", ":"))
+json.dump({"roads": roads, "water": water_polys, "rails": rails, "crossings": level_x}, open(f"{out}/roads.json", "w"), separators=(",", ":"))
 print("parking-lane streets", bays)
 def pip(g, x, z):
     ins = False
@@ -389,6 +419,9 @@ for e in pts:
     if t.get("name") and k and (k in KEEP or t.get("shop") in ("mall", "supermarket")):
         pois.append({"n": t["name"], "k": k, "p": [round(v, 1) for v in P(e["lat"], e["lon"])]})
 signals = [[round(v, 1) for v in P(e["lat"], e["lon"])] for e in pts if e["tags"].get("highway") == "traffic_signals"]
+busstops = [{"p": [round(v, 1) for v in P(e["lat"], e["lon"])], "n": e["tags"].get("name", "")} for e in pts if e["tags"].get("highway") == "bus_stop"]
+lamps = [[round(v, 1) for v in P(e["lat"], e["lon"])] for e in pts if e["tags"].get("highway") == "street_lamp"]
+views = [{"n": e["tags"].get("name", "Viewpoint"), "p": [round(v, 1) for v in P(e["lat"], e["lon"])]} for e in pts if e["tags"].get("tourism") == "viewpoint"]
 mx = np.array([[x, z] for x, z, r in nodes_major])
 def snap(x, z):
     i = int(np.argmin((mx[:, 0] - x) ** 2 + (mx[:, 1] - z) ** 2)); return [round(float(mx[i, 0]), 1), round(float(mx[i, 1]), 1)]
@@ -407,6 +440,6 @@ want = {"manzini": (-26.4966, 31.3826), "matsapha": (-26.4945, 31.3084), "lobamb
 snaps = {k: snap(*P(*v)) for k, v in want.items()}
 meta = {"lat0": LAT0, "lon0": LON0, "bounds": [X0, X1, Z0, Z1], "px": PX, "gw": W, "gh": H,
         "dem": {"x0": dem["x0"], "z0": dem["z0"], "step": dem["step"], "nx": dem["nx"], "nz": dem["nz"]},
-        "spawn": spawn, "places": places, "pois": pois, "signals": signals, "snaps": snaps}
+        "spawn": spawn, "places": places, "pois": pois, "signals": signals, "busstops": busstops, "lamps": lamps, "views": views, "snaps": snaps}
 json.dump(meta, open(f"{out}/meta.json", "w"), separators=(",", ":"))
 print("spawn", spawn, "snaps", snaps)

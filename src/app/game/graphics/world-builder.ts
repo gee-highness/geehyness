@@ -20,15 +20,17 @@ interface WorldMeta {
   places: { n: string; k: string; p: [number, number] }[];
   pois: { n: string; k: string; p: [number, number] }[];
   signals: [number, number][];
+  busstops?: { p: [number, number]; n: string }[]; lamps?: [number, number][]; views?: { p: [number, number]; n: string }[];
   snaps: Record<string, [number, number]>;
 }
 interface Surf { way: RoadWay; h: number; elev: boolean; px: number; pz: number; d: number }
-interface RoadWay { c: number; w: number; u: number; o: number; n: string; p: number[]; sw?: number; bay?: number; dz?: number[]; br?: number; bk?: number }
+interface RoadWay { c: number; w: number; u: number; o: number; n: string; p: number[]; sw?: number; bay?: number; dz?: number[]; br?: number; bk?: number; ms?: number; rg?: number; rb?: number }
 
 import { GeoBuf } from './geo-buf';
 import { CityBuilder } from './city-builder';
 import { StreetBuilder } from './street-builder';
 import { BridgeBuilder } from './bridge-builder';
+import { ExtrasBuilder } from './extras-builder';
 
 export const WORLD: { current?: WorldBuilder } = {};
 const CHUNK = 800;
@@ -74,6 +76,8 @@ export class WorldBuilder {
   public addFootprint(cx: number, cz: number, r: number): void {
     const gk = Math.floor(cx / 40) * 100003 + Math.floor(cz / 40); let l = this.bGrid.get(gk); if (!l) { l = []; this.bGrid.set(gk, l); } l.push(cx, cz, r);
   }
+  /** Posted speed limit (km/h) of the road under the car, 0 if none. */
+  public limitAt(x: number, z: number, y?: number): number { return this.roadSurface(x, z, y)?.way.ms ?? 0; }
   public roadLift(c: number): number { return WorldBuilder.ROAD_LIFT[c]; }
   public buildingsNear(x: number, z: number): number {
     const cx = Math.floor(x / 40), cz = Math.floor(z / 40); let n = 0;
@@ -217,7 +221,8 @@ export class WorldBuilder {
         if (!best || h > best.h + 0.3 || (Math.abs(h - best.h) <= 0.3 && d < best.d)) best = cand;
       }
     }
-    const r = best ?? (yHint !== undefined ? lowest : null);
+    void lowest; // under a deck with no road beneath: the ground is the terrain, never the deck above
+    const r = best;
     return r ? { way: r.way, h: r.h, elev: r.elev, px: r.px, pz: r.pz } : null;
   }
 
@@ -241,7 +246,8 @@ export class WorldBuilder {
   public queryGround(x: number, z: number, y?: number): GroundQueryResult {
     const rs = this.roadSurface(x, z, y); const road = rs?.way ?? null;
     const pave = !road && this.onPavement(x, z);
-    const height = rs ? rs.h : this.calculateRawTerrainHeight(x, z) + (pave ? WorldBuilder.ROAD_LIFT[4] + 0.15 : 0);
+    let height = rs ? rs.h : this.calculateRawTerrainHeight(x, z) + (pave ? WorldBuilder.ROAD_LIFT[4] + 0.15 : 0);
+    if (road?.rg) height += 0.035 * Math.sin(x * 3.1 + z * 2.3) * Math.sin(x * 1.7 - z * 2.9) + 0.02 * Math.sin(x * 7.3 + z * 5.1); // washboard / potholes on roads tagged rough
     const e = 2.5; let normal: THREE.Vector3;
     if (rs?.elev) {
       const hx1 = this.roadSurface(x - e, z, y)?.h ?? height, hx2 = this.roadSurface(x + e, z, y)?.h ?? height, hz1 = this.roadSurface(x, z + e, y)?.h ?? height, hz2 = this.roadSurface(x, z - e, y)?.h ?? height;
@@ -316,6 +322,7 @@ export class WorldBuilder {
     this.city.build(scene, blds.b, blds.signs ?? []);
     this.streets = new StreetBuilder(this);
     this.streets.build(scene);
+    new ExtrasBuilder(this, roads.rails ?? [], roads.crossings ?? []).build(scene);
     this.buildTrees(scene, tbuf);
     this.buildStreetFurniture(scene);
     this.buildLabels(scene);

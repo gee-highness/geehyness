@@ -193,6 +193,11 @@ export class FestivalService {
     }
   }
 
+  /** Reached a real OSM viewpoint: nudge the player toward Photo Mode. */
+  public announceViewpoint(name: string): void {
+    this.showBanner({ id: 'vp_' + name, type: 'CHECKPOINT', title: 'VIEWPOINT DISCOVERED', scoreText: name, subText: 'Press P for Photo Mode', stars: 1 });
+  }
+
   private showBanner(notification: FestivalNotification): void {
     this.activeNotification.set(notification);
     setTimeout(() => {

@@ -52,7 +52,7 @@ export class RoadTraffic {
       a.pts = pts; a.cum = cum; a.len = len; a.w = way.w; a.seg = 0; a.dzs = dzs; a.lift = this.world.roadLift(way.c);
       // start at the picked vertex's distance (reverse-aware nearest vertex)
       let best = 0, bd = 1e9; for (let i = 0; i < pts.length; i += 2) { const dd = Math.hypot(pts[i] - x, pts[i + 1] - z); if (dd < bd) { bd = dd; best = i / 2; } }
-      a.s = cum[best] * 0.98; a.cruise = (way.c <= 2 ? 15 : 9) + Math.random() * 6; a.speed = a.cruise;
+      a.s = cum[best] * 0.98; a.cruise = (way.c <= 2 ? 15 : 9) + Math.random() * 6; if (way.ms) a.cruise = Math.min(a.cruise, (way.ms * 0.95) / 3.6); a.speed = a.cruise;
       a.obj.visible = true; return;
     }
   }
