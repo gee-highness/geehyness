@@ -34,6 +34,12 @@ export class RoadGraph {
     for (let i = 0; i < n; i++) { const k = Math.floor(xs[i] / 100) * 100003 + Math.floor(zs[i] / 100); let l = this.cells.get(k); if (!l) { l = []; this.cells.set(k, l); } l.push(i); }
   }
 
+  pos(i: number): [number, number] { return [this.x[i], this.z[i]]; }
+  /** A random drivable vertex between minR and maxR metres from (cx,cz), or -1. */
+  randomNode(cx: number, cz: number, minR: number, maxR: number): number {
+    for (let t = 0; t < 14; t++) { const a = Math.random() * Math.PI * 2, r = minR + Math.random() * (maxR - minR); const i = this.nearest(cx + Math.cos(a) * r, cz + Math.sin(a) * r, 160); if (i >= 0) return i; }
+    return -1;
+  }
   /** Nearest graph vertex that has outgoing edges, within maxR metres. */
   nearest(x: number, z: number, maxR = 600): number {
     let best = -1, bd = 1e18;

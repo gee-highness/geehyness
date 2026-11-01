@@ -41,7 +41,7 @@ export class HelpComponent {
     { k: 'W A S D / arrows', a: 'Drive' }, { k: 'Space', a: 'Handbrake' }, { k: 'Right-mouse drag', a: 'Look around' }, { k: 'K', a: 'Recentre view' },
     { k: ', and .', a: 'Left / right indicator' }, { k: 'X', a: 'Hazard lights' }, { k: 'L', a: 'Headlights' }, { k: 'B', a: 'Horn (hold)' },
     { k: 'C', a: 'Camera' }, { k: 'R', a: 'Reset car' }, { k: 'M', a: 'Map' }, { k: 'P', a: 'Photo mode' }, { k: 'T', a: 'Telemetry' }, { k: 'V', a: 'Cars' },
-    { k: 'G', a: 'Weather' }, { k: 'Q', a: 'Graphics quality' }, { k: 'H', a: 'Vibration' }, { k: 'N', a: 'Mute' }, { k: 'F', a: 'FPS' }, { k: 'I / F1 / ?', a: 'This help' },
+    { k: 'G', a: 'Weather' }, { k: 'J', a: 'Cops & robbers on/off (cops hear engine, skids, horn; see lights)' }, { k: 'Q', a: 'Graphics quality' }, { k: 'H', a: 'Vibration' }, { k: 'N', a: 'Mute' }, { k: 'F', a: 'FPS' }, { k: 'I / F1 / ?', a: 'This help' },
   ];
   readonly map: Row[] = [
     { k: 'Left stick / drag', a: 'Pan' }, { k: 'R2 / L2 · wheel', a: 'Zoom in / out' }, { k: 'Cross (A) · click', a: 'Set waypoint' }, { k: 'Square (X) · Del', a: 'Clear waypoint' },

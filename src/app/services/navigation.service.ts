@@ -16,6 +16,8 @@ export class NavigationService {
   private world?: WorldBuilder; private graph?: RoadGraph; private idx = 0; private lastRoute = 0;
 
   attach(w: WorldBuilder): void { this.world = w; }
+  /** Shared lazily-built road graph (also used by the police AI). */
+  getGraph(): RoadGraph | undefined { if (!this.graph && this.world?.ready) this.graph = new RoadGraph(this.world.roadWays); return this.graph; }
   set(x: number, z: number): void { this.waypoint.set([x, z]); this.compute(); }
   clear(): void { this.waypoint.set(null); this.route.set(null); this.guidance.set(null); }
 

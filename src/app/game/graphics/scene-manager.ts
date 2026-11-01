@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { Weather } from './weather';
+import { Police, Stealth, PlayerPose } from './police';
+import type { RoadGraph } from '../road-graph';
 import { Sky, skyPalette, SkyPalette } from './sky';
 import { Pedestrians } from './pedestrians';
 import { TrafficSignals } from './traffic-signals';
@@ -35,6 +37,7 @@ export class SceneManager {
   private modelRadius = 0.33;
   private roadTraffic?: RoadTraffic;
   private pedestrians?: Pedestrians;
+  public police?: Police; public graphProvider?: () => RoadGraph | undefined; private copsWanted = true;
   private signals?: TrafficSignals;
   private pedFraction = 1;
   private vehicleParts!: ReturnType<typeof CarFactory.createVehicleMesh>;
@@ -53,7 +56,7 @@ export class SceneManager {
   private quality: QualityTier = 'AUTO';
   private windKmh = 12;
   private baseDaylight = 1;
-  private neo = false; private sunDirSky = new THREE.Vector3(0, 1, 0);
+  private neo = false; private moon!: THREE.DirectionalLight; private sunDirSky = new THREE.Vector3(0, 1, 0);
   private sky!: Sky; private envScene!: THREE.Scene; private rim!: THREE.DirectionalLight; private envRT?: THREE.WebGLRenderTarget; private envKey = ''; private envT = 0;
   private pal: SkyPalette = { zenith: new THREE.Color(), horizon: new THREE.Color(), sun: new THREE.Color(), sunI: 1, day: 1 }; private skyClock = 0; private skyCover = 0.55; private skyGloom = 0;
   private govTimer = 0;
@@ -72,7 +75,7 @@ export class SceneManager {
 
     this.particleSystem = new ParticleSystem(this.scene);
     this.weather = new Weather(this.scene);
-    this.worldBuilder.onReady(() => { this.signals = new TrafficSignals(this.scene, this.worldBuilder); this.roadTraffic = new RoadTraffic(this.scene, this.worldBuilder); this.roadTraffic.signals = this.signals; this.pedestrians = new Pedestrians(this.scene, this.worldBuilder); this.pedestrians.setCount(this.pedFraction); });
+    this.worldBuilder.onReady(() => { this.signals = new TrafficSignals(this.scene, this.worldBuilder); this.roadTraffic = new RoadTraffic(this.scene, this.worldBuilder); this.roadTraffic.signals = this.signals; this.pedestrians = new Pedestrians(this.scene, this.worldBuilder); this.police = new Police(this.scene, this.worldBuilder, () => this.graphProvider?.()); this.police.setEnabled(this.copsWanted); this.pedestrians.setCount(this.pedFraction); });
   }
 
   private detectSoftwareGl(): void {
@@ -126,7 +129,7 @@ export class SceneManager {
     // Procedural stylized sky replaces the HDRI: background + image-based lighting both come from it
     this.sky = new Sky(this.scene); this.scene.background = null;
     this.envScene = new THREE.Scene(); this.envScene.add(this.sky.envMesh);
-    this.rim = new THREE.DirectionalLight(0x9ab8ff, 0.0); this.rim.position.set(-200, 120, -300); this.scene.add(this.rim);
+    this.moon = new THREE.DirectionalLight(0x8fa8ff, 0); this.scene.add(this.moon); this.rim = new THREE.DirectionalLight(0x9ab8ff, 0.0); this.rim.position.set(-200, 120, -300); this.scene.add(this.rim);
 
     // Warm African sunlight
     this.hemiLight = new THREE.HemisphereLight(0xbae6fd, 0x854d0e, 0.9);
@@ -237,11 +240,12 @@ export class SceneManager {
     this.sunLight.color.copy(pal.sun); this.sunLight.intensity = pal.sunI * (sd.y > -0.02 ? 1 : 0) * gloom * gloom * (this.neo ? 0.6 : 1);
     // ambient: sky colour above, warm bounce below; cool rim light opposite the sun for the stylised edge glow
     this.hemiLight.color.copy(pal.zenith).lerp(new THREE.Color(1, 1, 1), 0.45); this.hemiLight.groundColor.copy(pal.horizon).multiplyScalar(0.42).lerp(new THREE.Color(0.35, 0.26, 0.2), 0.3);
-    this.hemiLight.intensity = 0.28 + 0.62 * day;
-    this.rim.position.set(-sd.x * 300, 120, -sd.z * 300); this.rim.color.copy(pal.zenith).lerp(new THREE.Color(0.7, 0.8, 1), 0.5); this.rim.intensity = (0.15 + 0.35 * day) * (this.neo ? 2 : 1);
-    this.renderer.toneMappingExposure = 0.88 + 0.28 * (1 - day);
+    const dark = Math.pow(day, 1.4); this.hemiLight.intensity = 0.045 + 0.85 * dark;                 // nights are properly dark: only faint moonlight
+    this.moon.intensity = (1 - dark) * (sd.y < 0.05 ? 0.22 : 0) * gloom; this.moon.position.set(-sd.x * 300, 200, -sd.z * 300);
+    this.rim.position.set(-sd.x * 300, 120, -sd.z * 300); this.rim.color.copy(pal.zenith).lerp(new THREE.Color(0.7, 0.8, 1), 0.5); this.rim.intensity = (0.03 + 0.4 * dark) * (this.neo ? 2 : 1);
+    this.renderer.toneMappingExposure = 0.88 + 0.12 * (1 - day);
     const daylight = Math.max(0.06, day);
-    this.baseDaylight = daylight; this.scene.environmentIntensity = 0.25 + 0.75 * daylight;
+    this.baseDaylight = daylight; this.scene.environmentIntensity = 0.04 + 0.96 * dark;
     if (this.worldBuilder.city) { this.worldBuilder.city.night.value = THREE.MathUtils.clamp(1 - (daylight - 0.06) / 0.3, 0, 1); this.worldBuilder.city.neo.value += ((this.neo ? 1 : 0) - this.worldBuilder.city.neo.value) * 0.5; }
     this.worldBuilder.setNightGlow?.(this.worldBuilder.city ? this.worldBuilder.city.night.value : 0);
     if (this.scene.fog) { const f = this.scene.fog as THREE.FogExp2; f.color.copy(pal.horizon).multiplyScalar(0.55 + 0.45 * daylight); f.density = env.fogDensity * 0.4 * (this.neo ? 1.4 : 1); }
@@ -388,8 +392,10 @@ export class SceneManager {
     this.blob.scale.set(2.9, 1, 5.4); this.blob.renderOrder = 2; this.scene.add(this.blob);
   }
 
-  public trafficColliders() { return this.roadTraffic?.colliders() ?? []; }
-  public hitTraffic(id: number, impact: number): void { this.roadTraffic?.hit(id, impact); }
+  public trafficColliders() { return [...(this.roadTraffic?.colliders() ?? []), ...(this.police?.colliders() ?? [])]; }
+  public hitTraffic(id: number, impact: number): void { if (id >= 1000) this.police?.hit(id, impact); else this.roadTraffic?.hit(id, impact); }
+  public setCops(on: boolean): void { this.copsWanted = on; this.police?.setEnabled(on); }
+  public policeUpdate(dt: number, pl: PlayerPose, st: Stealth, night: number): void { this.police?.update(dt, pl, st, night); }
 
   public resize(): void {
     if (!this.container || !this.renderer) return;

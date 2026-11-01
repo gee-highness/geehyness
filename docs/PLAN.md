@@ -16,6 +16,12 @@ Status key: [x] done · [~] in progress · [ ] queued · [data] waits for the re
 - [data] B4 Real `building:levels`, roof shapes, addr plates, shop signs.
 - [ ] B5 Landmarks seen in the satellite shots: solar arrays, round water tanks, cemeteries, landfill, sports fields, cloverleaf interchange check.
 
+## F. Cops & robbers (night stealth)
+- [x] F1 Truly dark nights (moonlight only), sparse lit windows, lamp light pools, sky from true solar elevation.
+- [x] F2 Stealth model: sight radius from headlights / brake lights / ambient (170 m by day, 20 m lights-off at night, +105 low beam, +230 high beam); hearing radius from speed, throttle, skids, horn (+260), crashes.
+- [x] F3 Cop AI (`police.ts`): PATROL -> ALERT (investigate last known position) -> CHASE (road-graph pursuit, radio to nearby units) -> SEARCH -> PATROL; line of sight over building footprints, field of view; siren + strobe; bust = close and slow for 2.2 s; escape = nobody chasing for 18 s.
+- [ ] F4 Cop headlights as real light cones, roadblocks, helicopter, difficulty levels, scoring; AI traffic that reacts to sirens.
+
 ## C. Roofs observed in the satellite imagery (target distribution)
 | Area / type | Look | Share |
 |---|---|---|

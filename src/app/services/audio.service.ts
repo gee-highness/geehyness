@@ -263,6 +263,18 @@ export class AudioService {
     }
   }
 
+  /** Police siren wail: level 0..1 (0 stops it). Distance falloff is decided by the caller. */
+  private siren: { o: OscillatorNode; l: OscillatorNode; g: GainNode } | null = null;
+  public setSiren(level: number): void {
+    if (!this.ctx || !this.isUnlocked || !this.masterGain) return;
+    if (level > 0.02 && !this.siren && !this.isMuted()) {
+      const o = this.ctx.createOscillator(), l = this.ctx.createOscillator(), lg = this.ctx.createGain(), g = this.ctx.createGain(), f = this.ctx.createBiquadFilter();
+      o.type = 'sawtooth'; o.frequency.value = 900; l.type = 'sine'; l.frequency.value = 0.55; lg.gain.value = 320; f.type = 'bandpass'; f.frequency.value = 1100; f.Q.value = 0.7;
+      l.connect(lg); lg.connect(o.frequency); o.connect(f); f.connect(g); g.gain.value = 0; g.connect(this.masterGain); o.start(); l.start(); this.siren = { o, l, g };
+    }
+    if (this.siren) { const t = this.ctx.currentTime; this.siren.g.gain.setTargetAtTime(Math.max(0, Math.min(1, level)) * 0.1, t, 0.15); if (level <= 0.02 && this.siren.g.gain.value < 0.002) { this.siren.o.stop(); this.siren.l.stop(); this.siren = null; } }
+  }
+
   /** Car horn: two detuned square tones (a "two-tone" horn), held while `on`. */
   private hornNodes: { o: OscillatorNode[]; g: GainNode } | null = null;
   public setHorn(on: boolean): void {
