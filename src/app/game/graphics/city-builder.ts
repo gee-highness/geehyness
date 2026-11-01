@@ -112,7 +112,7 @@ export class CityBuilder {
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWin = aWin; vWUv = uv;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vWin; varying vec2 vWUv; uniform float uNight; uniform float uNeo; uniform sampler2D uWinAtlas;\nfloat h11(float n){ n = mod(n, 997.0); return fract(sin(n*12.9898 + 0.31)*43758.5453); }')
         .replace(sh.fragmentShader.includes('/*STYLE_DONE*/') ? '/*STYLE_DONE*/' : '#include <map_fragment>', `${sh.fragmentShader.includes('/*STYLE_DONE*/') ? '/*STYLE_DONE*/' : '#include <map_fragment>'}
-          float st = min(floor(vWin + 0.001), 7.0), sd = fract(vWin);
+          float st = min(floor(vWin + 0.001), 7.0), sd = floor(fract(vWin) * 1000.0 + 0.5) / 1000.0;
           float bay = fract(vWUv.x), flr = fract(vWUv.y), fl = floor(vWUv.y), bi = floor(vWUv.x);
           float win = 0.0, door = 0.0, mull = 0.0, glass = 0.0;
           if (st > 0.5) {
@@ -158,12 +158,28 @@ export class CityBuilder {
       for (let i = 0; i < n; i++) { cx += f[i * 2]; cz += f[i * 2 + 1]; const j = (i + 1) % n; A += f[i * 2] * f[j * 2 + 1] - f[j * 2] * f[i * 2 + 1]; }
       cx /= n * 10; cz /= n * 10; const area = Math.abs(A) / 200;
       if (area < 14 && b[0] !== 12) continue;
-      this.w.addFootprint(cx, cz, Math.sqrt(area) * 0.6 + 1.5);
+      this.w.addFootprint(cx, cz, Math.sqrt(area) * 0.6 + 1.5); this.addEmitter(b, cx, cz, area);
       { const gk = Math.floor(cx / 150) * 100003 + Math.floor(cz / 150); this.realGrid.set(gk, (this.realGrid.get(gk) ?? 0) + 1); }
       const key = `${Math.floor(cx / CH)},${Math.floor(cz / CH)}`; let l = this.pending.get(key); if (!l) { l = []; this.pending.set(key, l); } l.push(b);
     }
     this.infill();
     void scene;
+  }
+
+  // ------------------------------------------------------------------ light emitters (shop signs / lit windows)
+  private emit: { x: number; z: number; col: number[]; s: number; r: number }[] = []; private emitGrid = new Map<number, number[]>();
+  private static readonly NEON = [[1, 0.32, 0.5], [0.3, 0.8, 1], [1, 0.74, 0.28], [0.5, 1, 0.6], [1, 0.5, 0.15], [0.75, 0.45, 1]];
+  private addEmitter(b: Bld, cx: number, cz: number, area: number): void {
+    const use = b[0]; if (area < 90 || ![2, 3, 4, 5, 6, 9, 10, 11, 12, 15].includes(use)) return; const r = b[4] / 1000;
+    const col = use === 12 ? [1, 0.98, 0.9] : use === 6 || use === 5 ? [0.9, 0.95, 1] : CityBuilder.NEON[Math.floor(r * 6) % 6];
+    const e = { x: cx, z: cz, col, s: use === 12 ? 1.5 : 0.8, r: use === 12 ? 26 : 19 }; const i = this.emit.push(e) - 1;
+    const k = Math.floor(cx / 50) * 100003 + Math.floor(cz / 50); let l = this.emitGrid.get(k); if (!l) { l = []; this.emitGrid.set(k, l); } l.push(i);
+  }
+  /** Nearest commercial emitters within maxD metres (nearest first). */
+  emittersNear(px: number, pz: number, k: number, maxD: number): { x: number; z: number; col: number[]; s: number; r: number }[] {
+    const cx = Math.floor(px / 50), cz = Math.floor(pz / 50), out: { d: number; e: { x: number; z: number; col: number[]; s: number; r: number } }[] = [];
+    for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) { const l = this.emitGrid.get((cx + a) * 100003 + (cz + b)); if (l) for (const i of l) { const e = this.emit[i], d = Math.hypot(e.x - px, e.z - pz); if (d < maxD) out.push({ d, e }); } }
+    return out.sort((p, q) => p.d - q.d).slice(0, k).map((o) => o.e);
   }
 
   // ------------------------------------------------------------------ procedural infill

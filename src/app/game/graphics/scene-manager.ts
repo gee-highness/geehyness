@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Weather } from './weather';
+import { SLOT, LAMP, setEmitter, clearEmitter } from './lamp-light';
 import { Police, Stealth, PlayerPose } from './police';
 import type { RoadGraph } from '../road-graph';
 import { Sky, skyPalette, SkyPalette } from './sky';
@@ -216,6 +217,19 @@ export class SceneManager {
     if (!this.neo && wb.city) wb.city.neo.value = 0;
   }
 
+  /** Per-frame emitters: signals, AI headlights, siren strobes and the player's own tail glow. */
+  private updateDynamicEmitters(vehicle: RaycastVehicle): void {
+    if (LAMP.uLampOn.value < 0.01) return;
+    const px = vehicle.position.x, pz = vehicle.position.z, gy = vehicle.position.y;
+    const sg = this.signals?.nearestHeads(px, pz, SLOT.SIGNALS) ?? [];
+    for (let k = 0; k < SLOT.SIGNALS; k++) { const h = sg[k]; if (h) setEmitter(SLOT.SIGNAL + k, h.x, h.y, h.z, 14, h.col[0], h.col[1], h.col[2], 1.1); else clearEmitter(SLOT.SIGNAL + k); }
+    const cars = this.roadTraffic?.nearestCars(px, pz, SLOT.CARS) ?? [];
+    for (let k = 0; k < SLOT.CARS; k++) { const c = cars[k]; if (c) setEmitter(SLOT.CAR + k, c.x, c.y, c.z, 17, 1, 0.94, 0.78, 1.5); else clearEmitter(SLOT.CAR + k); }
+    const st = this.police?.strobe(px, pz);
+    if (st) { setEmitter(SLOT.COP, st.x, st.y, st.z, 34, 1, 0.08, 0.08, st.red ? 2.4 : 0.15); setEmitter(SLOT.COP + 1, st.x, st.y, st.z, 34, 0.15, 0.3, 1, st.red ? 0.15 : 2.4); } else { clearEmitter(SLOT.COP); clearEmitter(SLOT.COP + 1); }
+    if (vehicle.brake > 0.15) setEmitter(SLOT.PLAYER, px, gy + 0.8, pz, 8, 1, 0.08, 0.05, 0.9); else clearEmitter(SLOT.PLAYER);
+  }
+
   /** Re-bake the image-based lighting from the sky when its look has changed (throttled; a PMREM of a 50 m dome is cheap). */
   private refreshEnvironmentMap(): void {
     const now = performance.now(); const key = `${Math.round(this.sunDirSky.y * 8)}|${this.skyGloom.toFixed(1)}|${this.neo ? 1 : 0}`;
@@ -267,6 +281,7 @@ export class SceneManager {
     this.worldBuilder.update(vehicle.position.x, vehicle.position.z);
     { const sh = (window as unknown as { __shesha?: Record<string, unknown> }).__shesha!; sh['sig'] = this.signals; sh['top'] = (x?: number, z?: number, h = 400) => { this.topView = x === undefined ? null : { x, z: z!, h }; if (x === undefined) this.cameraRig.camera.up.set(0, 1, 0); }; }
     this.signals?.update(dt);
+    this.updateDynamicEmitters(vehicle);
     this.roadTraffic?.update(dt, vehicle.position.x, vehicle.position.z);
     this.pedestrians?.update(dt, vehicle.position.x, vehicle.position.z, vehicle.velocity.x, vehicle.velocity.z);
     (window as unknown as { __shesha?: Record<string, unknown> }).__shesha!['peds'] = () => this.pedestrians?.debug();
@@ -437,6 +452,7 @@ export class SceneManager {
     this.sunLight.shadow.mapSize.set(q === 'HIGH' ? 2048 : 1024, q === 'HIGH' ? 2048 : 1024); this.sunLight.shadow.map?.dispose(); (this.sunLight.shadow as { map: unknown }).map = null;
     if (this.blob) this.blob.visible = !shadows; else if (!shadows) this.makeBlobShadow();
     this.pedFraction = q === 'LOW' ? 0.3 : q === 'MED' ? 0.65 : 1; this.pedestrians?.setCount(this.pedFraction);
+    LAMP.uLampN.value = q === 'LOW' ? 14 : q === 'MED' || (q === 'AUTO' && this.isMobile) ? 22 : 24;
     this.weather.setDetail(q === 'LOW' ? 0.35 : q === 'MED' ? 0.65 : 1);
     this.worldBuilder.setDetailScale(q === 'LOW' ? 0.5 : q === 'MED' ? 0.75 : 1);
   }

@@ -21,7 +21,7 @@ Status key: [x] done · [~] in progress · [ ] queued · [data] waits for the re
 - [x] F2 Stealth model: sight radius from headlights / brake lights / ambient (170 m by day, 20 m lights-off at night, +105 low beam, +230 high beam); hearing radius from speed, throttle, skids, horn (+260), crashes.
 - [x] F3 Cop AI (`police.ts`): PATROL -> ALERT (investigate last known position) -> CHASE (road-graph pursuit, radio to nearby units) -> SEARCH -> PATROL; line of sight over building footprints, field of view; siren + strobe; bust = close and slow for 2.2 s; escape = nobody chasing for 18 s.
 - [x] F5 Street lamps really light the world: 16 nearest lamps feed a shader uniform used by roads, kerbs, walls, roofs, terrain, props (`lamp-light.ts`); light pools on the ground; strength follows night.
-- [ ] F6 Same system for other emitters (shop signs, lit windows spill, traffic signals, cop strobes, car headlights of AI traffic).
+- [x] F6 Same system for all emitters (24 coloured slots: lamps, signals by phase colour, shop signs / lit windows, AI headlights, cop strobes, player brake glow); quality tiers cap the count. Lit-window noise fixed.
 - [ ] F4 Cop headlights as real light cones, roadblocks, helicopter, difficulty levels, scoring; AI traffic that reacts to sirens.
 
 ## G. Online (parked, design only - NOT started)

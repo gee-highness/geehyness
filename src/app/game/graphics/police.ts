@@ -50,6 +50,12 @@ export class Police {
     }
   }
 
+  /** The nearest active siren (CHASE/ALERT) to a point, with the current strobe phase, for the emitter system. */
+  strobe(px: number, pz: number): { x: number; y: number; z: number; red: boolean; d: number } | null {
+    let best: Cop | null = null, bd = 1e9; for (const c of this.cops) { if (!c.ready || (c.state !== 'CHASE' && c.state !== 'ALERT')) continue; const d = Math.hypot(c.pos.x - px, c.pos.z - pz); if (d < bd) { bd = d; best = c; } }
+    return best && bd < 160 ? { x: best.pos.x, y: best.pos.y + 3, z: best.pos.z, red: Math.floor(this.flash * 5) % 2 === 0, d: bd } : null;
+  }
+
   setEnabled(on: boolean): void { this.enabled = on; for (const c of this.cops) { c.obj.visible = on && c.ready; if (!on) { c.ready = false; c.obj.visible = false; } } if (!on) { this.status.state = 'OFF'; this.light.intensity = 0; } }
   /** Pull everything back to patrol (after being busted / respawned). */
   reset(): void { for (const c of this.cops) { c.ready = false; c.obj.visible = false; c.state = 'PATROL'; c.susp = 0; c.known = null; c.route = null; } this.chaseEver = false; }

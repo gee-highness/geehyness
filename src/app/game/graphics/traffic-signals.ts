@@ -52,6 +52,12 @@ export class TrafficSignals {
     if (l.instanceColor) l.instanceColor.needsUpdate = true;
   }
 
+  /** Nearest signal heads to a point with the colour they are showing (for the emitter system). */
+  nearestHeads(x: number, z: number, k: number): { x: number; y: number; z: number; col: number[] }[] {
+    const list = this.heads.map((h) => ({ h, d: Math.hypot(h.x - x, h.z - z) })).filter((o) => o.d < 60).sort((a, b) => a.d - b.d).slice(0, k);
+    return list.map(({ h }) => { const st = this.state(h.cluster, h.axis); return { x: h.x, y: h.y - 0.4, z: h.z, col: st === 0 ? [0.2, 1, 0.4] : st === 1 ? [1, 0.72, 0.1] : [1, 0.1, 0.08] }; });
+  }
+
   update(dt: number): void { this.t += dt; const k = Math.floor(this.t); if (k !== this.lastKey) { this.lastKey = k; this.recolour(); } }
 
   /** Distance to a red/amber stop line ahead of a car at (x,z) heading (hx,hz), or null if free to proceed. */

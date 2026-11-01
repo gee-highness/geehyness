@@ -28,7 +28,7 @@ interface RoadWay { c: number; w: number; u: number; o: number; n: string; p: nu
 
 import { GeoBuf } from './geo-buf';
 import { styledMaterial, StyleKind, STYLE_FUNCS } from './stylized';
-import { addLampLight, LAMP } from './lamp-light';
+import { addLampLight, LAMP, SLOT, setEmitter, clearEmitter } from './lamp-light';
 import { CityBuilder } from './city-builder';
 import { StreetBuilder } from './street-builder';
 import { BridgeBuilder } from './bridge-builder';
@@ -728,8 +728,11 @@ export class WorldBuilder {
     if (!this.lampGrid.size) this.lampSpots.forEach((l, i) => { const k = Math.floor(l.x / 60) * 100003 + Math.floor(l.z / 60); let a = this.lampGrid.get(k); if (!a) { a = []; this.lampGrid.set(k, a); } a.push(i); });
     const cx = Math.floor(px / 60), cz = Math.floor(pz / 60), cand: { d: number; i: number }[] = [];
     for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) { const l = this.lampGrid.get((cx + a) * 100003 + (cz + b)); if (l) for (const i of l) { const s = this.lampSpots[i], hx = s.x + Math.cos(s.rot) * 2.5, hz = s.z - Math.sin(s.rot) * 2.5; cand.push({ d: Math.hypot(hx - px, hz - pz), i }); } }
-    cand.sort((p, q) => p.d - q.d); const u = LAMP.uLamp.value;
-    for (let k = 0; k < 16; k++) { const c = cand[k]; if (!c || c.d > 110) { u[k].set(0, -9999, 0, 0); continue; } const s = this.lampSpots[c.i], hx = s.x + Math.cos(s.rot) * 2.5, hz = s.z - Math.sin(s.rot) * 2.5; u[k].set(hx, this.groundHeightAt(s.x, s.z) + 8.9, hz, 38); }
+    cand.sort((p, q) => p.d - q.d);
+    for (let k = 0; k < SLOT.LAMPS; k++) { const c = cand[k]; if (!c || c.d > 110) { clearEmitter(SLOT.LAMP + k); continue; } const l = this.lampSpots[c.i], hx = l.x + Math.cos(l.rot) * 2.5, hz = l.z - Math.sin(l.rot) * 2.5; setEmitter(SLOT.LAMP + k, hx, this.groundHeightAt(l.x, l.z) + 8.9, hz, 38, 1.0, 0.7, 0.38, 1.0); }
+    // shop signs / lit windows: the nearest few commercial buildings tint the street with their own colour
+    const em = this.city?.emittersNear(px, pz, SLOT.SHOPS, 80) ?? [];
+    for (let k = 0; k < SLOT.SHOPS; k++) { const e = em[k]; if (!e) { clearEmitter(SLOT.SHOP + k); continue; } setEmitter(SLOT.SHOP + k, e.x, this.groundHeightAt(e.x, e.z) + 4.2, e.z, e.r, e.col[0], e.col[1], e.col[2], e.s); }
   }
   private glowMat?: THREE.MeshBasicMaterial; private static _glowGeo?: THREE.BufferGeometry;
   private static glowGeo(): THREE.BufferGeometry { return (WorldBuilder._glowGeo ??= new THREE.CircleGeometry(7, 20).rotateX(-Math.PI / 2)); }

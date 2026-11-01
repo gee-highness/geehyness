@@ -68,6 +68,12 @@ export class RoadTraffic {
     });
     return out;
   }
+  /** Headlight emitters for the nearest visible cars: position a few metres ahead of the bonnet. */
+  nearestCars(px: number, pz: number, k: number): { x: number; y: number; z: number }[] {
+    const o: { d: number; x: number; y: number; z: number }[] = [];
+    for (const a of this.agents) { const hd = a.obj.userData['hd'] as [number, number] | undefined; if (!a.obj.visible || !hd) continue; const d = Math.hypot(a.obj.position.x - px, a.obj.position.z - pz); if (d < 90) o.push({ d, x: a.obj.position.x + hd[0] * 4.5, y: a.obj.position.y + 0.8, z: a.obj.position.z + hd[1] * 4.5 }); }
+    return o.sort((p, q) => p.d - q.d).slice(0, k);
+  }
   /** A collision shoved this car: lose speed in proportion to the hit. */
   hit(id: number, impact: number): void { const a = this.agents[id]; if (a) a.speed = Math.max(0, a.speed - impact * 0.6); }
 
