@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Toy Circuit</string>
-    <string name="title_activity_main">Toy Circuit</string>
+    <string name="app_name">SHESHA</string>
+    <string name="title_activity_main">SHESHA</string>
     <string name="package_name">sz.toycircuit.racing</string>
     <string name="custom_url_scheme">sz.toycircuit.racing</string>
 </resources>

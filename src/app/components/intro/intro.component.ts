@@ -20,9 +20,9 @@ import { AssetLibrary } from '../../game/graphics/asset-library';
   template: `
     <div class="bg absolute inset-0 text-white font-sans flex flex-col items-center justify-center px-6 text-center">
       <div class="rise">
-        <div class="text-[11px] tracking-[0.5em] text-amber-300 font-bold mb-3">ESWATINI · MR3 CORRIDOR</div>
-        <h1 class="text-5xl sm:text-7xl font-black tracking-tight leading-none">TOY CIRCUIT</h1>
-        <div class="text-lg sm:text-2xl font-light text-zinc-200 mt-2 tracking-wide">Manzini <span class="text-amber-400">→</span> Ezulwini Racing</div>
+        <div class="text-[11px] tracking-[0.5em] text-amber-300 font-bold mb-3">SISWATI FOR “GO FAST”</div>
+        <h1 class="text-5xl sm:text-7xl font-black tracking-tight leading-none">SHESHA</h1>
+        <div class="text-lg sm:text-2xl font-light text-zinc-200 mt-2 tracking-wide">Eswatini open-road racing · Manzini <span class="text-amber-400">→</span> Mbabane</div>
       </div>
 
       <div class="rise mt-10 w-full max-w-xs" style="animation-delay:.25s">

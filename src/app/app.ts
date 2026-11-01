@@ -446,7 +446,7 @@ export class App implements AfterViewInit, OnDestroy {
   public captureHighResPhoto(): void {
     const dataUrl = this.sceneManager.captureSnapshotPng();
     const link = document.createElement('a');
-    link.download = `SD_SlowDown_Eswatini_${Date.now()}.png`;
+    link.download = `SHESHA_Eswatini_${Date.now()}.png`;
     link.href = dataUrl;
     link.click();
   }

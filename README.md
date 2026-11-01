@@ -1,4 +1,4 @@
-# Toy Circuit: Manzini–Ezulwini Racing
+# SHESHA — Eswatini Open-Road Racing
 
 Angular 21 + three.js open-world racer set on Eswatini's MR3 corridor.
 
