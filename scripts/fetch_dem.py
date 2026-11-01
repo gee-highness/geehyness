@@ -1,10 +1,13 @@
-"""Build a 250 m elevation grid from AWS Terrain Tiles (terrarium z11, SRTM/Copernicus-derived). Output: /tmp/dem.json"""
-import io, json, math, urllib.request
+"""Build an elevation grid (default 250 m; `fetch_dem.py 40 13 data/dem.json` for 40 m / z13) from AWS Terrain Tiles (terrarium z11, SRTM/Copernicus-derived). Output: /tmp/dem.json"""
+import io, json, math, sys, urllib.request
 import numpy as np
 from PIL import Image
 LAT0, LON0 = -26.4966, 31.3826
 KX, KZ = 111320 * math.cos(math.radians(LAT0)), 110574.0
-X0, X1, Z0, Z1, STEP, Z = -28500, 7200, -24200, 5000, 250, 11
+STEP = int(sys.argv[1]) if len(sys.argv) > 1 else 250   # grid spacing, metres (40 recommended)
+Z = int(sys.argv[2]) if len(sys.argv) > 2 else 11        # terrarium zoom: 11 ~76 m/px, 12 ~38 m, 13 ~19 m
+OUT = sys.argv[3] if len(sys.argv) > 3 else "/tmp/dem.json"
+X0, X1, Z0, Z1 = -28500, 7200, -24200, 5000
 n = 2 ** Z
 def tile_xy(lat, lon):
     return (lon + 180) / 360 * n, (1 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2 * n
@@ -23,5 +26,5 @@ for z in zs:
         px, py = (fx - tx0) * 256, (fy - ty0) * 256
         i, j = int(px), int(py); u, v = px - i, py - j
         out.append(float(mosaic[j, i] * (1 - u) * (1 - v) + mosaic[j, i + 1] * u * (1 - v) + mosaic[j + 1, i] * (1 - u) * v + mosaic[j + 1, i + 1] * u * v))
-json.dump({"x0": X0, "z0": Z0, "step": STEP, "nx": len(xs), "nz": len(zs), "h": [round(h, 1) for h in out]}, open("/tmp/dem.json", "w"))
+json.dump({"x0": X0, "z0": Z0, "step": STEP, "nx": len(xs), "nz": len(zs), "h": [round(h, 1) for h in out]}, open(OUT, "w"))
 print("OK", len(out), "min", min(out), "max", max(out))

@@ -191,7 +191,7 @@ export class WorldBuilder {
     return WorldBuilder.cr(row(j - 1), row(j), row(j + 1), row(j + 2), fv) - 610;
   }
 
-  private readonly TS = 80; // terrain mesh spacing, metres
+  private readonly TS = 40; // terrain mesh spacing, metres (matches the 40 m DEM)
   private tnx = 0; private tnz = 0; private tH!: Float32Array;
   private bakeHeightGrid(): void {
     const [x0, x1, z0, z1] = this.meta.bounds, S = this.TS;
@@ -349,7 +349,7 @@ export class WorldBuilder {
     this.visDirty = false; this.visX = px; this.visZ = pz; this.visT = now;
     for (const t of this.terrainTiles) {
       const dx = Math.max(Math.abs(t.cx - px) - 640, 0), dz = Math.max(Math.abs(t.cz - pz) - 640, 0), d = Math.hypot(dx, dz);
-      t.lod0.visible = d < 2300; t.lod1.visible = d >= 2300 && d < 5200;
+      t.lod0.visible = d < 1900; t.lod1.visible = d >= 1900 && d < 5200;
     }
     const doShadow = this.shadowsOn && now - this.shadowT > 600; if (doShadow) this.shadowT = now;
     for (const c of this.chunks) {
@@ -486,9 +486,9 @@ export class WorldBuilder {
 
   public terrainTiles: { lod0: THREE.Mesh; lod1: THREE.Mesh; cx: number; cz: number }[] = [];
 
-  /** 1280 m tiles, each with a fine (80 m) and a coarse (320 m) mesh; skirts hide LOD seams. */
+  /** 1280 m tiles, each with a fine (40 m) and a coarse (320 m) mesh; skirts hide LOD seams. */
   private buildTerrainTiles(scene: THREE.Scene, mat: THREE.Material): void {
-    const [x0, , z0] = this.meta.bounds, S = this.TS, nx = this.tnx, nz = this.tnz, TC = 16;
+    const [x0, , z0] = this.meta.bounds, S = this.TS, nx = this.tnx, nz = this.tnz, TC = 32;
     const W = this.meta.gw * this.meta.px, Hh = this.meta.gh * this.meta.px;
     const H = (i: number, j: number) => this.tH[Math.max(0, Math.min(nz - 1, j)) * nx + Math.max(0, Math.min(nx - 1, i))];
     const make = (i0: number, j0: number, step: number): THREE.Mesh => {
@@ -531,7 +531,7 @@ export class WorldBuilder {
       const m = new THREE.Mesh(g, mat); m.name = 'terrain'; m.receiveShadow = true; m.visible = false; scene.add(m); return m;
     };
     for (let j0 = 0; j0 < nz - 1; j0 += TC) for (let i0 = 0; i0 < nx - 1; i0 += TC) {
-      this.terrainTiles.push({ lod0: make(i0, j0, 1), lod1: make(i0, j0, 4), cx: x0 + (i0 + TC / 2) * S, cz: z0 + (j0 + TC / 2) * S });
+      this.terrainTiles.push({ lod0: make(i0, j0, 1), lod1: make(i0, j0, 8), cx: x0 + (i0 + TC / 2) * S, cz: z0 + (j0 + TC / 2) * S });
     }
     this.terrainMesh = this.terrainTiles[0].lod0;
   }

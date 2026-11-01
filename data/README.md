@@ -12,7 +12,7 @@ python3 -I scripts/build_world.py /tmp/osm /tmp/dem.json public/assets/world /tm
 
 - `eswatini-osm.zip`  — roads, Manzini + Ezulwini buildings, points of interest
 - `eswatini-osm2.zip` — barriers, trees, power, leisure/parking, misc, Lobamba/Malkerns/Matsapha/Mbabane buildings
-- `dem.json` — 250 m elevation grid for the corridor (x -28500..7200, z -24200..5000)
+- `dem.json` — 40 m elevation grid (`python3 -I scripts/fetch_dem.py 40 13 data/dem.json`; AWS terrarium z13) for the corridor (x -28500..7200, z -24200..5000)
 
 ## Third fetch (lamps, signs, stops, addresses, cliffs, hydrology)
 Overpass was unreachable from the build sandbox, so this extract is **not yet in the repo**. Where Overpass works:
