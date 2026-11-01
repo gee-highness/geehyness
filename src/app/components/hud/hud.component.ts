@@ -138,6 +138,17 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
         </div>
       }
 
+      <!-- Turn-by-turn guidance -->
+      @if (nav.guidance(); as gd) {
+        <div class="absolute pointer-events-none left-1/2 -translate-x-1/2 hud-card px-4 py-2 flex items-center gap-3" [ngClass]="compact() ? 'top-[96px]' : 'top-20'">
+          <svg width="40" height="40" viewBox="-20 -20 40 40" [style.transform]="'rotate(' + turnAngle(gd.turn) + 'deg)'"><path d="M0 -16 L12 0 H5 V16 H-5 V0 H-12 Z" fill="#34d399"/></svg>
+          <div><div class="text-[15px] font-black leading-tight">{{ gd.text }} <span class="text-amber-300">{{ gd.turn === 'arrive' ? '' : 'in ' + fmtDist(gd.dist) }}</span></div>
+            <div class="text-[11px] text-zinc-300">{{ gd.road || 'ahead' }} · {{ fmtDist(gd.remaining) }} · {{ gd.etaMin }} min</div></div>
+        </div>
+      } @else if (nav.routing()) {
+        <div class="absolute pointer-events-none left-1/2 -translate-x-1/2 top-20 hud-card px-4 py-2 text-xs text-zinc-300">Calculating route…</div>
+      }
+
       <!-- Indicators, hazards, headlights, waypoint -->
       <div class="absolute pointer-events-none left-1/2 -translate-x-1/2 flex items-center gap-3" [ngClass]="compact() ? 'top-[68px]' : 'bottom-24 max-sm:bottom-20'">
         <svg width="34" height="28" viewBox="0 0 34 28" aria-label="Left indicator"><path d="M2 14 L16 2 V9 H32 V19 H16 V26 Z" [attr.fill]="drive.leftOn ? '#34d399' : 'rgba(255,255,255,.14)'" /></svg>
@@ -213,6 +224,10 @@ export class HudComponent {
   public wpDistance(): string { const w = this.nav.waypoint(); if (!w) return ''; const d = Math.hypot(w[0] - this.poseX, w[1] - this.poseZ); return d > 1000 ? (d / 1000).toFixed(1) + ' km' : Math.round(d) + ' m'; }
   public wpAngle(): number { const w = this.nav.waypoint(); if (!w) return 0; const b = Math.atan2(w[0] - this.poseX, w[1] - this.poseZ); let a = b - this.poseYaw; while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
 
+  public fmtDist(d: number): string { return d >= 1000 ? (d / 1000).toFixed(1) + ' km' : Math.round(d / 10) * 10 + ' m'; }
+  /** Arrow rotation (deg, 0 = straight on) for a manoeuvre. */
+  public turnAngle(t: string): number { switch (t) { case 'left': return -90; case 'right': return 90; case 'slight-left': return -45; case 'slight-right': return 45; case 'sharp-left': return -135; case 'sharp-right': return 135; case 'uturn': return 180; default: return 0; } }
+
   public fire(id: string): void {
     switch (id) {
       case 'cars': this.openCars.emit(); break;
@@ -274,6 +289,10 @@ export class HudComponent {
         ctx.stroke();
       }
     }
+    const rt = this.nav.route();
+    if (rt) { ctx.strokeStyle = '#d946ef'; ctx.lineWidth = 7 / scale; ctx.globalAlpha = 0.9; ctx.beginPath(); let first = true;
+      for (let i = 0; i < rt.pts.length; i += 2) { const px = rt.pts[i] - this.poseX, pz = -(rt.pts[i + 1] - this.poseZ); if (Math.abs(px) > 700 || Math.abs(pz) > 700) { first = true; continue; } if (first) { ctx.moveTo(px, pz); first = false; } else ctx.lineTo(px, pz); }
+      ctx.stroke(); ctx.globalAlpha = 1; }
     // blips (nearby key POIs) + waypoint clamped to the radar edge, drawn in the rotated metre space
     const Rm = (W * 0.36) / scale, KEY: Record<string, string> = { hospital: '#e11d48', police: '#2563eb', fuel: '#f97316', mall: '#a855f7' };
     if (this.world?.ready) for (const poi of this.world.meta.pois) {

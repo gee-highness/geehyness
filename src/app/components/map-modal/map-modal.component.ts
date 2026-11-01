@@ -53,7 +53,7 @@ const BLIP: Record<string, [string, string, number]> = { // kind -> [colour, gly
       <div class="absolute bottom-0 inset-x-0 px-5 py-3 bg-gradient-to-t from-black/75 to-transparent flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-zinc-200 pointer-events-none">
         <span><b class="text-amber-300">Click / A</b> waypoint</span><span><b class="text-amber-300">Drag / L-stick</b> pan</span><span><b class="text-amber-300">Wheel / R2·L2</b> zoom</span>
         <span><b class="text-amber-300">Y / space</b> centre</span><span><b class="text-amber-300">X / Del</b> clear</span><span><b class="text-amber-300">B / Esc / M</b> close</span>
-        @if (nav.waypoint()) { <span class="ml-auto text-fuchsia-300 font-bold">Waypoint · {{ wpDist() }}</span> }
+        @if (nav.waypoint()) { <span class="ml-auto text-fuchsia-300 font-bold">{{ nav.route() ? 'Route · ' + routeKm() : nav.routing() ? 'Routing…' : 'Waypoint · ' + wpDist() + ' (no road route)' }}</span> }
       </div>
     </div>
   `,
@@ -115,6 +115,7 @@ export class MapModalComponent implements AfterViewInit, OnDestroy {
   clearWaypoint(): void { this.nav.clear(); }
   focus(d: DistrictInfo): void { this.cx = d.centerPos[0]; this.cz = d.centerPos[1]; this.s = Math.max(this.s, 0.15); }
   travel(d: DistrictInfo): void { this.teleport.emit(d.centerPos); this.closeModal.emit(); }
+  routeKm(): string { const r = this.nav.route(); if (!r) return ''; return r.length > 1000 ? (r.length / 1000).toFixed(1) + ' km' : Math.round(r.length) + ' m'; }
   wpDist(): string { const w = this.nav.waypoint(); if (!w) return ''; const d = Math.hypot(w[0] - this.nav.pose.x, w[1] - this.nav.pose.z); return d > 1000 ? (d / 1000).toFixed(1) + ' km' : Math.round(d) + ' m'; }
 
   @HostListener('window:keydown', ['$event']) key(e: KeyboardEvent): void {
@@ -188,7 +189,9 @@ export class MapModalComponent implements AfterViewInit, OnDestroy {
     // GPS line + waypoint
     const wp = this.nav.waypoint(), me = this.nav.pose;
     if (wp) {
-      g.setLineDash([10, 8]); g.strokeStyle = '#d946ef'; g.lineWidth = 3; g.beginPath(); g.moveTo(sxp(me.x), szp(me.z)); g.lineTo(sxp(wp[0]), szp(wp[1])); g.stroke(); g.setLineDash([]);
+      const rt = this.nav.route();
+      if (rt) { g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = 8; g.beginPath(); for (let i = 0; i < rt.pts.length; i += 2) { const x = sxp(rt.pts[i]), z = szp(rt.pts[i + 1]); if (i) g.lineTo(x, z); else g.moveTo(x, z); } g.stroke(); g.strokeStyle = '#d946ef'; g.lineWidth = 5; g.stroke(); }
+      else { g.setLineDash([10, 8]); g.strokeStyle = '#d946ef'; g.lineWidth = 3; g.beginPath(); g.moveTo(sxp(me.x), szp(me.z)); g.lineTo(sxp(wp[0]), szp(wp[1])); g.stroke(); g.setLineDash([]); }
       const x = sxp(wp[0]), z = szp(wp[1]); g.fillStyle = '#d946ef'; g.strokeStyle = '#fff'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(x, z); g.bezierCurveTo(x - 16, z - 18, x - 12, z - 38, x, z - 38); g.bezierCurveTo(x + 12, z - 38, x + 16, z - 18, x, z); g.fill(); g.stroke();
       g.fillStyle = '#fff'; g.beginPath(); g.arc(x, z - 26, 4.5, 0, 7); g.fill();
     }

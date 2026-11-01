@@ -170,7 +170,7 @@ export class App implements AfterViewInit, OnDestroy {
       // Drop the car on the real MR3 (Ngwane St, eastbound) once the world has streamed in
       (window as unknown as { __shesha: Record<string, unknown> }).__shesha = {
         ...((window as unknown as { __shesha?: Record<string, unknown> }).__shesha ?? {}),
-        wb: this.sceneManager.worldBuilder,
+        wb: this.sceneManager.worldBuilder, nav: this.nav,
         perf: () => Object.fromEntries(Object.entries(this.perf).map(([k, v]) => [k, Math.round(v * 100) / 100])),
         tpRoad: (x: number, z: number) => {
           const wb = this.sceneManager.worldBuilder; const r = wb.nearestRoadSegment(x, z, 5); if (!r) return null;
@@ -200,6 +200,7 @@ export class App implements AfterViewInit, OnDestroy {
         },
       };
       this.sceneManager.setQuality(this.settings.quality());
+      this.nav.attach(this.sceneManager.worldBuilder);
       this.sceneManager.worldBuilder.onReady(() => {
         const sp = this.sceneManager.worldBuilder.meta.spawn;
         this.vehicle.position.set(sp.x, this.sceneManager.worldBuilder.calculateRawTerrainHeight(sp.x, sp.z) + 0.9, sp.z);
@@ -268,7 +269,7 @@ export class App implements AfterViewInit, OnDestroy {
       this.slowTick += frameDelta;
       if (this.slowTick > 0.25 && this.sceneManager.worldBuilder.ready) {
         this.slowTick = 0; const wb = this.sceneManager.worldBuilder, vp = this.vehicle.position;
-        const lim = wb.limitAt(vp.x, vp.z, vp.y); if (lim !== this.telemetryService.speedLimit() && lim) this.telemetryService.speedLimit.set(lim);
+        this.nav.update(vp.x, vp.z); const lim = wb.limitAt(vp.x, vp.z, vp.y); if (lim !== this.telemetryService.speedLimit() && lim) this.telemetryService.speedLimit.set(lim);
         for (const v of wb.meta.views ?? []) {
           if (!this.seenViews.has(v.n) && Math.hypot(v.p[0] - vp.x, v.p[1] - vp.z) < 45) { this.seenViews.add(v.n); this.festivalService.announceViewpoint(v.n); }
         }
