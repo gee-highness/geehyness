@@ -4,10 +4,10 @@
 #   bash ~/storage/downloads/termux_run.sh points3,cliffs3,hydro3   # only what the game uses
 # It copies the script from Downloads, fetches the data, and copies the zip back to Downloads.
 set -e
-termux-setup-storage 2>/dev/null || true
-for i in 1 2 3 4 5; do [ -d "$HOME/storage/downloads" ] && break; sleep 2; done   # wait for the storage permission
-DL="$HOME/storage/downloads"
-[ -d "$DL" ] || { echo "Allow storage access for Termux, then run this again."; exit 1; }
+# Downloads folder: /sdcard/Download works whenever storage access is already granted; never re-run termux-setup-storage if it does.
+DL=""
+for d in /sdcard/Download "$HOME/storage/downloads" /storage/emulated/0/Download; do [ -d "$d" ] && [ -r "$d" ] && DL="$d" && break; done
+if [ -z "$DL" ]; then echo "Run 'termux-setup-storage' once, tap Allow, then run this script again."; exit 1; fi
 pkg install -y python zip >/dev/null 2>&1 || true
 termux-wake-lock 2>/dev/null || true
 mkdir -p "$HOME/osm" "$HOME/osm_all"
