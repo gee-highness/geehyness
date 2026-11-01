@@ -52,6 +52,7 @@ export class SceneManager {
   private quality: QualityTier = 'AUTO';
   private windKmh = 12;
   private baseDaylight = 1;
+  private neo = false;
   private govTimer = 0;
 
   constructor(private container: HTMLElement) {
@@ -203,6 +204,16 @@ export class SceneManager {
     this.beacon.visible = true; this.beacon.position.set(wp[0], this.worldBuilder.calculateRawTerrainHeight(wp[0], wp[1]), wp[1]);
   }
 
+  /** Real / Neo-Eswatini look: neon facades (shader uniform), glowing lane markings, violet night-grade sky. */
+  public setTheme(t: 'REAL' | 'NEO'): void {
+    this.neo = t === 'NEO';
+    const wb = this.worldBuilder, mark = wb.markMat, asph = wb.asphMat;
+    if (mark) { mark.emissive.setRGB(0.1, 0.9, 1.0); mark.emissiveMap = this.neo ? mark.map : null; mark.emissiveIntensity = this.neo ? 1.6 : 0; mark.needsUpdate = true; }
+    if (asph) { asph.color.setScalar(this.neo ? 0.55 : 1); asph.needsUpdate = true; }
+    this.hemiLight.color.set(this.neo ? 0x8a6bff : 0xbae6fd); this.hemiLight.groundColor.set(this.neo ? 0x1a0b3a : 0x854d0e);
+    if (!this.neo && wb.city) wb.city.neo.value = 0;
+  }
+
   public updateEnvironment(env: WorldEnvironmentState): void {
     // Update Sun position & color
     this.sunLight.position.set(env.sunPosition[0], Math.max(10, env.sunPosition[1]), env.sunPosition[2]);
@@ -213,15 +224,17 @@ export class SceneManager {
     // Dim HDRI sky & IBL as the sun sinks below the horizon
     this.windKmh = env.windSpeedKmh; this.weather.set(env.weather);
     const gloom = env.weather === 'TROPICAL_RAIN' ? 0.45 : env.weather === 'OVERCAST' ? 0.7 : env.weather === 'MIST' ? 0.75 : 1;
-    const daylight = THREE.MathUtils.clamp(0.06 + env.sunPosition[1] / 900, 0.06, 1.0) * gloom;
+    let daylight = THREE.MathUtils.clamp(0.06 + env.sunPosition[1] / 900, 0.06, 1.0) * gloom;
+    if (this.neo) daylight = Math.min(daylight, 0.42) * 0.8 + 0.04;
     this.baseDaylight = daylight;
     this.sunLight.intensity = 2.8 * gloom * gloom;
     this.scene.backgroundIntensity = daylight;
-    if (this.worldBuilder.city) this.worldBuilder.city.night.value = THREE.MathUtils.clamp(1 - (daylight - 0.06) / 0.3, 0, 1);
+    if (this.worldBuilder.city) { this.worldBuilder.city.night.value = THREE.MathUtils.clamp(1 - (daylight - 0.06) / 0.3, 0, 1); this.worldBuilder.city.neo.value += ((this.neo ? 1 : 0) - this.worldBuilder.city.neo.value) * 0.5; }
     this.scene.environmentIntensity = daylight;
     if (this.scene.fog) {
       (this.scene.fog as THREE.FogExp2).color = skyCol.clone().lerp(new THREE.Color(0xdbe5e8), 0.8).multiplyScalar(Math.max(0.05, daylight));
-      (this.scene.fog as THREE.FogExp2).density = env.fogDensity * 0.35;
+      (this.scene.fog as THREE.FogExp2).density = env.fogDensity * 0.35 * (this.neo ? 1.5 : 1);
+      if (this.neo) (this.scene.fog as THREE.FogExp2).color.lerp(new THREE.Color(0x2b1b55), 0.6);
     }
 
     // Wet road puddles and mirror reflections
@@ -238,7 +251,7 @@ export class SceneManager {
     if (!this.vehicleMeshGroup || !this.vehicleParts) return;
 
     this.worldBuilder.update(vehicle.position.x, vehicle.position.z);
-    (window as unknown as { __shesha?: Record<string, unknown> }).__shesha!['sig'] = this.signals;
+    { const sh = (window as unknown as { __shesha?: Record<string, unknown> }).__shesha!; sh['sig'] = this.signals; sh['top'] = (x?: number, z?: number, h = 400) => { this.topView = x === undefined ? null : { x, z: z!, h }; if (x === undefined) this.cameraRig.camera.up.set(0, 1, 0); }; }
     this.signals?.update(dt);
     this.roadTraffic?.update(dt, vehicle.position.x, vehicle.position.z);
     this.pedestrians?.update(dt, vehicle.position.x, vehicle.position.z, vehicle.velocity.x, vehicle.velocity.z);
@@ -415,8 +428,11 @@ export class SceneManager {
   public get fps(): number { return Math.round(1000 / Math.max(1, this.frameMs)); }
   public get resolution(): number { return this.pixelRatio; }
 
+  /** Debug: straight-down camera over a point (metres above ground), for comparing against satellite imagery. */
+  public topView: { x: number; z: number; h: number } | null = null;
   public render(dtMs = 16): void {
     this.govern(dtMs);
+    if (this.topView) { const c = this.cameraRig.camera, t = this.topView; c.up.set(0, 0, -1); c.position.set(t.x, this.worldBuilder.calculateRawTerrainHeight(t.x, t.z) + t.h, t.z); c.lookAt(t.x, c.position.y - 100, t.z); c.fov = 50; c.updateProjectionMatrix(); }
     this.renderer.render(this.scene, this.cameraRig.camera);
   }
 

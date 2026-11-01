@@ -47,6 +47,8 @@ function windowAtlas(): THREE.DataTexture {
 
 export class CityBuilder {
   public night = { value: 0 };
+  /** Neo-Eswatini theme amount (0 real .. 1 neon-futuristic); shared by every wall material. */
+  public neo = { value: 0 };
   private mats!: Record<string, THREE.Material>;
   private walls = new Map<string, Map<string, GeoBuf>>();
   private signCols = 4; private signRows = 1;
@@ -96,12 +98,12 @@ export class CityBuilder {
 
   /** Procedural windows/doors/glazing in the shader, lit at night, over the real photographic wall textures. */
   private windowize(m: THREE.MeshStandardMaterial): void {
-    const night = this.night;
+    const night = this.night, neoU = this.neo;
     m.onBeforeCompile = (sh) => {
-      sh.uniforms['uNight'] = night; sh.uniforms['uWinAtlas'] = { value: windowAtlas() };
+      sh.uniforms['uNight'] = night; sh.uniforms['uNeo'] = neoU; sh.uniforms['uWinAtlas'] = { value: windowAtlas() };
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aWin; varying float vWin; varying vec2 vWUv;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWin = aWin; vWUv = uv;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vWin; varying vec2 vWUv; uniform float uNight; uniform sampler2D uWinAtlas;\nfloat h11(float n){return fract(sin(n*12.9898)*43758.5453);}')
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vWin; varying vec2 vWUv; uniform float uNight; uniform float uNeo; uniform sampler2D uWinAtlas;\nfloat h11(float n){return fract(sin(n*12.9898)*43758.5453);}')
         .replace('#include <map_fragment>', `#include <map_fragment>
           float st = min(floor(vWin + 0.001), 7.0), sd = fract(vWin);
           float bay = fract(vWUv.x), flr = fract(vWUv.y), fl = floor(vWUv.y), bi = floor(vWUv.x);
@@ -114,15 +116,26 @@ export class CityBuilder {
             win = wm.r; glass = wm.g; mull = wm.b; door = wm.a * step(0.75, fract(bi*0.618+sd*7.0)) * step(st, 1.5);
           }
           vec3 glassCol = mix(vec3(0.05,0.08,0.11), vec3(0.16,0.3,0.36), glass * 0.8);
-          float lit = step(0.55, h11(bi*13.1 + fl*7.7 + sd*91.0)) * uNight * win;
+          vec3 neonCol = mix(vec3(0.1,0.9,1.0), vec3(1.0,0.22,0.8), step(0.62, h11(sd*37.0 + 3.0)));
+          glassCol = mix(glassCol, mix(vec3(0.02,0.05,0.09), vec3(0.05,0.3,0.45), glass*0.7 + 0.25), uNeo);
+          float lit = step(mix(0.55, 0.3, uNeo), h11(bi*13.1 + fl*7.7 + sd*91.0)) * max(uNight, uNeo) * win;
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.3 + vec3(0.015,0.025,0.045), uNeo * (1.0 - win));
           diffuseColor.rgb = mix(diffuseColor.rgb, glassCol, win * 0.92);
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.5,0.5,0.52), mull * 0.6 * step(0.5, st));
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.13,0.08,0.06), door * 0.9);`)
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
           roughnessFactor = mix(roughnessFactor, 0.05, win * 0.9);`)
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-          totalEmissiveRadiance += lit * vec3(1.0, 0.78, 0.42) * 1.6;`);
+          totalEmissiveRadiance += lit * mix(vec3(1.0, 0.78, 0.42), neonCol, uNeo) * 1.6;
+          totalEmissiveRadiance += uNeo * smoothstep(0.92, 0.985, flr) * neonCol * 1.3 * step(0.5, st);`);
     };
+  }
+
+  /** Neo theme only (decided when a chunk is generated): taller towers where the OSM footprint density is high. */
+  private neoHeight(cx: number, cz: number, area: number): number {
+    if (typeof localStorage === 'undefined' || localStorage.getItem('shesha.theme') !== 'NEO') return 1;
+    const l = this.pending.get(`${Math.floor(cx / CH)},${Math.floor(cz / CH)}`); const density = l ? l.length : 0;
+    return 1 + Math.min(2.2, density / 260) * Math.min(1, Math.sqrt(area) / 14);
   }
 
   // ------------------------------------------------------------------ main
@@ -230,7 +243,7 @@ export class CityBuilder {
     const st = this.style(use, r, area, n);
     const boost = st.wall === 'plaster' ? 1.5 : st.wall === 'concrete' ? 1.45 : st.wall === 'brick' ? 1.35 : 1.9;
     st.tint = st.tint.map((v) => v * boost);
-    const h = hdm / 10; const top = maxH + h;
+    const h = (hdm / 10) * this.neoHeight(cx, cz, area); const top = maxH + h;
     const wallBuf = this.buf(cx, cz, st.wall);
     const winCode = st.win + Math.min(0.99, r);
 

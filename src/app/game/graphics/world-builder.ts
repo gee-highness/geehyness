@@ -59,6 +59,7 @@ export class WorldBuilder {
   public collision = new CollisionWorld();
   public meta!: WorldMeta;
   public roadWays: RoadWay[] = [];
+  public markMat?: THREE.MeshStandardMaterial; public asphMat?: THREE.MeshStandardMaterial;
   /** Lake/pond outlines (decimetres) for the map. */
   public waterPolys: number[][] = [];
   private readyCbs: (() => void)[] = [];
@@ -576,6 +577,7 @@ export class WorldBuilder {
     const mk = () => new THREE.MeshStandardMaterial({ map: markTex(), transparent: true, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, depthWrite: false });
     const water = new THREE.MeshStandardMaterial({ color: 0x3b6f8a, roughness: 0.08, metalness: 0.25, transparent: true, opacity: 0.9 });
     const mats: Record<string, THREE.Material> = { asph, dirt, mark: mk(), water };
+    this.markMat = mats['mark'] as THREE.MeshStandardMaterial; this.asphMat = asph as THREE.MeshStandardMaterial;
     const map = new Map<string, Map<string, GeoBuf>>();
     const YOFF = WorldBuilder.ROAD_LIFT; const RC = 1600;
 

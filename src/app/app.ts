@@ -114,6 +114,7 @@ export class App implements AfterViewInit, OnDestroy {
 
   // Core Game Loop & Physics
   private sceneManager!: SceneManager;
+  private themeFx = effect(() => { const t = this.settings.theme(); this.sceneManager?.setTheme(t); });
   private qualityFx = effect(() => { const q = this.settings.quality(); this.sceneManager?.setQuality(q); });
   private vehicle!: RaycastVehicle;
   private trafficSimulator!: TrafficSimulator;
@@ -199,7 +200,7 @@ export class App implements AfterViewInit, OnDestroy {
           this.vehicle.velocity.set(0, 0, 0); this.vehicle.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
         },
       };
-      this.sceneManager.setQuality(this.settings.quality());
+      this.sceneManager.setQuality(this.settings.quality()); this.sceneManager.setTheme(this.settings.theme());
       this.nav.attach(this.sceneManager.worldBuilder);
       this.sceneManager.worldBuilder.onReady(() => {
         const sp = this.sceneManager.worldBuilder.meta.spawn;
@@ -468,6 +469,7 @@ export class App implements AfterViewInit, OnDestroy {
     if (!this.started()) { if (event.code === 'Enter') this.begin(); return; }
 
     if (event.code === 'KeyF') { this.hudComponent?.showFps.update((v) => !v); return; }
+    if (event.code === 'KeyY') { this.settings.toggleTheme(); return; }
     if (event.code === 'KeyQ') { this.settings.cycleQuality(); return; }
     if (event.code === 'KeyG') { this.envService.cycleWeather(); return; }
     if (event.code === 'KeyH') { this.hapticsService.setEnabled(!this.hapticsService.enabled()); return; }
