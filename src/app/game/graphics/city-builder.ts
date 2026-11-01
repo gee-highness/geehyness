@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GeoBuf } from './geo-buf';
+import { GeoBuf, slab } from './geo-buf';
 import type { WorldBuilder } from './world-builder';
 
 /** [use, heightDm, footprint dm..., signIndex, seed] */
@@ -121,6 +121,7 @@ export class CityBuilder {
       let cx = 0, cz = 0, A = 0;
       for (let i = 0; i < n; i++) { cx += f[i * 2]; cz += f[i * 2 + 1]; const j = (i + 1) % n; A += f[i * 2] * f[j * 2 + 1] - f[j * 2] * f[i * 2 + 1]; }
       cx /= n * 10; cz /= n * 10; const area = Math.abs(A) / 200;
+      if (area < 14 && b[0] !== 12) continue;
       this.w.addFootprint(cx, cz, Math.sqrt(area) * 0.6 + 1.5);
       const key = `${Math.floor(cx / CH)},${Math.floor(cz / CH)}`; let l = this.pending.get(key); if (!l) { l = []; this.pending.set(key, l); } l.push(b);
     }
@@ -278,8 +279,8 @@ export class CityBuilder {
     const pb = this.buf(cx, cz, 'props'); const tint = pick(CONCRETE, r * 9.7).map((v) => v * 1.1), cap = [tint[0] * 0.8, tint[1] * 0.8, tint[2] * 0.8];
     const wall = (a: [number, number], b: [number, number]) => {
       const dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz); if (len < 0.5) return;
-      const mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2, rot = Math.atan2(dz, dx), yy = w.calculateRawTerrainHeight(mx, mz) - 0.1;
-      this.box(pb, mx, yy, mz, len, 1.75, 0.2, rot, tint); this.box(pb, mx, yy + 1.75, mz, len + 0.1, 0.1, 0.3, rot, cap);
+      const mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
+      slab(pb, (px, pz) => w.calculateRawTerrainHeight(px, pz), a[0], a[1], b[0], b[1], 0.22, 1.75, tint, cap);
       const nx = -dz / len * 0.1, nz = dx / len * 0.1, tx = dx / len * len / 2, tz = dz / len * len / 2;
       w.collision.addPolygon([mx - tx + nx, mz - tz + nz, mx + tx + nx, mz + tz + nz, mx + tx - nx, mz + tz - nz, mx - tx - nx, mz - tz - nz]);
     };

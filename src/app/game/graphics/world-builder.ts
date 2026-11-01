@@ -330,8 +330,8 @@ export class WorldBuilder {
     if (!this.visDirty && Math.hypot(px - this.visX, pz - this.visZ) < 12 && now - this.visT < 250) return;
     this.visDirty = false; this.visX = px; this.visZ = pz; this.visT = now;
     for (const t of this.terrainTiles) {
-      const d = Math.hypot(t.cx - px, t.cz - pz);
-      t.lod0.visible = d < 2400; t.lod1.visible = d >= 2400 && d < 5200;
+      const dx = Math.max(Math.abs(t.cx - px) - 640, 0), dz = Math.max(Math.abs(t.cz - pz) - 640, 0), d = Math.hypot(dx, dz);
+      t.lod0.visible = d < 2300; t.lod1.visible = d >= 2300 && d < 5200;
     }
     const doShadow = this.shadowsOn && now - this.shadowT > 600; if (doShadow) this.shadowT = now;
     for (const c of this.chunks) {

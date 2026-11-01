@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GeoBuf } from './geo-buf';
+import { GeoBuf, slab } from './geo-buf';
 import type { WorldBuilder } from './world-builder';
 
 const SZ = 400;
@@ -88,11 +88,12 @@ export class FeaturesBuilder {
           if (w.roadAt(mx, mz)) continue;
           if (kind === 0 || kind === 4) {
             const mb = this.buf(mx, mz, 'mesh'); const hh = sp.h;
-            this.quad(mb, [[mx - tx * len / 2, y, mz - tz * len / 2], [mx + tx * len / 2, y, mz + tz * len / 2], [mx + tx * len / 2, y + hh, mz + tz * len / 2], [mx - tx * len / 2, y + hh, mz - tz * len / 2]], [-tz, 0, tx], kind === 4 ? [0.2, 0.2, 0.22] : [0.75, 0.77, 0.8], [[0, 0], [len / 0.9, 0], [len / 0.9, hh / 0.9], [0, hh / 0.9]]);
-            const pb = this.buf(mx, mz, 'props'); this.box(pb, mx - tx * len / 2, y, mz - tz * len / 2, 0.09, 0.09, hh + 0.1, tx, tz, sp.c);
+            const ya = this.h(mx - tx * len / 2, mz - tz * len / 2), yb = this.h(mx + tx * len / 2, mz + tz * len / 2);
+            this.quad(mb, [[mx - tx * len / 2, ya - 0.05, mz - tz * len / 2], [mx + tx * len / 2, yb - 0.05, mz + tz * len / 2], [mx + tx * len / 2, yb + hh, mz + tz * len / 2], [mx - tx * len / 2, ya + hh, mz - tz * len / 2]], [-tz, 0, tx], kind === 4 ? [0.2, 0.2, 0.22] : [0.75, 0.77, 0.8], [[0, 0], [len / 0.9, 0], [len / 0.9, hh / 0.9], [0, hh / 0.9]]);
+            const pb = this.buf(mx, mz, 'props'); { const px0 = mx - tx * len / 2, pz0 = mz - tz * len / 2, g0 = this.h(px0, pz0); this.box(pb, px0, g0 - 0.1, pz0, 0.09, 0.09, hh + 0.2, tx, tz, sp.c); }
           } else {
-            const pb = this.buf(mx, mz, 'props'); this.box(pb, mx, y - 0.1, mz, len + 0.02, sp.t, sp.h, tx, tz, sp.c);
-            if (kind === 1) this.box(pb, mx, y + sp.h - 0.1, mz, len + 0.04, sp.t + 0.1, 0.1, tx, tz, [sp.c[0] * 0.8, sp.c[1] * 0.8, sp.c[2] * 0.8]);
+            const pb = this.buf(mx, mz, 'props');
+            slab(pb, (px, pz) => this.h(px, pz), mx - tx * len / 2, mz - tz * len / 2, mx + tx * len / 2, mz + tz * len / 2, sp.t, sp.h, sp.c, kind === 1 ? [sp.c[0] * 0.78, sp.c[1] * 0.78, sp.c[2] * 0.78] : undefined);
           }
           if (sp.solid) { const nx = -tz * Math.max(0.12, sp.t / 2), nz = tx * Math.max(0.12, sp.t / 2); w.collision.addPolygon([mx - tx * len / 2 + nx, mz - tz * len / 2 + nz, mx + tx * len / 2 + nx, mz + tz * len / 2 + nz, mx + tx * len / 2 - nx, mz + tz * len / 2 - nz, mx - tx * len / 2 - nx, mz - tz * len / 2 - nz], y - 0.6, y + sp.h + 0.4); }
         }
@@ -117,7 +118,7 @@ export class FeaturesBuilder {
     const P = (a: number, s: number, hh: number): V3 => [x + tx * a + nx * s, y + hh, z + tz * a + nz * s];
     const base = 3.0, top = 0.7, H = 24;
     const legs: [number, number][] = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
-    for (const [la, ls] of legs) this.beam(b, P(la * base, ls * base, -0.3), P(la * top, ls * top, H), 0.14, steel);
+    for (const [la, ls] of legs) { const bp = P(la * base, ls * base, 0); bp[1] = this.h(bp[0], bp[2]) - 0.5; this.beam(b, bp, P(la * top, ls * top, H), 0.14, steel); }
     for (const hh of [0, 8, 16, H]) { const r = base + (top - base) * (hh / H); for (let i = 0; i < 4; i++) { const a = legs[i], c = legs[(i + 1) % 4]; this.beam(b, P(a[0] * r, a[1] * r, hh), P(c[0] * r, c[1] * r, hh), 0.07, steel); } }
     for (let lvl = 0; lvl < 3; lvl++) { const h0 = lvl * 8, h1 = h0 + 8, r0 = base + (top - base) * (h0 / H), r1 = base + (top - base) * (h1 / H); for (let i = 0; i < 4; i++) { const a = legs[i], c = legs[(i + 1) % 4]; this.beam(b, P(a[0] * r0, a[1] * r0, h0), P(c[0] * r1, c[1] * r1, h1), 0.06, steel); } }
     for (const hh of [H, H + 3.5]) { this.beam(b, P(0, -7.4 + (hh > H ? 1.6 : 0), hh), P(0, 7.4 - (hh > H ? 1.6 : 0), hh), 0.1, steel); }
@@ -236,7 +237,8 @@ export class FeaturesBuilder {
       for (let i = 0; i < sides; i++) {
         const a0 = (i / sides) * 6.283, a1 = ((i + 1) / sides) * 6.283, am = (a0 + a1) / 2;
         const P = (a: number, hh: number): V3 => [x + Math.cos(a) * r, y + hh, z + Math.sin(a) * r];
-        this.quad(b, [P(a0, -0.2), P(a1, -0.2), P(a1, hgt), P(a0, hgt)], [Math.cos(am), 0, Math.sin(am)], col);
+        const lo = (a: number): V3 => { const q = P(a, 0); q[1] = Math.min(this.h(q[0], q[2]), y) - 0.4; return q; }; // each rim point starts on its own ground
+        this.quad(b, [lo(a0), lo(a1), P(a1, hgt), P(a0, hgt)], [Math.cos(am), 0, Math.sin(am)], col);
         this.quad(b, [P(a0, hgt), P(a1, hgt), [x, y + hgt + (kind ? 2.4 : 0.6), z], [x, y + hgt + (kind ? 2.4 : 0.6), z]], [0, 1, 0], [col[0] * 0.8, col[1] * 0.8, col[2] * 0.8]);
       }
       w.collision.addCircle(x, z, r, y - 1, y + hgt);

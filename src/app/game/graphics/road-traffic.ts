@@ -28,7 +28,7 @@ export class RoadTraffic {
       const wheels = def.wheels.map((n) => car.getObjectByName(n)).filter(Boolean) as THREE.Object3D[];
       let s = 2.2;
       if (wheels.length === 4) { car.updateWorldMatrix(true, true); const p = wheels.map((w) => w.getWorldPosition(new THREE.Vector3())); s = 2.7 / (Math.abs((p[0].z + p[1].z) / 2 - (p[2].z + p[3].z) / 2) || 1); }
-      const g = new THREE.Group(); car.scale.setScalar(s); car.position.y = 0.33 - 0.3 * s; g.add(car); g.visible = false;
+      const g = new THREE.Group(); car.scale.setScalar(s); car.updateWorldMatrix(true, true); car.position.y = -new THREE.Box3().setFromObject(car).min.y; g.add(car); g.visible = false;
       this.scene.add(g);
       this.agents.push({ dzs: [], cruise: 12, obj: g, pts: [], seg: 0, s: 0, speed: 0, w: 6, cum: [], len: 0 });
     }

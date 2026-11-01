@@ -289,7 +289,7 @@ export class StreetBuilder {
     for (const c of list) {
       if (!this.carParts.has(c.m)) continue;
       const key = `${Math.floor(c.x / 160)},${Math.floor(c.z / 160)}`; let arr = this.carCells.get(key); if (!arr) { arr = []; this.carCells.set(key, arr); } arr.push(c);
-      const y = w.calculateRawTerrainHeight(c.x, c.z) + w.roadLift(4) - 0.02;
+      const y = w.groundHeightAt(c.x, c.z) - 0.02;
       M.compose(new THREE.Vector3(c.x, y, c.z), Q.setFromAxisAngle(up, c.rot), new THREE.Vector3(1, 1, 1));
       const lk = `${Math.floor(c.x / 300)},${Math.floor(c.z / 300)}`; let la = lod.get(lk); if (!la) { la = []; lod.set(lk, la); }
       const col = StreetBuilder.PAL[Math.floor(rnd(c.x * 0.7 + c.z * 1.3) * StreetBuilder.PAL.length)];
@@ -311,7 +311,7 @@ export class StreetBuilder {
       const have = this.carMeshes.get(key);
       if (d < 230 && !have && built < 2 && this.carMat) {
         const geos: THREE.BufferGeometry[] = []; const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
-        for (const c of list) { const parts = this.carParts.get(c.m); if (!parts) continue; const y = w.calculateRawTerrainHeight(c.x, c.z) + w.roadLift(4) - 0.02; M.compose(new THREE.Vector3(c.x, y, c.z), Q.setFromAxisAngle(up, c.rot), new THREE.Vector3(1, 1, 1)); for (const p of parts) geos.push(p.clone().applyMatrix4(M)); }
+        for (const c of list) { const parts = this.carParts.get(c.m); if (!parts) continue; const y = w.groundHeightAt(c.x, c.z) - 0.02; M.compose(new THREE.Vector3(c.x, y, c.z), Q.setFromAxisAngle(up, c.rot), new THREE.Vector3(1, 1, 1)); for (const p of parts) geos.push(p.clone().applyMatrix4(M)); }
         const g = geos.length ? mergeGeometries(geos) : null; if (!g) { this.carMeshes.set(key, new THREE.Mesh()); continue; }
         for (const q of geos) q.dispose(); g.computeBoundingSphere();
         const mesh = new THREE.Mesh(g, this.carMat); mesh.name = 'parkedcars'; mesh.frustumCulled = true; w.landmarksGroup.add(mesh); this.carMeshes.set(key, mesh); built++;

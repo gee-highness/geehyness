@@ -96,7 +96,7 @@ export class ExtrasBuilder {
       this.quad(b, [[x - nx * rw / 2 - tx * 1.9, y + 0.05, z - nz * rw / 2 - tz * 1.9], [x + nx * rw / 2 - tx * 1.9, y + 0.05, z + nz * rw / 2 - tz * 1.9], [x + nx * rw / 2 + tx * 1.9, y + 0.05, z + nz * rw / 2 + tz * 1.9], [x - nx * rw / 2 + tx * 1.9, y + 0.05, z - nz * rw / 2 + tz * 1.9]], [0, 1, 0], [0.18, 0.15, 0.12]);
       // crossbuck + barrier posts either side of the tracks
       for (const side of [-1, 1]) {
-        const px = x + tx * 5.2 * side + nx * (rw / 2 + 1.3), pz = z + tz * 5.2 * side + nz * (rw / 2 + 1.3), yy = w.calculateRawTerrainHeight(px, pz);
+        const px = x + tx * 5.2 * side + nx * (rw / 2 + 1.3), pz = z + tz * 5.2 * side + nz * (rw / 2 + 1.3), yy = w.groundHeightAt(px, pz) - 0.05;
         this.box(b, px, yy, pz, 0.09, 0.09, 2.7, tx, tz, [0.8, 0.8, 0.8]);
         for (const r of [-0.62, 0.62]) { const cxr = Math.cos(r), sxr = Math.sin(r); this.box(b, px + nx * 0.06, yy + 2.45, pz + nz * 0.06, 0.04, 1.15, 0.16, tx * cxr - nx * sxr, tz * cxr - nz * sxr, [0.95, 0.95, 0.95]); }
         this.box(b, px, yy + 1.5, pz, 0.12, 0.12, 0.35, tx, tz, [0.85, 0.12, 0.1]); // warning light housing
@@ -114,7 +114,9 @@ export class ExtrasBuilder {
       if (l < 0.5) { nx = -rd.tz; nz = rd.tx; l = 1; } else { nx = dx / l; nz = dz / l; }
       const off = Math.max(rd.way.w / 2 + (rd.way.sw ?? 0) + 1.6, l + 1.4); const px = rd.px + nx * off, pz = rd.pz + nz * off;
       if (w.roadAt(px, pz)) continue;
-      const tx = rd.tx, tz = rd.tz, y = w.calculateRawTerrainHeight(px, pz) + (rd.way.sw ? 0.3 : 0.05), b = this.buf(px, pz, 'props');
+      const tx = rd.tx, tz = rd.tz, b = this.buf(px, pz, 'props');
+      // stand on the lowest ground under the 3.8 x 1.7 m footprint (never floating on a slope), pavement-high if on a pavement
+      let y = 1e9; for (const [a, c] of [[-1.9, -0.85], [1.9, -0.85], [-1.9, 0.85], [1.9, 0.85], [0, 0]]) y = Math.min(y, w.groundHeightAt(px + tx * a + nx * c, pz + tz * a + nz * c)); y -= 0.04;
       const glass = [0.55, 0.72, 0.78], steel = [0.35, 0.38, 0.42], wood = [0.45, 0.32, 0.2];
       this.box(b, px + nx * 0.7, y, pz + nz * 0.7, 3.4, 0.07, 2.2, tx, tz, glass);          // back panel
       this.box(b, px, y + 2.25, pz, 3.8, 1.7, 0.1, tx, tz, steel);                          // roof
@@ -142,7 +144,7 @@ export class ExtrasBuilder {
     const place = (x: number, z: number, tx: number, tz: number, hw: number, lim: number) => {
       const idx = Math.max(0, limits.indexOf(limits.reduce((a, c) => (Math.abs(c - lim) < Math.abs(a - lim) ? c : a), 60)));
       const nx = -tz, nz = tx; const px = x - nx * (hw + 1.1), pz = z - nz * (hw + 1.1); // left side for left-hand traffic
-      if (w.roadAt(px, pz)) return; const y = w.calculateRawTerrainHeight(px, pz);
+      if (w.roadAt(px, pz)) return; const y = w.groundHeightAt(px, pz) - 0.05;
       const b = this.buf(px, pz, 'props'); this.box(b, px, y, pz, 0.08, 0.08, 2.5, tx, tz, [0.55, 0.57, 0.6]); w.collision.addCircle(px, pz, 0.1);
       // face toward the oncoming driver: normal = -tangent
       const fx = -tx, fz = -tz, sx = -fz, sz = fx, u0 = idx / 6, u1 = (idx + 1) / 6, yy = y + 1.6, s = 0.45;
