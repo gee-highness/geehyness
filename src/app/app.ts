@@ -164,6 +164,13 @@ export class App implements AfterViewInit, OnDestroy {
           this.vehicle.position.set(r.px, wb.groundHeightAt(r.px, r.pz) + 1, r.pz); this.vehicle.velocity.set(0, 0, 0);
           this.vehicle.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(r.tx, r.tz)); return [Math.round(r.px), Math.round(r.pz), r.way.n];
         },
+        tpBay: (x: number, z: number) => {
+          const wb = this.sceneManager.worldBuilder; let best: { px: number; pz: number; yaw: number; d: number; n: string } | null = null;
+          for (const w of wb.roadWays) { if (!w.bay || w.p.length < 8) continue; const i = Math.floor(w.p.length / 4) * 2; const px = w.p[i] / 10, pz = w.p[i + 1] / 10, d = Math.hypot(px - x, pz - z);
+            if (!best || d < best.d) best = { px, pz, yaw: Math.atan2(w.p[i + 2] - w.p[i], w.p[i + 3] - w.p[i + 1]), d, n: w.n }; }
+          if (!best) return null; this.vehicle.position.set(best.px, wb.groundHeightAt(best.px, best.pz) + 1, best.pz); this.vehicle.velocity.set(0, 0, 0);
+          this.vehicle.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), best.yaw); return [Math.round(best.px), Math.round(best.pz), best.n];
+        },
         tp: (x: number, z: number, yaw: number) => {
           const wb = this.sceneManager.worldBuilder; this.vehicle.position.set(x, wb.groundHeightAt(x, z) + 1, z);
           this.vehicle.velocity.set(0, 0, 0); this.vehicle.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
