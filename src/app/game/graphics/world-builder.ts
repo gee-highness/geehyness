@@ -717,6 +717,7 @@ export class WorldBuilder {
     });
   }
 
+  public animalSpots: number[][] = []; public footSpots: number[][] = [];
   public overlapsRoad(pts: [number, number][], cx: number, cz: number): boolean {
     if (this.roadAt(cx, cz)) return true;
     for (let i = 0; i < pts.length; i++) {

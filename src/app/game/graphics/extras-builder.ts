@@ -223,13 +223,14 @@ export class ExtrasBuilder {
 
   // ------------------------------------------------------------------ pedestrian footbridges (steel, over arterial roads at out-of-town bus stops, as on the MR3)
   private footbridges(): void {
+    const cx0 = (v: number): number => v;
     const w = this.w, sn = (w.meta.snaps ?? {}) as Record<string, [number, number]>; const placed: number[][] = []; const steel: V3 = [0.62, 0.64, 0.68], rail: V3 = [0.5, 0.52, 0.56];
     for (const bs of w.meta.busstops ?? []) {
       if (placed.length >= 6) break; const [x, z] = bs.p;
       if (['manzini', 'mbabane'].some((k) => sn[k] && Math.hypot(sn[k][0] - x, sn[k][1] - z) < 700)) continue;
       if (placed.some((q) => Math.hypot(q[0] - x, q[1] - z) < 900)) continue;
       const rd = w.nearestRoadSegment(x, z, 3); if (!rd || rd.dist > 25 || rd.way.dz || rd.way.w < 6) continue;
-      placed.push([x, z]); const nx = -rd.tz, nz = rd.tx, half = rd.way.w / 2 + 3.2, cx = rd.px, cz = rd.pz, y = w.groundHeightAt(cx, cz), b = this.buf(cx, cz, 'props'), top = 5.6;
+      placed.push([x, z]); w.footSpots.push([Math.round(cx0(x)), Math.round(z)]); const nx = -rd.tz, nz = rd.tx, half = rd.way.w / 2 + 3.2, cx = rd.px, cz = rd.pz, y = w.groundHeightAt(cx, cz), b = this.buf(cx, cz, 'props'), top = 5.6;
       this.box(b, cx, y + top, cz, half * 2, 2.0, 0.3, nx, nz, steel);                                              // deck
       for (const o of [-0.95, 0.95]) this.box(b, cx + rd.tx * o, y + top + 0.3, cz + rd.tz * o, half * 2, 0.08, 1.3, nx, nz, rail); // side screens
       this.box(b, cx, y + top + 1.6, cz, half * 2, 2.1, 0.1, nx, nz, [0.55, 0.57, 0.6]);                          // roof
@@ -259,7 +260,7 @@ export class ExtrasBuilder {
           this.box(b, x, y + 0.62 * sc, z, 1.9 * sc, 0.7 * sc, 0.7 * sc, fx, fz, c);                                  // body
           this.box(b, x + fx * 1.15 * sc, y + 0.85 * sc, z + fz * 1.15 * sc, 0.45 * sc, 0.34 * sc, 0.4 * sc, fx, fz, c); // head
           for (const [lu, lv] of [[0.7, 0.22], [0.7, -0.22], [-0.7, 0.22], [-0.7, -0.22]]) this.box(b, x + fx * lu * sc - fz * lv * sc, y, z + fz * lu * sc + fx * lv * sc, 0.13 * sc, 0.13 * sc, 0.65 * sc, fx, fz, c);
-          w.collision.addCircle(x, z, 0.55 * sc + 0.15); made++;
+          w.collision.addCircle(x, z, 0.55 * sc + 0.15); made++; w.animalSpots.push([Math.round(x), Math.round(z)]);
         }
       }
     }
