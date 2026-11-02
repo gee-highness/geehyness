@@ -145,3 +145,11 @@ Plans: `docs/FIDELITY_PLAN.md` (brand-faithful stations/chains/landmarks, tiers 
 - Reference photos (Engen Fairview, Total Manzini + Riverstone, Puma Mbabane pylon, Mitra Manzini, Mbabane aerial) were supplied by the user; NOT committed (Google imagery - reference only).
 - Visual check was overhead only: canopy rectangle on the Galp at (105,-258) looks mis-sized/overlaps the kiosk - verify with a ground-level view and tune `W/D`, then compare against photos. Nissan tower beside the MR3 Galp not built.
 - Mapillary fetch finished in an earlier container (2960 features) but `data/mapillary_features.json` is not in this checkout - confirm, then feed to `build_world.py`.
+
+### Seventh session, later additions
+- `docs/MASTER_PLAN.md` (perf budgets + GTA3-style plan), `docs/MAPILLARY_FINDINGS.md` (what the street photos show).
+- Distance: L0 buildings 400 m, props 190 m, flat far "cards" 380-820 m, fog floor 0.0014, stream radius 900 m, 400 m mesh cells.
+- Mapillary merged into `meta.json` by `scripts/apply_mapillary.py` (re-runnable; reads `data/mapillary_features.json`): real utility poles + wires, steel poles, lamps, signals, signs, billboards (`meta.upoles`, `meta.bills`). Image index `data/mapillary_images.json` (13k, no pixels). Token is NOT in the repo (was `/tmp/.mly`).
+- Road tar recoloured warm grey, verge/gravel red-brown, yellow edge lines.
+- Release workflow (`release.yml`) builds Linux packages + APK on tag/dispatch; needs the workflow file on the default branch (merge the branch), tag pushes are blocked from the cloud session.
+- Still TODO: verify poles/billboards/colours visually, Galp canopy sizing, CBD verandahs, retail-modern, taxi/coach models, far-hill ring, vegetation zones, real-device perf (Phase 0 bench).
