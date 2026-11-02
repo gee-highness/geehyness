@@ -80,6 +80,7 @@ export class RaycastVehicle {
       this.initWheel(3, 'RR', false, config.driveType !== 'FWD'),
     ];
     this.updateWheelGeometry();
+    this.stabilityAssist = config.driveType === 'RWD' ? 0.25 : 0.6;   // drift cars keep their tail-happy character
   }
 
   private initWheel(index: number, name: 'FL' | 'FR' | 'RL' | 'RR', isSteer: boolean, isDriven: boolean): WheelState {
@@ -394,7 +395,7 @@ export class RaycastVehicle {
     if (this.brake > 0) {
       // Bias is per axle, so double it for the per-wheel share; the tyre can never give more than mu * N
       const brakeBias = 2 * (wheelIndex < 2 ? this.tuning.brakeBiasFrontPct / 100 : (100 - this.tuning.brakeBiasFrontPct) / 100);
-      const brakeForceN = Math.min(tractionLimit * 0.97, this.brake * (this.tuning.brakePressurePct / 100) * brakeBias * tractionLimit);
+      const brakeForceN = Math.min(tractionLimit * 1.12, this.brake * (this.tuning.brakePressurePct / 100) * brakeBias * tractionLimit * 1.15);   // peak longitudinal grip sits above lateral; pedal modulates up to it (ABS-like: never beyond)
       longForceN -= Math.sign(vLong) * Math.min(Math.abs(vLong * this.config.massKg * 0.25), brakeForceN);
 
       // Heating brake rotors
