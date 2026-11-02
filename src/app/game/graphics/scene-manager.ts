@@ -444,7 +444,7 @@ export class SceneManager {
   }
 
   /** Compile every shader program once, up front, so first sight of a material never hitches mid-drive. */
-  public warm(): void { try { this.renderer.compile(this.scene, this.cameraRig.camera); } catch { /* best effort */ } }
+  public warm(): void { if (this.isSoftwareGl) return; try { void this.renderer.compileAsync(this.scene, this.cameraRig.camera).catch(() => undefined); } catch { /* best effort */ } }
 
   /** Apply a graphics tier. AUTO keeps the device defaults; the dynamic-resolution governor still runs inside each tier's cap. */
   public setQuality(q: QualityTier): void {
