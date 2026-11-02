@@ -5,3 +5,5 @@ Poly Haven CC0 textures also: white_plaster_rough_01, yellow_plaster, concrete_w
 Map data: (c) OpenStreetMap contributors, ODbL. Elevation: Copernicus DEM via Open-Meteo.
 Cars: Kenney Car Kit 3.1 (CC0, kenney.nl) via OpenGameArt; Kenney Starter-Kit-Racing vehicles (CC0); CarConcept (Khronos glTF-Sample-Assets, CC-BY 4.0); Ferrari 458 (CC-BY 4.0); Cesium Milk Truck (CC-BY 4.0).
 Poly Haven CC0 also: herringbone_pavement_03, concrete_pavement.
+
+Street furniture positions (lamps, poles, signs, signals): Mapillary contributors, CC BY-SA 4.0 (mapillary.com).
