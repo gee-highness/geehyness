@@ -51,6 +51,7 @@ export class SceneManager {
   public isSoftwareGl = false;
   public isMobile = false;
   private pixelRatio = 1;
+  private autoDetail = 1; private tierDetail = 1;
   private maxPixelRatio = 1;
   private frameMs = 16;
   private weather!: Weather;
@@ -102,7 +103,7 @@ export class SceneManager {
     const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints ?? 0) > 1;
     this.isMobile = mobile;
     this.renderer = new THREE.WebGLRenderer({
-      antialias: !mobile && !this.isSoftwareGl, // MSAA is too costly on phones; resolution scaling + FXAA-free crispness instead
+      antialias: !this.isSoftwareGl && !mobile, // MSAA off on phones (tile-GPU cost); resolution scaling carries the quality instead
       powerPreference: 'high-performance',
       preserveDrawingBuffer: false, // photo mode renders then reads in the same task
     });
@@ -154,6 +155,7 @@ export class SceneManager {
 
     // African distance fog blending mountains into the sky
     this.scene.fog = new THREE.FogExp2(0xcdd8dc, 0.00022);
+    this.makeHills();
   }
 
   public spawnVehicle(config: VehicleArchetypeConfig, visuals: VisualCustomization, def: CarDef = CAR_CATALOG[0]): void {
@@ -262,7 +264,7 @@ export class SceneManager {
     this.baseDaylight = daylight; this.scene.environmentIntensity = 0.04 + 0.96 * dark;
     if (this.worldBuilder.city) { this.worldBuilder.city.night.value = THREE.MathUtils.clamp(1 - (daylight - 0.06) / 0.3, 0, 1); this.worldBuilder.city.neo.value += ((this.neo ? 1 : 0) - this.worldBuilder.city.neo.value) * 0.5; }
     this.worldBuilder.setNightGlow?.(this.worldBuilder.city ? this.worldBuilder.city.night.value : 0);
-    if (this.scene.fog) { const f = this.scene.fog as THREE.FogExp2; f.color.copy(pal.horizon).multiplyScalar(0.55 + 0.45 * daylight); f.density = env.fogDensity * 0.4 * (this.neo ? 1.4 : 1); }
+    if (this.scene.fog) { const f = this.scene.fog as THREE.FogExp2; f.color.copy(pal.horizon).multiplyScalar(0.55 + 0.45 * daylight); f.density = Math.max(env.fogDensity * 0.4 * (this.neo ? 1.4 : 1), 0.0014); } // floor: hides the cut-off distance (~65% haze at 700 m)
     this.refreshEnvironmentMap();
 
     // Wet road puddles and mirror reflections
@@ -426,14 +428,38 @@ export class SceneManager {
     this.govTimer += dtMs;
     if (this.govTimer < 700) return;
     this.govTimer = 0;
-    let pr = this.pixelRatio;
-    if (this.frameMs > 18.4) pr = Math.max(0.5, pr - (this.frameMs > 26 ? 0.2 : 0.08)); // aim for 60 fps (16.7 ms)
-    else if (this.frameMs < 13.6 && pr < this.maxPixelRatio) pr = Math.min(this.maxPixelRatio, pr + 0.04);
+    let pr = this.pixelRatio, ad = this.autoDetail;
+    const floorPr = this.isMobile ? 0.75 : 0.85;                                  // phones may drop to 0.75 render scale before missing 60 fps (GTA3-style softness beats stutter)
+    if (this.frameMs > 18.4) {                                                    // over budget: first draw less (distance / chunk detail), only then lower resolution toward its floor
+      if (ad > 0.45) ad = Math.max(0.45, ad - (this.frameMs > 26 ? 0.15 : 0.07));
+      else pr = Math.max(floorPr, pr - (this.frameMs > 26 ? 0.1 : 0.04));
+    } else if (this.frameMs < 13.6) {                                             // headroom: resolution back up first, then distance
+      if (pr < this.maxPixelRatio) pr = Math.min(this.maxPixelRatio, pr + 0.04);
+      else if (ad < 1) ad = Math.min(1, ad + 0.04);
+    }
+    if (Math.abs(ad - this.autoDetail) > 0.001) { this.autoDetail = ad; this.worldBuilder.setDetailScale(this.tierDetail * ad); }
     if (Math.abs(pr - this.pixelRatio) > 0.001) {
       this.pixelRatio = pr; this.renderer.setPixelRatio(pr);
       this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     }
   }
+
+  private hills?: THREE.Mesh; private hillMat = new THREE.MeshBasicMaterial({ color: 0x8fa3ad, fog: false, side: THREE.DoubleSide });
+  /** Far skyline ring of low-poly Highveld hills (outside the playable DEM): one ~320-tri mesh that follows the camera, tinted like distant haze. */
+  private makeHills(): void {
+    const seg = 160, R = 3900, pos: number[] = [], idx: number[] = [];
+    for (let i = 0; i <= seg; i++) {
+      const a = (i / seg) * Math.PI * 2, x = Math.cos(a) * R, z = Math.sin(a) * R;
+      const h = Math.max(50, 110 + 120 * Math.sin(a * 3 + 1) + 70 * Math.sin(a * 7 + 2) + 40 * Math.sin(a * 13 + 0.5) + 25 * Math.sin(a * 29));
+      pos.push(x, -400, z, x, h, z);
+      if (i < seg) { const b = i * 2; idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2); }
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
+    this.hills = new THREE.Mesh(g, this.hillMat); this.hills.frustumCulled = false; this.hills.renderOrder = -1; this.scene.add(this.hills);
+  }
+
+  /** Compile every shader program once, up front, so first sight of a material never hitches mid-drive. */
+  public warm(): void { if (this.isSoftwareGl) return; try { void this.renderer.compileAsync(this.scene, this.cameraRig.camera).catch(() => undefined); } catch { /* best effort */ } }
 
   /** Apply a graphics tier. AUTO keeps the device defaults; the dynamic-resolution governor still runs inside each tier's cap. */
   public setQuality(q: QualityTier): void {
@@ -454,7 +480,7 @@ export class SceneManager {
     this.pedFraction = q === 'LOW' ? 0.3 : q === 'MED' ? 0.65 : 1; this.pedestrians?.setCount(this.pedFraction);
     LAMP.uLampN.value = q === 'LOW' ? 14 : q === 'MED' || (q === 'AUTO' && this.isMobile) ? 22 : 24;
     this.weather.setDetail(q === 'LOW' ? 0.35 : q === 'MED' ? 0.65 : 1);
-    this.worldBuilder.setDetailScale(q === 'LOW' ? 0.5 : q === 'MED' ? 0.75 : 1);
+    this.tierDetail = q === 'LOW' ? 0.5 : q === 'MED' ? 0.75 : 1; this.worldBuilder.setDetailScale(this.tierDetail * this.autoDetail);
   }
   public get qualityTier(): QualityTier { return this.quality; }
 
@@ -465,6 +491,7 @@ export class SceneManager {
   public topView: { x: number; z: number; h: number } | null = null;
   public render(dtMs = 16): void {
     this.govern(dtMs);
+    if (this.hills) { const c = this.cameraRig.camera.position; this.hills.position.set(c.x, c.y - 20, c.z); const f = this.scene.fog as THREE.FogExp2 | null; if (f) this.hillMat.color.copy(f.color).multiplyScalar(0.7).lerp(new THREE.Color(0.3, 0.4, 0.46), 0.35); }
     if (this.topView) { const c = this.cameraRig.camera, t = this.topView; c.up.set(0, 0, -1); c.position.set(t.x, this.worldBuilder.calculateRawTerrainHeight(t.x, t.z) + t.h, t.z); c.lookAt(t.x, c.position.y - 100, t.z); c.fov = 50; c.updateProjectionMatrix(); }
     this.renderer.render(this.scene, this.cameraRig.camera);
   }

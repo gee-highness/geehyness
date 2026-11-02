@@ -1,3 +1,4 @@
+import {makeQuantum, makeCoach} from './vehicles-sa';
 import * as THREE from 'three';
 import { AssetLibrary } from './asset-library';
 import type { WorldBuilder } from './world-builder';
@@ -14,13 +15,26 @@ export class RoadTraffic {
   private timer = 0;
   private readonly N = 26;
   public signals?: TrafficSignals;
+  private static boxA = new THREE.BoxGeometry(1.8, 0.7, 4.3); private static boxB = new THREE.BoxGeometry(1.5, 0.5, 2.1);
+  private static glassMat = new THREE.MeshStandardMaterial({ color: 0x1b2128, roughness: 0.2, metalness: 0.5 });
 
   constructor(private scene: THREE.Scene, private world: WorldBuilder) {
     world.roadWays.forEach((w, i) => { if (w.c <= 4 && w.p.length >= 6) this.candidates.push(i); });
     this.populate();
   }
 
+  /** Minibus taxis (most common in towns) and long-distance coaches share the same lanes as the car models. */
+  private addPublicTransport(): void {
+    const stripes = [0x1e5bb8, 0x0e8a4a, 0xd7261e, 0xf2a900, 0x6a2c91];
+    for (let i = 0; i < 9; i++) {
+      const coach = i >= 7, g = coach ? makeCoach(stripes[i % 5]) : makeQuantum(stripes[i % 5]);
+      this.scene.add(g); g.visible = false;
+      this.agents.push({ dzs: [], cruise: coach ? 17 : 13, obj: g, pts: [], seg: 0, s: 0, speed: 0, w: 6, cum: [], len: 0 });
+    }
+  }
+
   private async populate(): Promise<void> {
+    this.addPublicTransport();
     for (let i = 0; i < this.N; i++) {
       const id = TRAFFIC_MODELS[i % TRAFFIC_MODELS.length];
       const def = CAR_CATALOG.find((c) => c.id === id);
@@ -30,7 +44,13 @@ export class RoadTraffic {
       const wheels = def.wheels.map((n) => car.getObjectByName(n)).filter(Boolean) as THREE.Object3D[];
       let s = 2.2;
       if (wheels.length === 4) { car.updateWorldMatrix(true, true); const p = wheels.map((w) => w.getWorldPosition(new THREE.Vector3())); s = 2.7 / (Math.abs((p[0].z + p[1].z) / 2 - (p[2].z + p[3].z) / 2) || 1); }
-      const g = new THREE.Group(); car.scale.setScalar(s); car.updateWorldMatrix(true, true); car.position.y = -new THREE.Box3().setFromObject(car).min.y; g.add(car); g.visible = false;
+      const g = new THREE.Group(); g.userData['wheels'] = wheels; g.userData['car'] = car; car.scale.setScalar(s); car.updateWorldMatrix(true, true); car.position.y = -new THREE.Box3().setFromObject(car).min.y; g.add(car); g.visible = false;
+      { // distance LOD: a two-box silhouette in the car's own colour stands in beyond ~75 m (24 triangles instead of thousands)
+        let col = 0x888888; car.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && /body|paint|car/i.test(m.name) && (m.material as THREE.MeshStandardMaterial).color) col = (m.material as THREE.MeshStandardMaterial).color.getHex(); });
+        const px = new THREE.Group(), bm = new THREE.MeshStandardMaterial({ color: col, roughness: 0.5, metalness: 0.3 }), gm = RoadTraffic.glassMat;
+        const b1 = new THREE.Mesh(RoadTraffic.boxA, bm); b1.position.set(0, 0.62, 0); const b2 = new THREE.Mesh(RoadTraffic.boxB, gm); b2.position.set(0, 1.2, -0.15);
+        px.add(b1, b2); px.visible = false; g.add(px); g.userData['proxy'] = px;
+      }
       this.scene.add(g);
       this.agents.push({ dzs: [], cruise: 12, obj: g, pts: [], seg: 0, s: 0, speed: 0, w: 6, cum: [], len: 0 });
     }
@@ -103,8 +123,9 @@ export class RoadTraffic {
       const hf = tg(x + dx * 1.6, z + dz * 1.6) + (a.lift ?? 0.1) + dzI + (a.dzs[i + 1] - a.dzs[i]) / L * 1.6, hb = tg(x - dx * 1.6, z - dz * 1.6) + (a.lift ?? 0.1) + dzI - (a.dzs[i + 1] - a.dzs[i]) / L * 1.6;
       a.obj.position.set(x, h, z); a.obj.userData['hd'] = [dx, dz];
       a.obj.quaternion.setFromAxisAngle(up, Math.atan2(dx, dz)).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.atan2(hf - hb, 3.2)));
-      a.obj.userData['spin'] = ((a.obj.userData['spin'] as number) || 0) + (a.speed / 0.33) * dt;
-      a.obj.traverse((o) => { if (o.name.startsWith('wheel-')) o.rotation.x = a.obj.userData['spin']; });
+      const dp = Math.hypot(x - px, z - pz), near = dp < 75, car = a.obj.userData['car'] as THREE.Object3D | undefined, proxy = a.obj.userData['proxy'] as THREE.Object3D | undefined;
+      if (car) car.visible = near; if (proxy) proxy.visible = !near && dp < 330;          // full model only up close, silhouette to 330 m, then nothing
+      if (near) { const sp = ((a.obj.userData['spin'] as number) || 0) + (a.speed / 0.33) * dt; a.obj.userData['spin'] = sp; for (const w of (a.obj.userData['wheels'] as THREE.Object3D[]) ?? []) w.rotation.x = sp; }
     }
   }
 }

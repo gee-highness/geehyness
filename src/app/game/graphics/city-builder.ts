@@ -23,6 +23,18 @@ const houseRoof = (r: number): number[] => r < 0.38 ? ROOFS[1] : r < 0.58 ? ROOF
 const tileRoof = (r: number): number[] => r < 0.45 ? ROOFS[1] : r < 0.75 ? ROOFS[6] : r < 0.9 ? ROOFS[3] : ROOFS[0];
 const sheetRoof = (r: number): number[] => r < 0.4 ? ROOFS[0] : r < 0.7 ? ROOFS[4] : r < 0.9 ? ROOFS[5] : ROOFS[7];
 
+/** Fuel brands: sign plate colours, canopy fascia / underside, pump colour and price-pylon style (from street photos). */
+interface FuelBrand { key: string; bg: string; fg: string; fascia: number[]; body: number[]; pump: number[]; pylon: 'galp' | 'engen' | 'total' | 'shell' | 'puma' | 'mitra'; flags: boolean }
+const FUEL_BRANDS: FuelBrand[] = [
+  { key: 'GALP', bg: '#f26522', fg: '#ffffff', fascia: [0.95, 0.4, 0.13], body: [0.96, 0.96, 0.96], pump: [0.95, 0.4, 0.13], pylon: 'galp', flags: true },
+  { key: 'ENGEN', bg: '#0b3c9e', fg: '#ffffff', fascia: [0.04, 0.24, 0.62], body: [0.97, 0.97, 0.97], pump: [0.1, 0.3, 0.7], pylon: 'engen', flags: false },
+  { key: 'TOTAL', bg: '#e30613', fg: '#ffffff', fascia: [0.89, 0.02, 0.07], body: [0.96, 0.96, 0.96], pump: [0.89, 0.02, 0.07], pylon: 'total', flags: false },
+  { key: 'SHELL', bg: '#fbce07', fg: '#d4101a', fascia: [0.98, 0.8, 0.03], body: [0.96, 0.96, 0.96], pump: [0.98, 0.8, 0.03], pylon: 'shell', flags: false },
+  { key: 'PUMA', bg: '#00844a', fg: '#ffffff', fascia: [0.0, 0.52, 0.29], body: [0.96, 0.96, 0.96], pump: [0.84, 0.1, 0.12], pylon: 'puma', flags: false },
+  { key: 'MITRA', bg: '#2f3fa6', fg: '#ffffff', fascia: [0.18, 0.25, 0.65], body: [0.82, 0.83, 0.86], pump: [0.2, 0.6, 0.7], pylon: 'mitra', flags: false },
+];
+const fuelBrand = (text: string): FuelBrand | undefined => { const t = text.toUpperCase(); return FUEL_BRANDS.find((b) => t.includes(b.key)); };
+
 interface Style { wall: 'plaster' | 'brick' | 'concrete' | 'ironw'; tint: number[]; win: number; roof: 'hip' | 'gable' | 'flat' | 'lowgable' | 'canopy'; rtint: number[]; props: boolean; awn: boolean; sign: 'door' | 'big' | 'top' | 'none'; pitch: number }
 
 /**
@@ -57,11 +69,11 @@ export class CityBuilder {
   public neo = { value: 0 };
   private mats!: Record<string, THREE.Material>;
   private walls = new Map<string, Map<string, GeoBuf>>();
-  private signCols = 4; private signRows = 1;
+  private signCols = 4; private signRows = 1; private signList: string[][] = [];
 
   constructor(private w: WorldBuilder) {}
 
-  private static size(mat: string): number { return mat === 'props' || mat === 'sign' ? 400 : CH; }
+  private static size(mat: string): number { return mat === 'props' || mat === 'sign' ? 200 : 400; } // small cells = tight distance culling
   private buf(cx: number, cz: number, mat: string): GeoBuf {
     const sz = CityBuilder.size(mat);
     const k = `${sz}:${Math.floor(cx / sz)},${Math.floor(cz / sz)}`;
@@ -73,6 +85,8 @@ export class CityBuilder {
   // ------------------------------------------------------------------ materials
   private makeMaterials(signs: string[][]): void {
     const w = this.w;
+    this.signList = signs;
+    signs.forEach((sg) => { const fb = fuelBrand(sg[0]); if (fb) { sg[1] = fb.bg; sg[2] = fb.fg; } }); // true brand colours, not random
     const plaster = w.pbr('white_plaster_rough_01', 3, 0.9), brick = w.pbr('brick_wall_02', 3, 0.85);
     const concrete = w.pbr('concrete_wall_007', 3, 0.85), ironw = w.pbr('corrugated_iron', 3, 0.6); ironw.metalness = 0.25;
     const roof = w.pbr('corrugated_iron', 3, 0.5); roof.metalness = 0.45;
@@ -114,11 +128,19 @@ export class CityBuilder {
         .replace(sh.fragmentShader.includes('/*STYLE_DONE*/') ? '/*STYLE_DONE*/' : '#include <map_fragment>', `${sh.fragmentShader.includes('/*STYLE_DONE*/') ? '/*STYLE_DONE*/' : '#include <map_fragment>'}
           float st = min(floor(vWin + 0.001), 7.0), sd = floor(fract(vWin) * 1000.0 + 0.5) / 1000.0;
           float bay = fract(vWUv.x), flr = fract(vWUv.y), fl = floor(vWUv.y), bi = floor(vWUv.x);
-          float win = 0.0, door = 0.0, mull = 0.0, glass = 0.0;
+          float win = 0.0, door = 0.0, mull = 0.0, glass = 0.0, trim = 0.0, sill = 0.0, lintel = 0.0, frame = 0.0;
           if (st > 0.5) {
             // baked mask atlas: 8 styles across, ground floor / upper floor rows; R=window G=glass B=mullion A=door zone
             vec2 tuv = vec2((st + clamp(bay, 0.008, 0.992)) / 8.0, (min(fl, 1.0) + clamp(flr, 0.008, 0.992)) / 2.0);
             vec4 wm = textureGrad(uWinAtlas, tuv, dFdx(vWUv) * vec2(0.125, 0.5), dFdy(vWUv) * vec2(0.125, 0.5));
+            vec2 gx_ = dFdx(vWUv) * vec2(0.125, 0.5), gy_ = dFdy(vWUv) * vec2(0.125, 0.5);
+            if (dot(vViewPosition, vViewPosition) < 3600.0) {   // trim / sill / frame reads only within 60 m
+              float nE = textureGrad(uWinAtlas, tuv + vec2(0.012, 0.0), gx_, gy_).r, nW = textureGrad(uWinAtlas, tuv - vec2(0.012, 0.0), gx_, gy_).r;
+              float nU = textureGrad(uWinAtlas, tuv + vec2(0.0, 0.032), gx_, gy_).r, nD = textureGrad(uWinAtlas, tuv - vec2(0.0, 0.032), gx_, gy_).r;
+              trim = clamp(max(max(nE, nW), max(nU, nD)) - wm.r, 0.0, 1.0);
+              sill = clamp(nD - wm.r, 0.0, 1.0); lintel = clamp(nU - wm.r, 0.0, 1.0);
+              frame = wm.r * (1.0 - min(min(nE, nW), min(nU, nD)));
+            }
             if (st > 5.5 && st < 6.5) wm.r *= step(0.5, fract(bi*0.5));
             win = wm.r; glass = wm.g; mull = wm.b; door = wm.a * step(0.75, fract(bi*0.618+sd*7.0)) * step(st, 1.5);
           }
@@ -129,7 +151,18 @@ export class CityBuilder {
           diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.3 + vec3(0.015,0.025,0.045), uNeo * (1.0 - win));
           diffuseColor.rgb = mix(diffuseColor.rgb, glassCol, win * 0.92);
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.5,0.5,0.52), mull * 0.6 * step(0.5, st));
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.13,0.08,0.06), door * 0.9);`)
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.13,0.08,0.06), door * 0.9);
+          // architectural detail: window frames, painted trim, projecting sills (lit top, shadowed underside), lintels, floor slab bands, ground-floor grime, sky reflection
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16,0.17,0.19), frame * 0.85 * step(0.5, st));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93,0.91,0.86), trim * 0.55 * (1.0 - win) * step(0.5, st) * (1.0 - uNeo));
+          diffuseColor.rgb *= 1.0 - 0.28 * lintel * (1.0 - win) * step(0.5, st);
+          diffuseColor.rgb *= 1.0 + 0.14 * sill * (1.0 - win) * step(0.5, st);
+          float slabBand = (1.0 - smoothstep(0.0, 0.035, abs(flr - 0.015))) * step(1.0, vWUv.y) * (1.0 - win);
+          diffuseColor.rgb *= 1.0 - 0.16 * slabBand;
+          float baseG = 1.0 - smoothstep(0.0, 0.42, vWUv.y);
+          diffuseColor.rgb *= 1.0 - baseG * (0.3 + 0.2 * h11(bi * 5.3 + sd * 17.0));
+          float refl = smoothstep(0.35, 0.95, fract(bay * 0.7 + flr * 0.6 + sd * 3.0));
+          diffuseColor.rgb += vec3(0.2, 0.32, 0.4) * refl * win * (0.3 + 0.7 * glass) * (1.0 - uNight * 0.85) * (1.0 - uNeo);`)
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
           roughnessFactor = mix(roughnessFactor, 0.05, win * 0.9);`)
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
@@ -226,10 +259,10 @@ export class CityBuilder {
   }
 
   /** Build the area around the start synchronously so it is ready before the intro ends (after barriers/features exist). */
-  prime(): void { const sp = this.w.meta.spawn; this.stream(sp.x, sp.z, 1300, 1e9); }
+  prime(): void { const sp = this.w.meta.spawn; this.stream(sp.x, sp.z, 900, 1e9); }
 
   /** Called every frame: builds nearby chunks within a small time budget (keeps the frame rate smooth). */
-  update(px: number, pz: number): void { this.stream(px, pz, 1500, 1.6); }
+  update(px: number, pz: number): void { this.stream(px, pz, 900, 1.6); }
 
   private stream(px: number, pz: number, radius: number, budgetMs: number): void {
     const t0 = performance.now();
@@ -263,10 +296,10 @@ export class CityBuilder {
   /** Turn queued buffers into meshes, one at a time, inside the frame budget. */
   private drainEmit(t0: number, budgetMs: number): boolean {
     while (this.emitQ.length) {
-      const q = this.emitQ.shift()!; const isProp = q.mk === 'props' || q.mk === 'sign';
-      const mesh = new THREE.Mesh(q.buf.toGeometry(q.mk !== 'sign', !isProp), this.mats[q.mk]);
+      const q = this.emitQ.shift()!; const card = q.mk === 'card', isProp = q.mk === 'props' || q.mk === 'sign' || card;
+      const mesh = new THREE.Mesh(q.buf.toGeometry(q.mk !== 'sign', !isProp), card ? this.mats['props'] : this.mats[q.mk]);
       mesh.name = 'bld:' + q.mk; mesh.castShadow = false; mesh.receiveShadow = true;
-      this.w.registerChunk(mesh, q.cx, q.cz, q.sz * 0.75, isProp ? 420 : 1150); this.w.landmarksGroup.add(mesh);
+      this.w.registerChunk(mesh, q.cx, q.cz, q.sz * 0.75, card ? 820 : isProp ? 190 : 400); if (card) mesh.userData['near'] = 380; this.w.landmarksGroup.add(mesh);
       if (performance.now() - t0 > budgetMs) return false;
     }
     return true;
@@ -347,6 +380,17 @@ export class CityBuilder {
     else if (roof === 'hip') this.hipRoof(rb, pts, cx, cz, top, st.rtint, area);
     else this.gableRoof(rb, wallBuf, ocx, ocz, ux, uz, vx, vz, halfU, halfV, top, st.rtint, st.pitch, st.tint, winCode, roof === 'lowgable');
 
+    // far-LOD "flat plane" card: two crossed quads through the oriented box, drawn only beyond ~380 m instead of the full building
+    if (use !== 17 && (area >= 40 || top - maxH > 9)) {
+      const kb = this.buf(cx, cz, 'card'), y0 = Math.min(...hs) - 0.5, wc = st.tint.map((v) => v * 0.82), rc = st.rtint.map((v) => v * 0.9);
+      for (const [ax, az, hl] of [[ux, uz, halfU], [vx, vz, halfV]] as number[][]) {
+        const nx2 = -az, nz2 = ax;
+        const a0 = kb.vert(ocx - ax * hl, y0, ocz - az * hl, nx2, 0, nz2, 0, 0, wc), a1 = kb.vert(ocx + ax * hl, y0, ocz + az * hl, nx2, 0, nz2, 1, 0, wc);
+        const a2 = kb.vert(ocx + ax * hl, top, ocz + az * hl, nx2, 0, nz2, 1, 1, rc), a3 = kb.vert(ocx - ax * hl, top, ocz - az * hl, nx2, 0, nz2, 0, 1, rc);
+        kb.tri(a0, a1, a2); kb.tri(a0, a2, a3);
+      }
+    }
+
     // collision footprint + tree rejection
     if (use !== 17 && !w.overlapsRoad(pts, cx, cz)) w.collision.addPolygon(pts.flatMap((p) => [p[0], p[1]]), Math.min(...hs) - 1, top, roof === 'flat' && area > 30);
 
@@ -361,7 +405,8 @@ export class CityBuilder {
     if (sid >= 0 && st.sign !== 'none') this.signPlate(pts, front, hs, top, sid, st.sign, cx, cz);
     if (st.props && roof === 'flat' && area > 70) this.roofProps(pb, pts, cx, cz, top - 0.45, use, r, area);
     if (use === 10 && front >= 0) this.churchTower(wallBuf, rb, pts, front, hs, top, st.tint, winCode, pb);
-    if (use === 12 && front >= 0) this.petrolCanopy(pb, pts, front, hs, cx, cz);
+    if ((use === 3 || use === 4 || use === 5 || use === 6) && area > 450 && front >= 0 && this.nearTown('matsapha', 1200, cx, cz)) this.retailModern(pb, pts, front, hs, top, r);
+    if (use === 12 && front >= 0) this.petrolCanopy(pb, pts, front, hs, sid >= 0 ? fuelBrand(this.signList[sid]?.[0] ?? '') : undefined);
   }
 
   // ------------------------------------------------------------------ compound walls
@@ -378,7 +423,12 @@ export class CityBuilder {
     const wall = (a: [number, number], b: [number, number]) => {
       const dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz); if (len < 0.5) return;
       const mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
-      slab(pb, (px, pz) => w.calculateRawTerrainHeight(px, pz), a[0], a[1], b[0], b[1], 0.22, 1.75, tint, cap);
+      if (r > 0.55) { // brick plinth + iron railings (seen on school / residential frontages)
+        slab(pb, (px, pz) => w.calculateRawTerrainHeight(px, pz), a[0], a[1], b[0], b[1], 0.3, 0.6, [0.55, 0.3, 0.24], [0.45, 0.25, 0.2]);
+        const n = Math.max(1, Math.round(len / 2.2)), ang = Math.atan2(dz, dx);
+        for (let k = 0; k <= n; k++) { const px = a[0] + dx * k / n, pz = a[1] + dz * k / n; this.box(pb, px, w.calculateRawTerrainHeight(px, pz) + 0.55, pz, 0.07, 1.0, 0.07, ang, [0.09, 0.1, 0.11]); }
+        this.box(pb, (a[0] + b[0]) / 2, w.calculateRawTerrainHeight((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) + 1.45, (a[1] + b[1]) / 2, len, 0.06, 0.06, ang, [0.09, 0.1, 0.11]);
+      } else slab(pb, (px, pz) => w.calculateRawTerrainHeight(px, pz), a[0], a[1], b[0], b[1], 0.22, 1.75, tint, cap);
       const nx = -dz / len * 0.1, nz = dx / len * 0.1, tx = dx / len * len / 2, tz = dz / len * len / 2;
       w.collision.addPolygon([mx - tx + nx, mz - tz + nz, mx + tx + nx, mz + tz + nz, mx + tx - nx, mz + tz - nz, mx - tx - nx, mz - tz - nz]);
     };
@@ -456,10 +506,12 @@ export class CityBuilder {
 
   private awning(b: GeoBuf, pts: [number, number][], i: number, hs: number[], r: number): void {
     const n = pts.length, a = pts[i], c = pts[(i + 1) % n]; const dx = c[0] - a[0], dz = c[1] - a[1], len = Math.hypot(dx, dz);
-    const nx = dz / len, nz = -dx / len, tx = dx / len, tz = dz / len; const wdt = Math.min(len * 0.9, 12), s0 = (len - wdt) / 2;
-    const col = pick(AWNING, r * 5.3), y = (hs[i] + hs[(i + 1) % n]) / 2;
+    const nx = dz / len, nz = -dx / len, tx = dx / len, tz = dz / len;
+    const vera = this.inCbd(a[0], a[1]) && len >= 6;                       // town-centre shop rows: continuous verandah over the pavement, posts at the kerb
+    const wdt = vera ? Math.min(len * 0.98, 30) : Math.min(len * 0.9, 12), s0 = (len - wdt) / 2;
+    const col = vera ? [0.45, 0.47, 0.5] : pick(AWNING, r * 5.3), y = (hs[i] + hs[(i + 1) % n]) / 2;
     const p0: [number, number] = [a[0] + tx * s0, a[1] + tz * s0], p1: [number, number] = [p0[0] + tx * wdt, p0[1] + tz * wdt];
-    const out = 1.7, yh = y + 3.0, yl = y + 2.55;
+    const out = vera ? 3.0 : 1.7, yh = y + 3.0, yl = y + 2.55;
     const sn = [nx * 0.45, 0.89, nz * 0.45], sl = Math.hypot(sn[0], sn[1], sn[2]);
     const v = [b.vert(p0[0], yh, p0[1], sn[0] / sl, sn[1] / sl, sn[2] / sl, 0, 0, col), b.vert(p1[0], yh, p1[1], sn[0] / sl, sn[1] / sl, sn[2] / sl, 0, 0, col),
       b.vert(p1[0] + nx * out, yl, p1[1] + nz * out, sn[0] / sl, sn[1] / sl, sn[2] / sl, 0, 0, col), b.vert(p0[0] + nx * out, yl, p0[1] + nz * out, sn[0] / sl, sn[1] / sl, sn[2] / sl, 0, 0, col)];
@@ -467,6 +519,26 @@ export class CityBuilder {
     const v2 = [b.vert(p0[0], yh, p0[1], -sn[0] / sl, -sn[1] / sl, -sn[2] / sl, 0, 0, [col[0] * 0.55, col[1] * 0.55, col[2] * 0.55]), b.vert(p1[0], yh, p1[1], -sn[0] / sl, -sn[1] / sl, -sn[2] / sl, 0, 0, [col[0] * 0.55, col[1] * 0.55, col[2] * 0.55]),
       b.vert(p1[0] + nx * out, yl, p1[1] + nz * out, -sn[0] / sl, -sn[1] / sl, -sn[2] / sl, 0, 0, [col[0] * 0.55, col[1] * 0.55, col[2] * 0.55]), b.vert(p0[0] + nx * out, yl, p0[1] + nz * out, -sn[0] / sl, -sn[1] / sl, -sn[2] / sl, 0, 0, [col[0] * 0.55, col[1] * 0.55, col[2] * 0.55])];
     b.tri(v2[0], v2[1], v2[2]); b.tri(v2[0], v2[2], v2[3]);
+    if (vera) { const np = Math.max(2, Math.round(wdt / 4.5)); for (let k = 0; k < np; k++) { const t = np === 1 ? 0.5 : k / (np - 1); const px = p0[0] + tx * wdt * t + nx * (out - 0.2), pz = p0[1] + tz * wdt * t + nz * (out - 0.2);
+      this.box(b, px, y, pz, 0.14, yl - y, 0.14, Math.atan2(tz, tx), [0.4, 0.42, 0.45]); this.w.collision.addCircle(px, pz, 0.12); } }
+  }
+  private nearTown(name: string, r: number, x: number, z: number): boolean { const t = (this.w.meta.snaps as Record<string, [number, number]> | undefined)?.[name]; return !!t && Math.hypot(t[0] - x, t[1] - z) < r; }
+
+  /** Modern strip-mall frontage (Matsapha Lifestyle Centre style): dark steel pergola with slats over the entrance walk, black cladding tower at one end. */
+  private retailModern(pb: GeoBuf, pts: [number, number][], i: number, hs: number[], top: number, r: number): void {
+    const n = pts.length, a = pts[i], c = pts[(i + 1) % n]; const dx = c[0] - a[0], dz = c[1] - a[1], len = Math.hypot(dx, dz); if (len < 14) return;
+    const tx = dx / len, tz = dz / len, nx = tz, nz = -tx, rot = Math.atan2(tz, tx), y = (hs[i] + hs[(i + 1) % n]) / 2, D = 3.4, W = Math.min(len * 0.9, 50), s0 = (len - W) / 2;
+    const steel = [0.14, 0.15, 0.17], at = (u: number, v: number): [number, number] => [a[0] + tx * (s0 + u) + nx * v, a[1] + tz * (s0 + u) + nz * v];
+    for (let u = 0; u <= W + 0.01; u += 5) { const [px, pz] = at(u, D); this.box(pb, px, y, pz, 0.2, 4.4, 0.2, rot, steel); this.w.collision.addCircle(px, pz, 0.15); }
+    const [bx, bz] = at(W / 2, D); this.box(pb, bx, y + 4.35, bz, W, 0.2, 0.25, rot, steel);                      // front beam
+    for (let u = 0.6; u < W; u += 1.3) { const [sx, sz] = at(u, D / 2); this.box(pb, sx, y + 4.5, sz, 0.1, 0.1, D, rot, steel); } // slats back to the wall
+    const [tx0, tz0] = at(-2, -2.5); this.box(pb, tx0, top - 0.6, tz0, 5.5, 3.6 + r * 1.2, 5.5, rot, [0.09, 0.09, 0.11]);   // dark cladding tower
+  }
+
+  /** Town-centre test (Manzini / Mbabane cores) used for CBD-only building features. */
+  private inCbd(x: number, z: number): boolean {
+    const sn = this.w.meta.snaps as Record<string, [number, number]> | undefined; if (!sn) return false;
+    return ['manzini', 'mbabane'].some((k) => sn[k] && Math.hypot(sn[k][0] - x, sn[k][1] - z) < 650);
   }
 
   private signPlate(pts: [number, number][], i: number, hs: number[], top: number, sid: number, kind: string, cx: number, cz: number): void {
@@ -526,15 +598,60 @@ export class CityBuilder {
     void win;
   }
 
-  private petrolCanopy(pb: GeoBuf, pts: [number, number][], i: number, hs: number[], cx: number, cz: number): void {
+  private petrolCanopy(pb: GeoBuf, pts: [number, number][], i: number, hs: number[], brand?: FuelBrand): void {
     const n = pts.length, a = pts[i], c = pts[(i + 1) % n]; const dx = c[0] - a[0], dz = c[1] - a[1], len = Math.hypot(dx, dz);
     const nx = dz / len, nz = -dx / len, tx = dx / len, tz = dz / len, rot = Math.atan2(tz, tx), y = Math.min(...hs);
-    const mx = (a[0] + c[0]) / 2 + nx * 8, mz = (a[1] + c[1]) / 2 + nz * 8;
-    this.box(pb, mx, y + 4.6, mz, 16, 0.5, 9, rot, [0.96, 0.96, 0.96]); this.box(pb, mx, y + 4.35, mz, 16.2, 0.25, 9.2, rot, [0.85, 0.12, 0.12]);
-    for (const [su, sv] of [[-5, -3], [5, -3], [-5, 3], [5, 3]]) {
-      const px = mx + tx * su + nx * sv, pz = mz + tz * su + nz * sv; this.box(pb, px, y, pz, 0.45, 4.6, 0.45, rot, [0.82, 0.82, 0.84]); this.w.collision.addCircle(px, pz, 0.35);
+    const br = brand ?? FUEL_BRANDS[2], W = Math.max(14, Math.min(len * 0.9, 24)), D = 11, H = 4.9;
+    // choose a forecourt spot that does not sit on a road: try outward offsets, then slide past the building ends
+    const ex = (a[0] + c[0]) / 2, ez = (a[1] + c[1]) / 2; let mx = NaN, mz = NaN;
+    const free = (qx: number, qz: number): boolean => { for (const su of [-0.6, 0, 0.6]) for (const sv of [-0.6, 0, 0.6]) if (this.w.roadAt(qx + tx * su * (W / 2 + 2) + nx * sv * (D / 2 + 2), qz + tz * su * (W / 2 + 2) + nz * sv * (D / 2 + 2))) return false; return true; };
+    search: for (const sg of [1, -1]) for (const d of [3, 7, 12]) for (const sh of [0, 1, -1]) {
+      const qx = ex + sg * nx * (D / 2 + d) + tx * sh * (len / 2 + W / 2 + 2), qz = ez + sg * nz * (D / 2 + d) + tz * sh * (len / 2 + W / 2 + 2);
+      if (free(qx, qz)) { mx = qx; mz = qz; break search; }
     }
-    for (const su of [-2.5, 2.5]) { const px = mx + tx * su, pz = mz + tz * su; this.box(pb, px, y, pz, 0.7, 1.4, 1.6, rot, [0.9, 0.18, 0.12]); }
-    void cx; void cz;
+    if (Number.isNaN(mx)) return; // no road-free forecourt spot: leave the bare kiosk
+    const P = (su: number, sv: number): [number, number] => [mx + tx * su + nx * sv, mz + tz * su + nz * sv];
+    const GREY = [0.62, 0.63, 0.66];
+    // canopy: light underside slab, white roof cap, brand fascia band all round (deeper on the road side)
+    this.box(pb, mx, y + H, mz, W, 0.3, D, rot, GREY);
+    this.box(pb, mx, y + H + 0.3, mz, W + 0.2, 0.35, D + 0.2, rot, br.body);
+    for (const [su, sv, bw, bd] of [[0, D / 2, W + 0.3, 0.3], [0, -D / 2, W + 0.3, 0.3], [W / 2, 0, 0.3, D], [-W / 2, 0, 0.3, D]] as number[][]) {
+      const [px, pz] = P(su, sv); this.box(pb, px, y + H - 0.25, pz, bw, 0.95, bd, rot, br.fascia);
+    }
+    // columns (2 rows) + pump islands with brand-coloured pumps
+    const cols = Math.max(2, Math.round(W / 7)); const cs = W * 0.8 / (cols - 1);
+    for (let k = 0; k < cols; k++) for (const sv of [-D * 0.28, D * 0.28]) {
+      const [px, pz] = P(-W * 0.4 + k * cs, sv); this.box(pb, px, y, pz, 0.45, H, 0.45, rot, br.body); this.w.collision.addCircle(px, pz, 0.35);
+    }
+    for (const su of [-W * 0.2, W * 0.2]) {
+      const [ix, iz] = P(su, 0); this.box(pb, ix, y, iz, 6, 0.2, 1.3, rot, [0.55, 0.55, 0.57]);
+      for (const k of [-1.6, 1.6]) { const [px, pz] = P(su + k, 0); this.box(pb, px, y + 0.2, pz, 0.7, 1.6, 0.9, rot, br.pump); this.box(pb, px, y + 1.5, pz, 0.72, 0.3, 0.92, rot, [0.12, 0.12, 0.14]); }
+    }
+    // price pylon at the road end of the forecourt
+    const px0 = a[0] + tx * Math.min(len * 0.12, 3) + nx * 1.5, pz0 = a[1] + tz * Math.min(len * 0.12, 3) + nz * 1.5;
+    this.pylon(pb, px0, y, pz0, rot, br, tx, tz);
+    this.w.collision.addCircle(px0, pz0, 0.8);
+    if (br.flags) for (let k = 0; k < 4; k++) { // Galp: row of flagpoles
+      const fx = a[0] + tx * (len * 0.3 + k * 2.2) + nx * 1.2, fz = a[1] + tz * (len * 0.3 + k * 2.2) + nz * 1.2;
+      this.box(pb, fx, y, fz, 0.12, 6.5, 0.12, rot, [0.85, 0.85, 0.88]); this.box(pb, fx + tx * 0.6, y + 5.6, fz + tz * 0.6, 1.1, 0.7, 0.04, rot, k % 2 ? [0.95, 0.4, 0.13] : [1, 1, 1]);
+    }
+  }
+
+  /** Tall brand price pylon: tower body, logo block, dark price board with red LED rows. */
+  private pylon(pb: GeoBuf, x: number, y: number, z: number, rot: number, br: FuelBrand, tx: number, tz: number): void {
+    const WHITE = [0.95, 0.95, 0.95], BOARD = [0.05, 0.05, 0.08], LED = [1, 0.15, 0.1];
+    const H = br.pylon === 'engen' ? 8.5 : br.pylon === 'galp' ? 9 : 7;
+    const body = br.pylon === 'engen' ? [0.04, 0.24, 0.62] : br.pylon === 'total' ? [0.89, 0.02, 0.07] : br.pylon === 'galp' ? WHITE : br.pylon === 'shell' ? [0.98, 0.8, 0.03] : br.pylon === 'puma' ? [0.0, 0.52, 0.29] : [0.18, 0.25, 0.65];
+    this.box(pb, x, y, z, 1.7, H, 0.5, rot, body);
+    this.box(pb, x, y, z, 2.0, 0.5, 0.8, rot, [0.5, 0.5, 0.52]);          // plinth
+    const top = y + H;
+    if (br.pylon === 'engen') { this.box(pb, x, top - 1.9, z, 1.72, 1.9, 0.52, rot, WHITE); this.box(pb, x, top - 1.5, z, 1.2, 1.0, 0.56, rot, [0.9, 0.05, 0.1]); this.box(pb, x + tx * 0.5, y + 0.2, z + tz * 0.5, 0.7, 2.6, 0.54, rot, WHITE); }
+    else if (br.pylon === 'total') { this.box(pb, x, top - 2.4, z, 1.72, 2.4, 0.52, rot, WHITE); this.box(pb, x, top - 1.7, z, 0.9, 0.9, 0.56, rot, [0.1, 0.25, 0.7]); this.box(pb, x, top - 2.2, z, 1.0, 0.3, 0.56, rot, [0.9, 0.05, 0.1]); }
+    else if (br.pylon === 'galp') { this.box(pb, x, top - 1.9, z, 1.1, 1.0, 0.56, rot, [0.95, 0.4, 0.13]); this.box(pb, x, top - 1.55, z, 0.45, 0.45, 0.6, rot, WHITE); }
+    else if (br.pylon === 'puma') { this.box(pb, x, y + 0.4, z, 1.74, 2.6, 0.52, rot, [0.84, 0.1, 0.12]); this.box(pb, x, top - 1.0, z, 1.74, 1.0, 0.52, rot, [0.0, 0.52, 0.29]); }
+    else if (br.pylon === 'mitra') { this.box(pb, x + tx * 0.5, y, z + tz * 0.5, 0.6, H, 0.54, rot, [0.78, 0.79, 0.82]); this.box(pb, x - tx * 0.3, top - 1.6, z - tz * 0.3, 0.5, 1.2, 0.58, rot, [0.1, 0.7, 0.75]); }
+    else { this.box(pb, x, top - 1.6, z, 1.72, 1.6, 0.52, rot, WHITE); this.box(pb, x, top - 1.2, z, 0.9, 0.8, 0.56, rot, br.pylon === 'shell' ? [0.85, 0.07, 0.1] : [0.1, 0.25, 0.7]); }
+    for (const k of [0, 1]) { const yy = y + H * 0.45 - k * 1.3; this.box(pb, x, yy, z, 1.5, 1.1, 0.58, rot, BOARD); this.box(pb, x, yy + 0.35, z, 1.0, 0.35, 0.62, rot, LED); }
+
   }
 }

@@ -34,7 +34,13 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
     .rail-btn:hover{background:rgba(255,255,255,.12);transform:scale(1.06)}
     .rail-btn:focus-visible{outline:2px solid #fbbf24}
     .compact .rail-btn{width:34px;height:34px}
+    .hud-tyre{width:36px;height:36px;display:block}
+    .hud-tyre .spin{transform-origin:100px 100px;animation:hspin 2.8s linear infinite}
+    @keyframes hspin{to{transform:rotate(360deg)}}
     .compact .rail-tip{display:none}
+    nav.compact{z-index:40;max-width:calc(100vw - 340px);overflow-x:auto;scrollbar-width:none}
+    nav.compact::-webkit-scrollbar{display:none}
+    nav.compact .rail-btn{flex:0 0 auto}
     .rail-tip{position:absolute;right:54px;white-space:nowrap;background:rgba(9,9,11,.92);border:1px solid rgba(255,255,255,.12);padding:6px 10px;border-radius:8px;font-size:11px;font-weight:600;opacity:0;transform:translateX(6px);pointer-events:none;transition:.15s}
     .rail-btn:hover .rail-tip,.rail-btn:focus-visible .rail-tip{opacity:1;transform:none}
     kbd{display:inline-block;margin:0 2px;padding:1px 6px;border-radius:5px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);font:600 10px ui-monospace,monospace;color:#fde68a}
@@ -49,10 +55,19 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
     <div class="absolute inset-0 pointer-events-none select-none overflow-hidden font-sans text-white">
       <!-- Top-left: location card -->
       <div class="absolute top-4 left-4 pointer-events-auto hud-card px-4 py-2.5 flex items-center gap-3">
-        <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-amber-400 to-orange-600 grid place-items-center font-black text-zinc-950 text-sm shadow-lg">SH</div>
+        <div class="w-9 h-9 shrink-0"><svg class="hud-tyre" viewBox="0 0 200 200" aria-hidden="true">
+<defs><linearGradient id="tg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fbbf24"/><stop offset="1" stop-color="#f97316"/></linearGradient></defs>
+<circle cx="100" cy="100" r="92" fill="#0d0d10"/>
+<g class="spin" [class.fast]="false"><circle cx="100" cy="100" r="86" fill="none" stroke="#2c2c31" stroke-width="12" stroke-dasharray="8 7.18"/>
+  <circle cx="100" cy="100" r="70" fill="#17171b"/><circle cx="100" cy="100" r="66" fill="none" stroke="#f59e0b" stroke-width="2.2"/>
+  <circle cx="100" cy="100" r="50" fill="#d4d4d8"/><circle cx="100" cy="100" r="46" fill="#1f1f24"/>
+  <g fill="url(#tg2)"><path d="M100 100 L91 52 Q100 45 109 52 Z"/><path transform="rotate(72 100 100)" d="M100 100 L91 52 Q100 45 109 52 Z"/><path transform="rotate(144 100 100)" d="M100 100 L91 52 Q100 45 109 52 Z"/><path transform="rotate(216 100 100)" d="M100 100 L91 52 Q100 45 109 52 Z"/><path transform="rotate(288 100 100)" d="M100 100 L91 52 Q100 45 109 52 Z"/></g>
+  <circle cx="100" cy="100" r="14" fill="#3f3f46" stroke="#fbbf24" stroke-width="1.5"/><circle cx="100" cy="92" r="2.2" fill="#e4e4e7"/><circle cx="107.6" cy="97.5" r="2.2" fill="#e4e4e7"/><circle cx="104.7" cy="106.5" r="2.2" fill="#e4e4e7"/><circle cx="95.3" cy="106.5" r="2.2" fill="#e4e4e7"/><circle cx="92.4" cy="97.5" r="2.2" fill="#e4e4e7"/></g>
+<path d="M30 62 A78 78 0 0 1 92 22" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="6" stroke-linecap="round"/>
+        </svg></div>
         <div class="leading-tight">
           <div class="text-[10px] uppercase tracking-[0.2em] text-amber-300/90 font-bold">{{ currentDistrictName() }}</div>
-          <div class="text-[11px] text-zinc-400 font-mono">{{ gpsCoordinates() }}</div>
+          <div class="text-[11px] text-zinc-400 font-mono" [class.hidden]="compact()">{{ gpsCoordinates() }}</div>
         </div>
       </div>
 
@@ -60,7 +75,7 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
       <div class="absolute top-3 sm:top-4 pointer-events-auto hud-card px-3 sm:px-4 py-2 sm:py-2.5 flex items-center gap-3 sm:gap-4 text-xs" [ngClass]="compact() ? 'right-[64px]' : 'right-3 sm:right-4'">
         <div class="flex items-center gap-1.5"><mat-icon class="text-amber-300 !text-base">schedule</mat-icon><span class="font-mono font-semibold">{{ formatTimeOfDay() }}</span></div>
         <div class="flex items-center gap-1.5"><mat-icon class="text-sky-300 !text-base">{{ getWeatherIcon() }}</mat-icon><span class="capitalize" [class.hidden]="compact()">{{ envService.weather().toLowerCase().replace('_', ' ') }}</span></div>
-        <div class="hidden md:flex items-center gap-1.5" [class.text-emerald-300]="gamepadService.isConnected()" [class.text-zinc-500]="!gamepadService.isConnected()">
+        <div class="items-center gap-1.5" [ngClass]="compact() ? 'hidden' : 'hidden md:flex'" [class.text-emerald-300]="gamepadService.isConnected()" [class.text-zinc-500]="!gamepadService.isConnected()">
           <mat-icon class="!text-base">sports_esports</mat-icon>
           <span>{{ gamepadService.isConnected() ? (gamepadService.isDualShock() ? 'DualShock 4' : 'Controller') : 'Keyboard' }}</span>
         </div>
@@ -133,7 +148,7 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
           <div class="absolute inset-0 flex flex-col items-center justify-center">
             <div class="text-[64px] max-sm:text-[46px] leading-none font-black tabular-nums tracking-tight drop-shadow-[0_2px_12px_rgba(0,0,0,.6)]" [class.!text-[32px]]="compact()">{{ telemetryService.speedKmh() }}</div>
             <div class="text-[11px] font-bold tracking-[0.3em] text-zinc-300 -mt-0.5">KM/H</div>
-            <div class="mt-2 flex items-baseline gap-1"><span class="text-3xl max-sm:text-xl font-black text-amber-300">{{ telemetryService.currentGear() }}</span><span class="text-[10px] text-zinc-400 font-bold">GEAR</span></div>
+            <div class="mt-2 flex items-baseline gap-1"><span class="text-3xl max-sm:text-xl font-black text-amber-300">{{ telemetryService.currentGear() < 0 ? 'R' : telemetryService.currentGear() }}</span><span class="text-[10px] text-zinc-400 font-bold">GEAR</span></div>
             <div class="text-[10px] text-emerald-300 font-semibold mt-1 max-w-[120px] truncate">{{ telemetryService.currentSurface() }}</div>
           </div>
         </div>

@@ -175,7 +175,7 @@ export class App implements AfterViewInit, OnDestroy {
       // Drop the car on the real MR3 (Ngwane St, eastbound) once the world has streamed in
       (window as unknown as { __shesha: Record<string, unknown> }).__shesha = {
         ...((window as unknown as { __shesha?: Record<string, unknown> }).__shesha ?? {}),
-        wb: this.sceneManager.worldBuilder, nav: this.nav, env: this.envService, drive: this.drive, police: () => this.sceneManager.police,
+        wb: this.sceneManager.worldBuilder, veh: this.vehicle, nav: this.nav, env: this.envService, drive: this.drive, police: () => this.sceneManager.police,
         perf: () => Object.fromEntries(Object.entries(this.perf).map(([k, v]) => [k, Math.round(v * 100) / 100])),
         tpRoad: (x: number, z: number) => {
           const wb = this.sceneManager.worldBuilder; const r = wb.nearestRoadSegment(x, z, 5); if (!r) return null;
@@ -220,7 +220,7 @@ export class App implements AfterViewInit, OnDestroy {
       }
 
       // Start animation loop
-      this.lastTime = performance.now();
+      this.lastTime = performance.now(); if (location.search.includes('bench')) this.benchStart();
       this.loop(this.lastTime);
     });
   }
@@ -228,9 +228,32 @@ export class App implements AfterViewInit, OnDestroy {
   private perf: Record<string, number> = {};
   private mark(k: string, t0: number): number { const t = performance.now(); this.perf[k] = (this.perf[k] ?? 0) * 0.9 + (t - t0) * 0.1; return t; }
 
+  private warmed = false; private benchRec: { dt: number[]; t0: number; el: HTMLElement | null } | null = null;
+  /** Benchmark: B (or ?bench) records frame times for 60 s, then shows + downloads a JSON report (p50/p95/p99, long frames, draw stats). */
+  private benchStart(): void {
+    if (this.benchRec) return; const el = document.createElement('pre');
+    el.style.cssText = 'position:fixed;left:8px;top:8px;z-index:99999;margin:0;padding:8px 10px;font:12px/1.35 monospace;color:#9ff;background:rgba(0,0,0,.72);border-radius:8px;pointer-events:none;max-width:70vw;white-space:pre-wrap';
+    document.body.appendChild(el); this.benchRec = { dt: [], t0: performance.now(), el };
+  }
+  private benchTick(dtMs: number): void {
+    const b = this.benchRec; if (!b) return; b.dt.push(dtMs); const secs = (performance.now() - b.t0) / 1000;
+    if (b.el && b.dt.length % 15 === 0) b.el.textContent = `BENCH ${secs.toFixed(0)}/60 s  ${(1000 / (b.dt.slice(-30).reduce((a, c) => a + c, 0) / Math.min(30, b.dt.length))).toFixed(0)} fps`;
+    if (secs < 60) return;
+    const d = b.dt.slice(30).sort((x, y) => x - y), q = (f: number): number => Math.round(d[Math.min(d.length - 1, Math.floor(d.length * f))] * 10) / 10;
+    const sh = (window as unknown as { __shesha?: { info?: () => Record<string, number> } }).__shesha;
+    const rep = { when: new Date().toISOString(), ua: navigator.userAgent, dpr: window.devicePixelRatio, screen: `${screen.width}x${screen.height}`, frames: d.length, p50: q(0.5), p95: q(0.95), p99: q(0.99), max: q(1),
+      over20ms: d.filter((v) => v > 20).length, over33ms: d.filter((v) => v > 33).length, avgFps: Math.round(1000 / (d.reduce((a, c) => a + c, 0) / d.length)), render: sh?.info?.(), cpuMs: this.perf, quality: this.sceneManager.qualityTier, pixelRatio: this.sceneManager.resolution };
+    const txt = JSON.stringify(rep, null, 1); if (b.el) { b.el.style.pointerEvents = 'auto'; b.el.textContent = 'BENCH DONE (saved as shesha-bench.json)\n' + txt; }
+    console.info('[bench]', txt); this.benchRec = null;
+    try { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([txt], { type: 'application/json' })); a.download = 'shesha-bench.json'; a.click(); } catch { /* shown on screen anyway */ }
+  }
+
   private loop = (now: number): void => {
+    if (this.lastTime > 0 && now - this.lastTime < 14) { this.animFrameId = requestAnimationFrame(this.loop); return; } // hold 60 fps on 90/120 Hz panels: even pacing, less heat
+    if (!this.warmed && this.sceneManager.worldBuilder.ready) { this.warmed = true; this.sceneManager.warm(); }
+    if (this.lastTime > 0) this.benchTick(now - this.lastTime);
     let tp = performance.now();
-    const frameDelta = Math.min((now - this.lastTime) / 1000, 0.1);
+    const frameDelta = Math.min((now - this.lastTime) / 1000, 0.066);   // never feed physics more than ~4 steps: a slow frame must not snowball
     this.lastTime = now;
     this.pad = this.gamepadService.pollControls();
     this.handlePad(this.pad);
@@ -240,10 +263,12 @@ export class App implements AfterViewInit, OnDestroy {
 
       // Fixed 60 Hz physics sub-stepping
       if (!this.sceneManager.worldBuilder.ready) this.physicsAccumulator = 0;
-      while (this.physicsAccumulator >= this.FIXED_STEP) {
+      let guard = 0;
+      while (this.physicsAccumulator >= this.FIXED_STEP && guard++ < 4) {
         this.stepPhysics(this.FIXED_STEP);
         this.physicsAccumulator -= this.FIXED_STEP;
       }
+      if (this.physicsAccumulator > this.FIXED_STEP) this.physicsAccumulator = 0;
       tp = this.mark('physics', tp);
 
       // Day-Night environment tick
@@ -415,6 +440,25 @@ export class App implements AfterViewInit, OnDestroy {
       handbrake = this.keyHandbrake;
     }
 
+    // Reverse: brake held at (almost) a standstill with no throttle -> drive backwards; any throttle or forward motion cancels it
+    {
+      const v = this.vehicle, fx = 2 * (v.quaternion.x * v.quaternion.z + v.quaternion.w * v.quaternion.y), fz = 1 - 2 * (v.quaternion.x * v.quaternion.x + v.quaternion.y * v.quaternion.y);
+      const fwd = v.velocity.x * fx + v.velocity.z * fz;
+      if (!v.reverse && brake > 0.1 && throttle < 0.05 && fwd < 0.8) v.reverse = true;
+      else if (v.reverse && (throttle > 0.1 || fwd > 1.5 || brake < 0.05)) v.reverse = false;
+      if (v.reverse) { throttle = brake; brake = 0; }
+    }
+    // Input shaping: keyboard / touch are digital, so ramp them like a pad stick and pedals (no instant lock-to-lock, no wheelspin snap). Analog pad passes straight through.
+    {
+      const spdK = Math.hypot(this.vehicle.velocity.x, this.vehicle.velocity.z) * 3.6, digital = !pad.connected;
+      if (digital) {
+        const rate = steer === 0 || Math.sign(steer) !== Math.sign(this.steerSm) ? 7.5 : 3.6 / (1 + spdK / 95);
+        const d = steer - this.steerSm, mx = rate * dt; this.steerSm += Math.abs(d) < mx ? d : Math.sign(d) * mx;
+        const tr = (a: number, b: number, up: number, dn: number) => { const dd = b - a; return a + Math.max(-dn * dt, Math.min(up * dt, dd)); };
+        this.thrSm = tr(this.thrSm, throttle, 4.5, 9); this.brkSm = tr(this.brkSm, brake, 6, 12);
+        steer = this.steerSm; throttle = this.thrSm; brake = this.brkSm;
+      } else { this.steerSm = steer; this.thrSm = throttle; this.brkSm = brake; }
+    }
     this.vehicle.steerInput = steer;
     this.vehicle.throttle = throttle;
     this.vehicle.brake = brake;
@@ -439,6 +483,7 @@ export class App implements AfterViewInit, OnDestroy {
     }
   }
 
+  private steerSm = 0; private thrSm = 0; private brkSm = 0;
   private lastCrashRumble = 0;
   private slowTick = 0;
   private fpsT = 0;
@@ -491,6 +536,7 @@ export class App implements AfterViewInit, OnDestroy {
     this.audioService.unlockAudio();
     if (!this.started()) { if (event.code === 'Enter') this.begin(); return; }
 
+    if (event.code === 'KeyB') { this.benchStart(); return; }
     if (event.code === 'KeyF') { this.hudComponent?.showFps.update((v) => !v); return; }
     if (event.code === 'KeyY') { this.settings.toggleTheme(); return; }
     if (event.code === 'KeyQ') { this.settings.cycleQuality(); return; }

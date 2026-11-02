@@ -19,6 +19,9 @@ random.seed(7)
 
 def P(lat, lon): return ((lon - LON0) * KX, -(lat - LAT0) * KZ)
 def load(n): return json.load(open(f"{osm_dir}/{n}.json"))["elements"]
+def load0(n):
+    f = f"{osm_dir}/{n}.json"
+    return json.load(open(f))["elements"] if os.path.exists(f) else []
 def load2(n):
     f = f"{dir2}/{n}.json" if dir2 else None
     return json.load(open(f))["elements"] if f and os.path.exists(f) else []
@@ -171,9 +174,9 @@ SHOPS = [("SHOPRITE", "#e1251b", "#ffffff"), ("PICK n PAY", "#0b3d91", "#ffd200"
          ("TAKE AWAYS", "#c2410c", "#ffffff"), ("LIQUOR STORE", "#1f2937", "#fbbf24"), ("CLOTHING", "#be185d", "#ffffff"), ("BAKERY", "#b45309", "#ffffff"),
          ("KFC", "#e4002b", "#ffffff"), ("DEBONAIRS PIZZA", "#d71920", "#ffd200"), ("GENERAL DEALER", "#365314", "#ffffff"), ("CASH LOAN", "#0f766e", "#ffffff")]
 BANKS = [("STANDARD BANK", "#0033a0", "#ffffff"), ("FNB", "#00a19c", "#ffffff"), ("NEDBANK", "#00703c", "#ffffff"), ("ESWATINI BANK", "#1d4ed8", "#ffffff")]
-FUELS = [("ENGEN", "#e2001a", "#ffffff"), ("SHELL", "#fbce07", "#d4101a"), ("TOTAL", "#e30613", "#ffffff"), ("PUMA", "#d71920", "#ffffff")]
+FUELS = [("GALP", "#f26522", "#ffffff"), ("ENGEN", "#0b3c9e", "#ffffff"), ("SHELL", "#fbce07", "#d4101a"), ("TOTAL", "#e30613", "#ffffff"), ("PUMA", "#00844a", "#ffffff"), ("MITRA", "#2f3fa6", "#ffffff")]
 KNOWN = {"shoprite": SHOPS[0], "pick n pay": SHOPS[1], "spar": SHOPS[2], "ok": SHOPS[3], "boxer": SHOPS[4], "pep": SHOPS[5], "kfc": SHOPS[20], "mtn": SHOPS[7],
-         "standard bank": BANKS[0], "fnb": BANKS[1], "nedbank": BANKS[2], "engen": FUELS[0], "shell": FUELS[1], "total": FUELS[2]}
+         "standard bank": BANKS[0], "fnb": BANKS[1], "nedbank": BANKS[2], "galp": FUELS[0], "engen": FUELS[1], "shell": FUELS[2], "total": FUELS[3], "puma": FUELS[4], "mitra": FUELS[5]}
 def brand_for(name, pool, h):
     n = (name or "").lower()
     for k, v in KNOWN.items():
@@ -209,7 +212,7 @@ for i, ((x, z), t) in enumerate(poi_xy): PHASH[(int(x // 60), int(z // 60))].app
 cent = []  # building centroids for density
 BR = []
 seen = set()
-for n_, ldr in [("bld_manzini", load), ("bld_ezulwini", load)] + [(n, load2) for n in ("bld_lobamba", "bld_malkerns", "bld_matsapha1", "bld_matsapha2", "bld_mbabane1", "bld_mbabane2")]:
+for n_, ldr in [("bld_manzini", load), ("bld_ezulwini", load), ("bld_extra", load0)] + [(n, load2) for n in ("bld_lobamba", "bld_malkerns", "bld_matsapha1", "bld_matsapha2", "bld_mbabane1", "bld_mbabane2")]:
     for e in ldr(n_):
         if e["id"] in seen: continue
         seen.add(e["id"]); t = e.get("tags", {})
@@ -338,6 +341,70 @@ def pip(g, x, z):
         a, b = g[i], g[i - 1]
         if (a[1] > z) != (b[1] > z) and x < (b[0] - a[0]) * (z - a[1]) / (b[1] - a[1]) + a[0]: ins = not ins
     return ins
+# zoning from OSM landuse polygons (landuse.json from merge_osm_full.py): grid-hashed point-in-polygon
+LUZ = {"industrial": "ind", "commercial": "com", "retail": "com", "residential": "res", "farmland": "farm", "farmyard": "farm", "construction": "con", "garden": "res", "allotments": "farm", "orchard": "farm"}
+LU, LUH = [], defaultdict(list)
+for e in load0("landuse"):
+    z_ = LUZ.get((e.get("tags") or {}).get("landuse"))
+    if not z_: continue
+    gs = [poly(e)] if e["type"] == "way" else [[P(g["lat"], g["lon"]) for g in m["geometry"]] for m in e.get("members", []) if m.get("role") == "outer" and m.get("geometry")]
+    for g in gs:
+        if len(g) < 4: continue
+        xs = [q[0] for q in g]; zs = [q[1] for q in g]; i = len(LU); LU.append((z_, g))
+        for a in range(int(min(xs) // 200), int(max(xs) // 200) + 1):
+            for b in range(int(min(zs) // 200), int(max(zs) // 200) + 1): LUH[(a, b)].append(i)
+def landzone(x, z):
+    best = None
+    for i in LUH.get((int(x // 200), int(z // 200)), ()):
+        if pip(LU[i][1], x, z): best = LU[i][0] if best != "com" and best != "ind" else best
+    return best
+print("landuse zones", len(LU))
+# ---- buildings must not sit on drivable roads: nudge any small footprint sideways (away from the road) until no road sample is inside it
+RS = defaultdict(list)
+for r_ in roads:
+    if r_["c"] > 6 or r_.get("br") or r_.get("u") or r_.get("dz"): continue
+    q_ = r_["p"]
+    for i_ in range(0, len(q_) - 3, 2):
+        ax_, az_, bx_, bz_ = q_[i_] / 10, q_[i_ + 1] / 10, q_[i_ + 2] / 10, q_[i_ + 3] / 10; n_ = max(1, int(math.hypot(bx_ - ax_, bz_ - az_) / 2))
+        for k_ in range(n_ + 1):
+            sx_, sz_ = ax_ + (bx_ - ax_) * k_ / n_, az_ + (bz_ - az_) * k_ / n_; RS[(int(sx_ // 30), int(sz_ // 30))].append((sx_, sz_))
+def road_inside(g_):
+    xs_ = [q[0] for q in g_]; zs_ = [q[1] for q in g_]; hit_ = []
+    for a_ in range(int(min(xs_) // 30), int(max(xs_) // 30) + 1):
+        for b_ in range(int(min(zs_) // 30), int(max(zs_) // 30) + 1):
+            for sx_, sz_ in RS.get((a_, b_), ()):
+                if min(xs_) <= sx_ <= max(xs_) and min(zs_) <= sz_ <= max(zs_) and pip(g_, sx_, sz_): hit_.append((sx_, sz_))
+    return hit_
+moved = dropped = shrunk = 0; BR2 = []
+for t_, g_, area_, cx_, cz_ in BR:
+    h_ = road_inside(g_) if area_ < 3000 else []
+    if len(h_) >= 2:
+        mx_ = sum(q[0] for q in h_) / len(h_); mz_ = sum(q[1] for q in h_) / len(h_); dx_, dz_ = cx_ - mx_, cz_ - mz_; L_ = math.hypot(dx_, dz_)
+        if L_ < 0.5: dx_, dz_, L_ = 1.0, 0.0, 1.0
+        dx_, dz_ = dx_ / L_, dz_ / L_; ok_ = False
+        for st_ in range(1, 25):
+            g2_ = [(q[0] + dx_ * st_, q[1] + dz_ * st_) for q in g_]
+            if not road_inside(g2_): g_ = g2_; cx_ += dx_ * st_; cz_ += dz_ * st_; ok_ = True; break
+        if ok_: moved += 1
+        else:   # cannot slide clear: keep a small 7 x 5 m building on a road-free patch inside its own footprint (e.g. a petrol-station kiosk), else drop it
+            k0_ = max(range(len(g_)), key=lambda i: math.hypot(g_[(i + 1) % len(g_)][0] - g_[i][0], g_[(i + 1) % len(g_)][1] - g_[i][1]))
+            a_, b_ = g_[k0_], g_[(k0_ + 1) % len(g_)]; ul_ = math.hypot(b_[0] - a_[0], b_[1] - a_[1]) or 1; ux_, uz_ = (b_[0] - a_[0]) / ul_, (b_[1] - a_[1]) / ul_; vx_, vz_ = -uz_, ux_
+            xs0 = [q[0] for q in g_]; zs0 = [q[1] for q in g_]; best_ = None
+            gx_ = min(xs0)
+            while gx_ <= max(xs0):
+                gz_ = min(zs0)
+                while gz_ <= max(zs0):
+                    box_ = [(gx_ + ux_ * du + vx_ * dv, gz_ + uz_ * du + vz_ * dv) for du, dv in ((-3.5, -2.5), (3.5, -2.5), (3.5, 2.5), (-3.5, 2.5))]
+                    if all(pip(g_, q[0], q[1]) for q in box_) and not road_inside(box_):
+                        d_ = math.hypot(gx_ - cx_, gz_ - cz_)
+                        if best_ is None or d_ < best_[0]: best_ = (d_, box_, gx_, gz_)
+                    gz_ += 2.0
+                gx_ += 2.0
+            if best_: g_ = best_[1]; cx_, cz_ = best_[2], best_[3]; area_ = 35.0; shrunk += 1
+            else: dropped += 1; continue
+    BR2.append((t_, g_, area_, cx_, cz_))
+BR = BR2
+print("buildings moved off roads:", moved, "shrunk:", shrunk, "dropped:", dropped)
 MATS = P(-26.494482, 31.308351)  # Matsapha centre
 CBD = P(-26.4981, 31.3742)  # Manzini CBD (Nkose'luhlaza / Ngwane St core)
 CBD2 = P(-26.3257, 31.1447)  # Mbabane CBD
@@ -369,6 +436,11 @@ for t, g, area, cx, cz in BR:
     elif sh in ("car_repair", "car", "car_parts"): use = 8 if area < 400 else 7
     elif sh: use = 3
     elif t.get("tourism") in ("hotel", "guest_house", "hostel", "motel", "apartment", "chalet"): use = 13
+    lz = landzone(cx, cz) if use < 0 else None
+    if use < 0 and lz == "ind": use = 7 if area > 180 else 8
+    elif use < 0 and lz == "com": use = 4 if area > 1200 else (6 if (area > 380 and h_ < 0.4) else 3)
+    elif use < 0 and lz == "farm": use = 7 if area > 500 else 8
+    elif use < 0 and lz == "res" and area > 60: use = 2 if (dens >= 20 and area > 260 and h_ < 0.3) else (1 if area > 190 and h_ < 0.55 else 0)
     if use < 0:  # plain building=yes: infer from where it stands
         if kind == 9 or d_mat < 2300 and area > 300 and dens < 14: use = 7 if area > 220 else 8
         elif d_cbd < 900 and area > 1500: use = 5 if h_ < 0.4 else 4

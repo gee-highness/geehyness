@@ -59,6 +59,12 @@ export class FeaturesBuilder {
     const dx = c[0] - a[0], dz = c[1] - a[1], l = Math.hypot(dx, dz) || 1, px = -dz / l * wd / 2, pz = dx / l * wd / 2;
     this.quad(b, [[a[0] - px, this.h(a[0], a[1]) + lift, a[1] - pz], [c[0] - px, this.h(c[0], c[1]) + lift, c[1] - pz], [c[0] + px, this.h(c[0], c[1]) + lift, c[1] + pz], [a[0] + px, this.h(a[0], a[1]) + lift, a[1] + pz]], [0, 1, 0], col);
   }
+  /** True if a wall/fence segment (centre x,z; tangent tx,tz; length len) touches a road anywhere along it (ends, middle, and a little to each side), so side-street mouths stay open. */
+  private blocksRoad(x: number, z: number, tx: number, tz: number, len: number): boolean {
+    const w = this.w, nx = -tz, nz = tx;
+    for (const t of [-0.5, -0.25, 0, 0.25, 0.5]) for (const l of [0, -0.6, 0.6]) if (w.roadAt(x + tx * len * t + nx * l, z + tz * len * t + nz * l)) return true;
+    return false;
+  }
   private poly(p: number[]): [number, number][] { const r: [number, number][] = []; for (let i = 0; i + 1 < p.length; i += 2) r.push([p[i] / 10, p[i + 1] / 10]); if (r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1]) r.pop(); return r; }
   private obb(pts: [number, number][]) {
     let cx = 0, cz = 0; pts.forEach((p) => { cx += p[0]; cz += p[1]; }); cx /= pts.length; cz /= pts.length;
@@ -70,7 +76,7 @@ export class FeaturesBuilder {
   }
 
   build(): void {
-    this.barriers(); this.realTrees(); this.power(); this.pitches(); this.pools(); this.parking(); this.tanks(); this.humps(); this.cliffs();
+    this.barriers(); this.guardrails(); this.realTrees(); this.power(); this.pitches(); this.pools(); this.parking(); this.tanks(); this.humps(); this.cliffs();
     this.flush();
   }
 
@@ -84,11 +90,45 @@ export class FeaturesBuilder {
         const tx = (c[0] - a[0]) / L, tz = (c[1] - a[1]) / L, n = Math.max(1, Math.ceil(L / 6));
         for (let k = 0; k < n; k++) {
           const s0 = (L * k) / n, s1 = (L * (k + 1)) / n, mx = a[0] + tx * (s0 + s1) / 2, mz = a[1] + tz * (s0 + s1) / 2, len = s1 - s0;
-          if (w.roadAt(mx, mz)) continue;
+          if (this.blocksRoad(mx, mz, tx, tz, len)) continue;
           const hh = ht * (0.75 + 0.5 * rnd(mx * 0.31 + mz * 0.17)), t = kind === 0 ? 1.6 : 0.9;
           slab(this.buf(mx, mz, 'props'), (px, pz) => this.h(px, pz), mx - tx * len / 2, mz - tz * len / 2, mx + tx * len / 2, mz + tz * len / 2, t, hh, col, col2);
           const nx = -tz * t / 2, nz = tx * t / 2;
           w.collision.addPolygon([mx - tx * len / 2 + nx, mz - tz * len / 2 + nz, mx + tx * len / 2 + nx, mz + tz * len / 2 + nz, mx + tx * len / 2 - nx, mz + tz * len / 2 - nz, mx - tx * len / 2 - nx, mz - tz * len / 2 - nz], this.h(mx, mz) - 1, this.h(mx, mz) + hh);
+        }
+      }
+    }
+  }
+
+
+  // ------------------------------------------------------------------ guardrails on drop-offs (steep fall beside a road): visible W-beam rail + solid collision
+  private guardrails(): void {
+    const w = this.w, STEP = 8, RAIL: V3 = [0.72, 0.74, 0.76], POST: V3 = [0.5, 0.52, 0.55];
+    for (const r of w.roadWays) {
+      if (r.c > 4 || r.br || r.u || r.dz || r.bay || r.sw || r.ms) continue;   // rural / trunk roads only: never town streets (pavements, parking bays, humps)
+      const p = r.p; const half = r.w / 2 + 0.9;
+      for (let i = 0; i + 3 < p.length; i += 2) {
+        const ax = p[i] / 10, az = p[i + 1] / 10, cx = p[i + 2] / 10, cz = p[i + 3] / 10, L = Math.hypot(cx - ax, cz - az); if (L < 2) continue;
+        const tx = (cx - ax) / L, tz = (cz - az) / L, nx = -tz, nz = tx, n = Math.max(1, Math.round(L / STEP));
+        for (let k = 0; k < n; k++) {
+          const s0 = (L * k) / n, s1 = (L * (k + 1)) / n, mx = ax + tx * (s0 + s1) / 2, mz = az + tz * (s0 + s1) / 2, len = s1 - s0;
+          const yr = w.groundHeightAt(mx, mz);
+          for (const sd of [-1, 1]) {
+            const ex = mx + nx * sd * half, ez = mz + nz * sd * half;
+            if (this.blocksRoad(ex, ez, tx, tz, len) || w.roadAt(mx + nx * sd * (half + 2.5), mz + nz * sd * (half + 2.5))) continue;
+            const drop = yr - this.h(mx + nx * sd * (half + 3), mz + nz * sd * (half + 3));
+            if (drop < 3.5) continue;
+            if (w.nearBuildingPublic(mx, mz) || w.nearBuildingPublic(ex, ez)) continue;
+            const x0 = ex - tx * len / 2, z0 = ez - tz * len / 2, x1 = ex + tx * len / 2, z1 = ez + tz * len / 2;
+            const y0 = this.h(x0, z0), y1 = this.h(x1, z1), ya = Math.max(y0, yr - 0.2), yb = Math.max(y1, yr - 0.2);
+            const b = this.buf(mx, mz, 'props');
+            this.quad(b, [[x0, ya + 0.45, z0], [x1, yb + 0.45, z1], [x1, yb + 0.85, z1], [x0, ya + 0.85, z0]], [-nz * sd * -1, 0, nx * sd * -1], RAIL);
+            this.quad(b, [[x1, yb + 0.45, z1], [x0, ya + 0.45, z0], [x0, ya + 0.85, z0], [x1, yb + 0.85, z1]], [nz * sd * -1, 0, -nx * sd * -1], RAIL);
+            this.box(b, x0, Math.min(ya, y0) - 0.1, z0, 0.1, 0.1, ya - Math.min(ya, y0) + 0.95, tx, tz, POST);
+            const q = 0.12;
+            w.collision.addPolygon([x0 + nx * q, z0 + nz * q, x1 + nx * q, z1 + nz * q, x1 - nx * q, z1 - nz * q, x0 - nx * q, z0 - nz * q], yr - 0.6, yr + 1.0);
+            w.markBarrier(mx, mz);
+          }
         }
       }
     }
@@ -103,10 +143,10 @@ export class FeaturesBuilder {
       for (const q of pts) w.markBarrier(q[0], q[1]);
       for (let i = 0; i + 1 < pts.length; i++) {
         const a = pts[i], c = pts[i + 1]; const L = Math.hypot(c[0] - a[0], c[1] - a[1]); if (L < 0.3) continue;
-        const tx = (c[0] - a[0]) / L, tz = (c[1] - a[1]) / L, n = Math.max(1, Math.ceil(L / 8));
+        const tx = (c[0] - a[0]) / L, tz = (c[1] - a[1]) / L, n = Math.max(1, Math.ceil(L / 3));
         for (let k = 0; k < n; k++) {
           const s0 = (L * k) / n, s1 = (L * (k + 1)) / n, mx = a[0] + tx * (s0 + s1) / 2, mz = a[1] + tz * (s0 + s1) / 2, len = s1 - s0, y = this.h(mx, mz);
-          if (w.roadAt(mx, mz)) continue;
+          if (this.blocksRoad(mx, mz, tx, tz, len)) continue;
           if (kind === 0 || kind === 4) {
             const mb = this.buf(mx, mz, 'mesh'); const hh = sp.h;
             const ya = this.h(mx - tx * len / 2, mz - tz * len / 2), yb = this.h(mx + tx * len / 2, mz + tz * len / 2);
@@ -254,6 +294,8 @@ export class FeaturesBuilder {
   private tanks(): void {
     const w = this.w;
     for (const [x, z, r, kind] of this.f.tanks) {
+      if (r > 16 || r < 0.5) continue;                                   // plant outlines, not tanks: a 60 m solid cylinder across roads
+      { const rs = w.nearestRoadSegment(x, z, 6); if (w.roadAt(x, z) || (rs && rs.dist < r + rs.way.w / 2 + 1)) continue; }
       const y = this.h(x, z), hgt = kind ? 17 + rnd(x) * 6 : 6 + rnd(z) * 4, b = this.buf(x, z, 'props'), col = kind ? [0.86, 0.84, 0.78] : [0.86, 0.87, 0.88], sides = 14;
       for (let i = 0; i < sides; i++) {
         const a0 = (i / sides) * 6.283, a1 = ((i + 1) / sides) * 6.283, am = (a0 + a1) / 2;

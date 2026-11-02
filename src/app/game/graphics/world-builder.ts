@@ -20,14 +20,14 @@ interface WorldMeta {
   places: { n: string; k: string; p: [number, number] }[];
   pois: { n: string; k: string; p: [number, number] }[];
   signals: [number, number][];
-  busstops?: { p: [number, number]; n: string }[]; lamps?: [number, number][]; signs?: [number, number, number][]; addr?: [number, number, string][]; views?: { p: [number, number]; n: string }[];
+  busstops?: { p: [number, number]; n: string }[]; lamps?: [number, number][]; upoles?: [number, number, number][]; bills?: [number, number, number][]; signs?: [number, number, number][]; addr?: [number, number, string][]; views?: { p: [number, number]; n: string }[];
   snaps: Record<string, [number, number]>;
 }
 interface Surf { way: RoadWay; h: number; elev: boolean; px: number; pz: number; d: number }
 interface RoadWay { c: number; w: number; u: number; o: number; n: string; p: number[]; sw?: number; bay?: number; dz?: number[]; br?: number; bk?: number; ms?: number; rg?: number; rb?: number }
 
 import { GeoBuf } from './geo-buf';
-import { styledMaterial, StyleKind, STYLE_FUNCS } from './stylized';
+import { styledMaterial, StyleKind, STYLE_FUNCS, noiseTex } from './stylized';
 import { addLampLight, LAMP, SLOT, setEmitter, clearEmitter } from './lamp-light';
 import { CityBuilder } from './city-builder';
 import { StreetBuilder } from './street-builder';
@@ -355,13 +355,13 @@ export class WorldBuilder {
     this.visDirty = false; this.visX = px; this.visZ = pz; this.visT = now;
     for (const t of this.terrainTiles) {
       const dx = Math.max(Math.abs(t.cx - px) - 640, 0), dz = Math.max(Math.abs(t.cz - pz) - 640, 0), d = Math.hypot(dx, dz);
-      t.lod0.visible = d < 1900; t.lod1.visible = d >= 1900 && d < 5200;
+      t.lod0.visible = d < 950 * this.detailScale; t.lod1.visible = d >= 950 * this.detailScale && d < 4200;
     }
     const doShadow = this.shadowsOn && now - this.shadowT > 600; if (doShadow) this.shadowT = now;
     for (const c of this.chunks) {
       const dx = Math.max(Math.abs(c.cx - px) - c.half, 0), dz = Math.max(Math.abs(c.cz - pz) - c.half, 0); // exact distance to the chunk's box
       const d = Math.hypot(dx, dz);
-      c.obj.visible = d < (c.obj.userData['far'] ?? 3000) * this.detailScale;
+      const ud = c.obj.userData; c.obj.visible = d < (ud['far'] ?? 3000) * this.detailScale && d >= (ud['near'] ?? 0) * this.detailScale;
       if (doShadow && c.obj.visible) c.obj.castShadow = d < 230; // only nearby geometry casts into the shadow map
     }
   }
@@ -465,8 +465,8 @@ export class WorldBuilder {
   /** Stylized procedural stand-ins for the old tiled photo textures (kept by name so callers did not change). */
   public pbr(name: string, tile: number, rough = 0.9): THREE.MeshStandardMaterial {
     const map: Record<string, [StyleKind, number, number]> = { // name -> [kind, base colour, bump]
-      asphalt_02: ['asphalt', 0x2c3140, 1.0], gravel_road: ['gravel', 0x8a7a68, 1.2], white_plaster_rough_01: ['panel', 0xffffff, 0.7], concrete_wall_007: ['panel', 0xe6e9ef, 0.7],
-      brick_wall_02: ['tile', 0xffffff, 1.0], corrugated_iron: ['metal', 0xffffff, 1.0], herringbone_pavement_03: ['slab', 0xdcd8d0, 0.9], concrete_pavement: ['slab', 0xe4e6ea, 0.9],
+      asphalt_02: ['asphalt', 0x5e5c58, 1.0], gravel_road: ['gravel', 0x9a6c4c, 1.2], white_plaster_rough_01: ['panel', 0xffffff, 0.7], concrete_wall_007: ['panel', 0xe6e9ef, 0.7],
+      brick_wall_02: ['brick', 0xffffff, 1.0], corrugated_iron: ['metal', 0xffffff, 1.0], herringbone_pavement_03: ['paver', 0xeae6e0, 1.0], concrete_pavement: ['slab', 0xe4e6ea, 0.9],
     };
     const [kind, col, bump] = map[name] ?? ['plate', 0xffffff, 0.8];
     const m = styledMaterial(kind, { color: col, rough, bump });
@@ -480,6 +480,7 @@ export class WorldBuilder {
     const mat = new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95, metalness: 0 });
     const tPrevKey = 'terrain-style';
     mat.onBeforeCompile = (sh) => {
+      sh.uniforms['uNoise'] = { value: noiseTex() };
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vW;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvW = (modelMatrix * vec4(transformed,1.0)).xyz;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vW;\n' + STYLE_FUNCS)
@@ -579,9 +580,9 @@ export class WorldBuilder {
     // world-space UVs => repeat is 1/tile on uv=metres
     const markTex = () => {
       const c = document.createElement('canvas'); c.width = 256; c.height = 256; const x = c.getContext('2d')!;
-      x.clearRect(0, 0, 256, 256); x.fillStyle = 'rgba(240,240,235,0.92)';
-      for (const o of [0, 128]) { x.fillRect(o + 6, 0, 5, 256); x.fillRect(o + 117, 0, 5, 256); }
-      x.fillRect(128 + 61, 20, 6, 110);
+      x.clearRect(0, 0, 256, 256); x.fillStyle = 'rgba(244,196,36,0.93)';          // yellow edge lines (Eswatini / SADC practice, seen on Mapillary frames)
+      for (const o of [0, 128]) { x.fillRect(o + 7, 0, 3, 256); x.fillRect(o + 118, 0, 3, 256); }
+      x.fillStyle = 'rgba(240,240,235,0.92)'; x.fillRect(128 + 61, 20, 6, 110);   // white dashed centre line
       const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
     };
     const mk = () => new THREE.MeshStandardMaterial({ map: markTex(), transparent: true, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, depthWrite: false });
@@ -669,34 +670,49 @@ export class WorldBuilder {
     const trunk = new THREE.CylinderGeometry(0.2, 0.32, 3.2, 5); trunk.translate(0, 1.6, 0);
     const mkCanopy = (r: number, y: number) => { const g = new THREE.IcosahedronGeometry(r, 0); g.translate(0, y, 0); return g; };
     const paint = (g: THREE.BufferGeometry, c: THREE.Color) => { const a = new Float32Array(g.attributes['position'].count * 3); for (let i = 0; i < a.length; i += 3) { a[i] = c.r; a[i + 1] = c.g; a[i + 2] = c.b; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g.toNonIndexed(); };
-    const geo = mergeGeometries([paint(trunk, new THREE.Color(0x4a3524)), paint(mkCanopy(2.4, 4.4), new THREE.Color(0xffffff)), paint(mkCanopy(1.7, 5.8), new THREE.Color(0xffffff))].map((g) => { g.deleteAttribute('uv'); return g; }))!;
+    const geo = mergeGeometries([paint(trunk, new THREE.Color(1.2, 0.5, 0.85)), paint(mkCanopy(2.4, 4.4), new THREE.Color(0xffffff)), paint(mkCanopy(1.7, 5.8), new THREE.Color(0xffffff))].map((g) => { g.deleteAttribute('uv'); return g; }))!;
+    // conifer / eucalyptus-pine (tall, narrow, stacked cones) and palm (slender trunk + flat fan crown): species vary by altitude and place
+    const cone = (r: number, h: number, y: number) => { const g = new THREE.ConeGeometry(r, h, 6); g.translate(0, y, 0); return g; };
+    const geoCon = mergeGeometries([paint(trunk, new THREE.Color(3.4, 1.0, 2.2)), paint(cone(2.0, 3.4, 4.2), new THREE.Color(0xffffff)), paint(cone(1.5, 3.0, 6.0), new THREE.Color(0xffffff)), paint(cone(1.0, 2.6, 7.6), new THREE.Color(0xffffff))].map((g) => { g.deleteAttribute('uv'); return g; }))!;
+    const ptrunk = new THREE.CylinderGeometry(0.14, 0.22, 7.2, 5); ptrunk.translate(0, 3.6, 0);
+    const crown = new THREE.ConeGeometry(2.8, 1.1, 7); crown.translate(0, 7.6, 0);
+    const crown2 = new THREE.ConeGeometry(1.5, 0.9, 7); crown2.translate(0, 8.2, 0);
+    const geoPalm = mergeGeometries([paint(ptrunk, new THREE.Color(0x8d7d5e)), paint(crown, new THREE.Color(0x3f7d2c)), paint(crown2, new THREE.Color(0x4f9236))].map((g) => { g.deleteAttribute('uv'); return g; }))!;
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, flatShading: true });
-    const byChunk = new Map<string, { x: number; z: number; c: number }[]>();
+    const TCH = 300;   // tree cells: small enough that distant trees really drop out (was one 800 m block)
+    const sn = this.meta.snaps as Record<string, [number, number]> | undefined;
+    const cbd = (x: number, z: number): boolean => !!sn && ['manzini', 'matsapha'].some((k) => sn[k] && Math.hypot(sn[k][0] - x, sn[k][1] - z) < 900);
+    type T = { x: number; z: number; c: number; sp: number };
+    const byChunk = new Map<string, T[]>();
     const all: { x: number; z: number; c: number }[] = this.streets.streetTrees.concat(this.extraTrees);
     for (let i = 0; i < n; i++) all.push({ x: dv.getFloat32(i * 9, true), z: dv.getFloat32(i * 9 + 4, true), c: dv.getUint8(i * 9 + 8) });
     for (const { x, z, c } of all) {
       if (this.roadAt(x, z)) continue;
       if (this.nearBuilding(x, z)) continue;
       this.collision.addCircle(x, z, 0.38);
-      const k = `${Math.floor(x / CHUNK)},${Math.floor(z / CHUNK)}`; let l = byChunk.get(k); if (!l) { l = []; byChunk.set(k, l); } l.push({ x, z, c });
+      const alt = this.calculateRawTerrainHeight(x, z), h1 = WorldBuilder.hash(x * 1.7, z * 0.9);
+      // 0 round broadleaf, 1 conifer/eucalyptus (plantations + highveld > ~900 m), 2 palm (low-altitude towns)
+      const sp = c === 5 || (alt > 900 && h1 < 0.55) ? 1 : (alt < 800 && cbd(x, z) && h1 < 0.3 ? 2 : 0);
+      const k = `${sp}:${Math.floor(x / TCH)},${Math.floor(z / TCH)}`; let l = byChunk.get(k); if (!l) { l = []; byChunk.set(k, l); } l.push({ x, z, c, sp });
     }
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color();
     byChunk.forEach((list, key) => {
-      const im = new THREE.InstancedMesh(geo, mat, list.length); im.name = 'trees'; im.castShadow = true;
+      const sp = list[0].sp; const im = new THREE.InstancedMesh(sp === 1 ? geoCon : sp === 2 ? geoPalm : geo, mat, list.length); im.name = 'trees'; im.castShadow = true;
       list.forEach((t, i) => {
-        const s = 0.7 + WorldBuilder.hash(t.x, t.z) * 0.9;
+        const s = (sp === 2 ? 0.85 : 0.7) + WorldBuilder.hash(t.x, t.z) * (sp === 2 ? 0.4 : 0.9);
         q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), WorldBuilder.hash(t.z, t.x) * 6.28);
-        m4.compose(new THREE.Vector3(t.x, this.calculateRawTerrainHeight(t.x, t.z) - 0.2, t.z), q, new THREE.Vector3(s, s * (t.c === 5 ? 1.5 : 1), s));
+        m4.compose(new THREE.Vector3(t.x, this.calculateRawTerrainHeight(t.x, t.z) - 0.2, t.z), q, new THREE.Vector3(s, s * (t.c === 5 ? 1.5 : sp === 1 ? 1.2 : 1), s));
         im.setMatrixAt(i, m4);
         const r = WorldBuilder.hash(t.x * 2, t.z * 3);
-        if (t.c === 5) col.setRGB(0.1 + r * 0.06, 0.25 + r * 0.14, 0.1 + r * 0.05);
+        if (sp === 2) return;                                                           // palm keeps its baked colours
+        if (sp === 1) col.setRGB(0.07 + r * 0.05, 0.22 + r * 0.12, 0.1 + r * 0.05);
         else if (t.c === 10 || (t.c === 8 && r > 0.82)) col.setRGB(0.5 + r * 0.1, 0.34, 0.74); // jacaranda blossom
         else col.setRGB(0.22 + r * 0.12, 0.42 + r * 0.14, 0.18 + r * 0.06);
         im.setColorAt(i, col);
       });
-      im.userData['far'] = 650; im.computeBoundingSphere();
-      const [cxI, czI] = key.split(',').map(Number);
-      im.visible = false; this.visDirty = true; this.chunks.push({ obj: im, cx: (cxI + 0.5) * CHUNK, cz: (czI + 0.5) * CHUNK, r: CHUNK * 0.75, half: CHUNK / 2 });
+      im.userData['far'] = 380; im.computeBoundingSphere();
+      const [cxI, czI] = key.split(':')[1].split(',').map(Number);
+      im.visible = false; this.visDirty = true; this.chunks.push({ obj: im, cx: (cxI + 0.5) * TCH, cz: (czI + 0.5) * TCH, r: TCH * 0.75, half: TCH / 2 });
       this.foliageGroup.add(im);
     });
   }
@@ -788,9 +804,9 @@ export class WorldBuilder {
       // stylised light pool on the ground under each lamp (additive, strength follows the night factor)
       { this.glowMat ??= this.makeGlowMat(); const glow = new THREE.InstancedMesh(WorldBuilder.glowGeo(), this.glowMat, list.length); glow.name = 'lamp-glow'; glow.renderOrder = 3;
         list.forEach((l2, i) => { const gx = l2.x + Math.cos(l2.rot) * 2.3, gz = l2.z - Math.sin(l2.rot) * 2.3; m4.compose(new THREE.Vector3(gx, this.groundHeightAt(gx, gz) + 0.07, gz), new THREE.Quaternion(), new THREE.Vector3(1, 1, 1)); glow.setMatrixAt(i, m4); });
-        glow.computeBoundingSphere?.(); const [gx2, gz2] = key.split(',').map(Number); this.registerChunk(glow, (gx2 + 0.5) * CHUNK, (gz2 + 0.5) * CHUNK, CHUNK * 0.75, 420); this.roadInfrastructureGroup.add(glow); }
+        glow.computeBoundingSphere?.(); const [gx2, gz2] = key.split(',').map(Number); this.registerChunk(glow, (gx2 + 0.5) * CHUNK, (gz2 + 0.5) * CHUNK, CHUNK * 0.75, 320); this.roadInfrastructureGroup.add(glow); }
       poles.computeBoundingSphere(); heads.computeBoundingSphere(); const [ix, iz] = key.split(',').map(Number);
-      for (const o of [poles, heads]) { this.registerChunk(o, (ix + 0.5) * CHUNK, (iz + 0.5) * CHUNK, CHUNK * 0.75, 700); this.roadInfrastructureGroup.add(o); }
+      for (const o of [poles, heads]) { this.registerChunk(o, (ix + 0.5) * CHUNK, (iz + 0.5) * CHUNK, CHUNK * 0.75, 460); this.roadInfrastructureGroup.add(o); }
     });
   }
 

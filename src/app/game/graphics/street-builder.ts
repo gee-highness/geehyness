@@ -78,6 +78,12 @@ export class StreetBuilder {
     return pts;
   }
 
+  /** Pavements only where photos show them: town centres and dense blocks (not suburbs, rural edges or the open MR3). */
+  private paved(x: number, z: number): boolean {
+    const nb = this.w.buildingsNear(x, z); if (nb < 5) return false; if (nb >= 26) return true;
+    let d = 1e9; for (const k of Object.keys(this.w.meta.snaps ?? {})) { const s = (this.w.meta.snaps as Record<string, [number, number]>)[k]; d = Math.min(d, Math.hypot(s[0] - x, s[1] - z)); }
+    return d < 1000;
+  }
   private urban(x: number, z: number): boolean { return this.w.buildingsNear(x, z) >= 4; }
 
   // ------------------------------------------------------------------ pavements
@@ -96,7 +102,7 @@ export class StreetBuilder {
       let any = false;
       for (let i = 0; i + 1 < pts.length; i++) {
         const mx = (pts[i][0] + pts[i + 1][0]) / 2, mz = (pts[i][1] + pts[i + 1][1]) / 2;
-        if (!this.urban(mx, mz)) continue;
+        if (!this.paved(mx, mz)) continue;
         const useBrick = Math.hypot(mx + 750, mz + 210) < 1100;
         const y0 = lift(way.c);
         for (const side of [0, 1]) {
@@ -163,7 +169,27 @@ export class StreetBuilder {
 
   // ------------------------------------------------------------------ utility poles + wires
   private poles(): void {
-    const w = this.w; const wood = [0.36, 0.26, 0.17], arm = [0.3, 0.22, 0.15];
+    const w = this.w; const wood = [0.36, 0.26, 0.17], arm = [0.3, 0.22, 0.15], steel = [0.5, 0.52, 0.55];
+    // real poles from Mapillary first (procedural ones below skip anywhere near a real pole)
+    const realGrid = new Map<number, number[]>(); const gk = (x: number, z: number): number => Math.floor(x / 30) * 100003 + Math.floor(z / 30);
+    const realUtil: [number, number, number][] = [];
+    for (const [x, z, kind] of w.meta.upoles ?? []) {
+      const rd = w.nearestRoadSegment(x, z, 8); if (!rd || rd.dist > 40 || rd.way.dz || w.roadAt(x, z)) continue;
+      const y = w.groundHeightAt(x, z), b = this.buf(x, z, 'props'), rot = Math.atan2(rd.tz, rd.tx);
+      if (kind === 0) { this.box(b, x, y, z, 0.26, 8.4, 0.26, rot, wood); this.box(b, x, y + 7.6, z, 0.14, 0.14, 2.0, rot, arm); realUtil.push([x, z, y + 7.7]); }
+      else this.box(b, x, y, z, 0.16, 6.2, 0.16, rot, steel);
+      w.collision.addCircle(x, z, 0.2);
+      const k = gk(x, z); let l = realGrid.get(k); if (!l) { l = []; realGrid.set(k, l); } l.push(x, z);
+    }
+    // sagging wires between neighbouring real utility poles (each pair once)
+    for (let i = 0; i < realUtil.length; i++) {
+      const a = realUtil[i]; let bi = -1, bd = 75;
+      for (let j = i + 1; j < realUtil.length; j++) { const d = Math.hypot(realUtil[j][0] - a[0], realUtil[j][1] - a[1]); if (d > 12 && d < bd) { bd = d; bi = j; } }
+      if (bi < 0) continue; const c = realUtil[bi]; const key = `${Math.floor(a[0] / CH)},${Math.floor(a[1] / CH)}`; let arr = this.wires.get(key); if (!arr) { arr = []; this.wires.set(key, arr); }
+      for (const o of [-0.8, 0, 0.8]) { let lx = a[0], ly = a[2], lz = a[1] + o;
+        for (let s2 = 1; s2 <= 6; s2++) { const t = s2 / 6, x2 = a[0] + (c[0] - a[0]) * t, z2 = a[1] + (c[1] - a[1]) * t + o, y2 = a[2] + (c[2] - a[2]) * t - Math.sin(t * Math.PI) * 0.7; arr.push(lx, ly, lz, x2, y2, z2); lx = x2; ly = y2; lz = z2; } }
+    }
+    const nearReal = (x: number, z: number): boolean => { for (let a = -1; a <= 1; a++) for (let c = -1; c <= 1; c++) { const l = realGrid.get(gk(x + a * 30, z + c * 30)); if (l) for (let i = 0; i < l.length; i += 2) if (Math.abs(l[i] - x) < 22 && Math.abs(l[i + 1] - z) < 22) return true; } return false; };
     for (const way of w.roadWays) {
       if (way.c < 4 || way.c > 6 || way.u || way.dz) continue;
       const pts = this.resample(way.p, 4); let acc = 0; let prev: [number, number, number] | null = null;
@@ -172,7 +198,7 @@ export class StreetBuilder {
         if (acc < 42) continue; acc = 0;
         const tx = (pts[i + 1][0] - pts[i][0]) / L, tz = (pts[i + 1][1] - pts[i][1]) / L;
         const off = way.w / 2 + (way.sw ?? 0) + 1.3, px = pts[i][0] - tz * off, pz = pts[i][1] + tx * off;
-        if (Math.hypot(px + 750, pz + 210) > 2300 || !this.urban(px, pz) || w.roadAt(px, pz)) { prev = null; continue; }
+        if (Math.hypot(px + 750, pz + 210) > 2300 || !this.urban(px, pz) || w.roadAt(px, pz) || nearReal(px, pz)) { prev = null; continue; }
         const y = w.calculateRawTerrainHeight(px, pz), b = this.buf(px, pz, 'props'); const rot = Math.atan2(tz, tx);
         this.box(b, px, y, pz, 0.26, 8.2, 0.26, rot, wood); this.box(b, px, y + 7.5, pz, 0.14, 0.14, 2.0, rot, arm);
         w.collision.addCircle(px, pz, 0.2);
@@ -289,7 +315,7 @@ export class StreetBuilder {
     const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0); const lod = new Map<string, THREE.BufferGeometry[]>();
     for (const c of list) {
       if (!this.carParts.has(c.m)) continue;
-      const key = `${Math.floor(c.x / 160)},${Math.floor(c.z / 160)}`; let arr = this.carCells.get(key); if (!arr) { arr = []; this.carCells.set(key, arr); } arr.push(c);
+      const key = `${Math.floor(c.x / 64)},${Math.floor(c.z / 64)}`; let arr = this.carCells.get(key); if (!arr) { arr = []; this.carCells.set(key, arr); } arr.push(c);
       const y = w.groundHeightAt(c.x, c.z) - 0.02;
       M.compose(new THREE.Vector3(c.x, y, c.z), Q.setFromAxisAngle(up, c.rot), new THREE.Vector3(1, 1, 1));
       const lk = `${Math.floor(c.x / 300)},${Math.floor(c.z / 300)}`; let la = lod.get(lk); if (!la) { la = []; lod.set(lk, la); }
@@ -308,15 +334,15 @@ export class StreetBuilder {
   public updateCars(px: number, pz: number): void {
     const w = this.w; let built = 0;
     for (const [key, list] of this.carCells) {
-      const [ix, iz] = key.split(',').map(Number); const dx = Math.max(Math.abs((ix + 0.5) * 160 - px) - 80, 0), dz = Math.max(Math.abs((iz + 0.5) * 160 - pz) - 80, 0), d = Math.hypot(dx, dz);
+      const [ix, iz] = key.split(',').map(Number); const dx = Math.max(Math.abs((ix + 0.5) * 64 - px) - 32, 0), dz = Math.max(Math.abs((iz + 0.5) * 64 - pz) - 32, 0), d = Math.hypot(dx, dz);
       const have = this.carMeshes.get(key);
-      if (d < 60 && !have && built < 2 && this.carMat) {
+      if (d < 26 && !have && built < 3 && this.carMat) {
         const geos: THREE.BufferGeometry[] = []; const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
         for (const c of list) { const parts = this.carParts.get(c.m); if (!parts) continue; const y = w.groundHeightAt(c.x, c.z) - 0.02; M.compose(new THREE.Vector3(c.x, y, c.z), Q.setFromAxisAngle(up, c.rot), new THREE.Vector3(1, 1, 1)); for (const p of parts) geos.push(p.clone().applyMatrix4(M)); }
         const g = geos.length ? mergeGeometries(geos) : null; if (!g) { this.carMeshes.set(key, new THREE.Mesh()); continue; }
         for (const q of geos) q.dispose(); g.computeBoundingSphere();
         const mesh = new THREE.Mesh(g, this.carMat); mesh.name = 'parkedcars'; mesh.frustumCulled = true; w.landmarksGroup.add(mesh); this.carMeshes.set(key, mesh); built++;
-      } else if (d > 120 && have) { if (have.geometry) have.geometry.dispose(); w.landmarksGroup.remove(have); this.carMeshes.delete(key); }
+      } else if (d > 70 && have) { if (have.geometry) have.geometry.dispose(); w.landmarksGroup.remove(have); this.carMeshes.delete(key); }
     }
   }
 

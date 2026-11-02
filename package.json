@@ -5,11 +5,12 @@
     "ng": "ng",
     "start": "ng serve",
     "dev": "cross-env ng serve --port=3000 --host=0.0.0.0 --allowed-hosts=true ${DISABLE_HMR:+--live-reload=false}",
-    "build": "ng build",
+    "build": "ng build && node scripts/gen-sw.mjs",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "lint": "ng lint",
-    "serve:ssr:app": "node dist/app/server/server.mjs"
+    "desktop": "electron electron/main.cjs",
+    "dist:linux": "npm run build && electron-builder --linux"
   },
   "private": true,
   "dependencies": {
@@ -52,6 +53,32 @@
     "tailwindcss": "^4.1.12",
     "typescript": "~5.9.2",
     "typescript-eslint": "8.47.0",
-    "vitest": "^4.0.0"
+    "vitest": "^4.0.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "main": "electron/main.cjs",
+  "description": "SHESHA - Eswatini Open-Road Racing",
+  "author": "Shesha <shesha@localhost>",
+  "homepage": "https://github.com/gee-highness/geehyness",
+  "build": {
+    "appId": "sz.shesha.racing",
+    "productName": "Shesha",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**",
+      "dist/app/browser/**"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "pacman",
+        "tar.gz"
+      ],
+      "category": "Game",
+      "icon": "electron/icon.png"
+    }
   }
 }

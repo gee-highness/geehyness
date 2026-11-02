@@ -42,9 +42,9 @@ export class ExtrasBuilder {
   build(scene: THREE.Scene): void {
     this.railway();
     this.levelCrossings();
-    this.busShelters(); this.regSigns();
+    this.busShelters(); this.regSigns(); this.billboards();
     this.speedSigns(scene);
-    this.roundabouts();
+    this.roundabouts(); this.footbridges(); this.animals();
     this.viewpoints();
     this.flush();
   }
@@ -123,6 +123,19 @@ export class ExtrasBuilder {
     }
   }
 
+  // ------------------------------------------------------------------ roadside advertising + shop signs (real positions from Mapillary)
+  private billboards(): void {
+    const w = this.w; const PAL: V3[] = [[0.85, 0.12, 0.1], [0.1, 0.35, 0.75], [0.95, 0.75, 0.1], [0.1, 0.55, 0.3], [0.95, 0.95, 0.95], [0.9, 0.4, 0.1]];
+    (w.meta.bills ?? []).forEach(([x, z, kind], i) => {
+      const rd = w.nearestRoadSegment(x, z, 7); if (!rd || rd.dist > 30 || rd.way.dz || w.roadAt(x, z)) return;
+      const y = w.groundHeightAt(x, z), b = this.buf(x, z, 'props'), tx = rd.tx, tz = rd.tz, c = PAL[i % PAL.length], steel: V3 = [0.4, 0.42, 0.45];
+      if (kind === 0) { // roadside advertising board on a post, wide face toward the road
+        this.box(b, x, y, z, 0.14, 0.14, 3.4, tx, tz, steel); this.box(b, x, y + 3.4, z, 3.0, 0.14, 1.0, tx, tz, [0.92, 0.92, 0.92]); this.box(b, x, y + 3.45, z, 2.8, 0.18, 0.9, tx, tz, c);
+      } else { this.box(b, x, y, z, 0.08, 0.08, 2.4, tx, tz, steel); this.box(b, x, y + 2.2, z, 1.1, 0.1, 0.55, tx, tz, c); } // shop sign on a post
+      w.collision.addCircle(x, z, 0.2);
+    });
+  }
+
   // ------------------------------------------------------------------ bus shelters
   private busShelters(): void {
     const w = this.w;
@@ -195,16 +208,60 @@ export class ExtrasBuilder {
       const uz = ((A[0] ** 2 + A[1] ** 2) * (C[0] - B[0]) + (B[0] ** 2 + B[1] ** 2) * (A[0] - C[0]) + (C[0] ** 2 + C[1] ** 2) * (B[0] - A[0])) / d;
       const R = Math.hypot(A[0] - ux, A[1] - uz); if (R < 6 || R > 70) continue; if (done.some((q) => Math.hypot(q[0] - ux, q[1] - uz) < 6)) continue; done.push([ux, uz]);
       const ri = R - way.w / 2 - 0.9; if (ri < 2.5) continue;
-      const y = w.calculateRawTerrainHeight(ux, uz) + w.roadLift(way.c); const b = this.buf(ux, uz, 'props'); const seg = 28;
+      const y = w.calculateRawTerrainHeight(ux, uz) + w.roadLift(way.c); const b = this.buf(ux, uz, 'props'); const seg = way.c <= 4 ? 40 : 28; const chev = way.c <= 4; // arterial islands get yellow/black chevron kerbs
       const kerb = [0.75, 0.75, 0.73], grass = [0.2, 0.42, 0.16];
       for (let i = 0; i < seg; i++) {
         const a0 = (i / seg) * Math.PI * 2, a1 = ((i + 1) / seg) * Math.PI * 2, c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1), am = (a0 + a1) / 2;
         const P = (r: number, c: number, s: number, yy: number): V3 => [ux + c * r, yy, uz + s * r];
-        this.quad(b, [P(ri, c0, s0, y), P(ri, c1, s1, y), P(ri, c1, s1, y + 0.22), P(ri, c0, s0, y + 0.22)], [Math.cos(am), 0, Math.sin(am)], kerb);
+        this.quad(b, [P(ri, c0, s0, y), P(ri, c1, s1, y), P(ri, c1, s1, y + 0.22), P(ri, c0, s0, y + 0.22)], [Math.cos(am), 0, Math.sin(am)], chev ? (i % 2 ? [0.08, 0.08, 0.08] : [0.95, 0.78, 0.08]) : kerb);
         this.quad(b, [P(ri, c0, s0, y + 0.22), P(ri, c1, s1, y + 0.22), P(0.01, 0, 0, y + 0.3), P(0.01, 0, 0, y + 0.3)], [0, 1, 0], grass);
       }
       w.collision.addCircle(ux, uz, ri + 0.05, y - 0.3, y + 1.5);
       if (ri > 4) w.streets.streetTrees.push({ x: ux, z: uz, c: 9 });
+    }
+  }
+
+  // ------------------------------------------------------------------ pedestrian footbridges (steel, over arterial roads at out-of-town bus stops, as on the MR3)
+  private footbridges(): void {
+    const w = this.w, sn = (w.meta.snaps ?? {}) as Record<string, [number, number]>; const placed: number[][] = []; const steel: V3 = [0.62, 0.64, 0.68], rail: V3 = [0.5, 0.52, 0.56];
+    for (const bs of w.meta.busstops ?? []) {
+      if (placed.length >= 6) break; const [x, z] = bs.p;
+      if (['manzini', 'mbabane'].some((k) => sn[k] && Math.hypot(sn[k][0] - x, sn[k][1] - z) < 700)) continue;
+      if (placed.some((q) => Math.hypot(q[0] - x, q[1] - z) < 900)) continue;
+      const rd = w.nearestRoadSegment(x, z, 3); if (!rd || rd.dist > 25 || rd.way.dz || rd.way.w < 6) continue;
+      placed.push([x, z]); const nx = -rd.tz, nz = rd.tx, half = rd.way.w / 2 + 3.2, cx = rd.px, cz = rd.pz, y = w.groundHeightAt(cx, cz), b = this.buf(cx, cz, 'props'), top = 5.6;
+      this.box(b, cx, y + top, cz, half * 2, 2.0, 0.3, nx, nz, steel);                                              // deck
+      for (const o of [-0.95, 0.95]) this.box(b, cx + rd.tx * o, y + top + 0.3, cz + rd.tz * o, half * 2, 0.08, 1.3, nx, nz, rail); // side screens
+      this.box(b, cx, y + top + 1.6, cz, half * 2, 2.1, 0.1, nx, nz, [0.55, 0.57, 0.6]);                          // roof
+      for (const e of [-1, 1]) {
+        const ex = cx + nx * half * e, ez = cz + nz * half * e, gy = w.groundHeightAt(ex, ez);
+        this.box(b, ex, gy, ez, 0.5, 0.5, top, rd.tx, rd.tz, steel); w.collision.addCircle(ex, ez, 0.4);
+        for (let k = 1; k <= 8; k++) this.box(b, ex + nx * e * (0.9 + k * 0.45), gy + top - k * (top / 9), ez + nz * e * (0.9 + k * 0.45), 0.45, 1.6, 0.14, nx, nz, rail); // stair run
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------ roadside livestock (rural verges: cattle, goats), static low-poly
+  private animals(): void {
+    const w = this.w; let made = 0; const COW: V3[] = [[0.42, 0.28, 0.2], [0.08, 0.08, 0.08], [0.82, 0.8, 0.74], [0.6, 0.42, 0.25]], GOAT: V3[] = [[0.85, 0.82, 0.76], [0.35, 0.28, 0.22], [0.12, 0.12, 0.12]];
+    const hash = (a: number, c: number): number => { const t = Math.sin(a * 12.9898 + c * 78.233) * 43758.5453; return t - Math.floor(t); };
+    for (const way of w.roadWays) {
+      if (way.c < 3 || way.c > 6 || way.dz || way.br || made > 260) continue;
+      const p = way.p;
+      for (let i = 0; i + 3 < p.length; i += 4) {
+        const ax = p[i] / 10, az = p[i + 1] / 10, bx = p[i + 2] / 10, bz = p[i + 3] / 10, L = Math.hypot(bx - ax, bz - az); if (L < 20) continue;
+        if (hash(ax, az) > 0.1 || w.buildingsNear(ax, az) > 1 || Math.hypot(ax, az) < 1500) continue;
+        const tx = (bx - ax) / L, tz = (bz - az) / L, side = hash(az, ax) > 0.5 ? 1 : -1, off = way.w / 2 + 6 + hash(ax, 1) * 8, goats = hash(ax, 3) > 0.5, n = 2 + Math.floor(hash(az, 7) * 4);
+        for (let k = 0; k < n; k++) {
+          const u = hash(ax + k, az) * L * 0.8, v = off + hash(az + k, ax) * 5, x = ax + tx * u - tz * side * v, z = az + tz * u + tx * side * v; if (w.roadAt(x, z) || w.buildingsNear(x, z) > 0) continue;
+          const y = w.calculateRawTerrainHeight(x, z), rot = Math.atan2(tz, tx) + hash(x, z) * 6.28, c = (goats ? GOAT : COW)[Math.floor(hash(x, z) * (goats ? 3 : 4))], b = this.buf(x, z, 'props'), sc = goats ? 0.55 : 1;
+          const fx = Math.cos(rot), fz = Math.sin(rot);
+          this.box(b, x, y + 0.62 * sc, z, 1.9 * sc, 0.7 * sc, 0.7 * sc, fx, fz, c);                                  // body
+          this.box(b, x + fx * 1.15 * sc, y + 0.85 * sc, z + fz * 1.15 * sc, 0.45 * sc, 0.34 * sc, 0.4 * sc, fx, fz, c); // head
+          for (const [lu, lv] of [[0.7, 0.22], [0.7, -0.22], [-0.7, 0.22], [-0.7, -0.22]]) this.box(b, x + fx * lu * sc - fz * lv * sc, y, z + fz * lu * sc + fx * lv * sc, 0.13 * sc, 0.13 * sc, 0.65 * sc, fx, fz, c);
+          w.collision.addCircle(x, z, 0.55 * sc + 0.15); made++;
+        }
+      }
     }
   }
 
