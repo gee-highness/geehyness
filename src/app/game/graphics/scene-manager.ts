@@ -51,6 +51,7 @@ export class SceneManager {
   public isSoftwareGl = false;
   public isMobile = false;
   private pixelRatio = 1;
+  private autoDetail = 1; private tierDetail = 1;
   private maxPixelRatio = 1;
   private frameMs = 16;
   private weather!: Weather;
@@ -429,6 +430,11 @@ export class SceneManager {
     let pr = this.pixelRatio;
     if (this.frameMs > 18.4) pr = Math.max(0.5, pr - (this.frameMs > 26 ? 0.2 : 0.08)); // aim for 60 fps (16.7 ms)
     else if (this.frameMs < 13.6 && pr < this.maxPixelRatio) pr = Math.min(this.maxPixelRatio, pr + 0.04);
+    // stage 2: resolution is already at its floor and frames are still slow -> shrink the draw distance (fewer triangles); grow it back when there is headroom
+    let ad = this.autoDetail;
+    if (this.frameMs > 19.5 && pr <= 0.62) ad = Math.max(0.4, ad - 0.1);
+    else if (this.frameMs < 13 && ad < 1) ad = Math.min(1, ad + 0.05);
+    if (Math.abs(ad - this.autoDetail) > 0.001) { this.autoDetail = ad; this.worldBuilder.setDetailScale(this.tierDetail * ad); }
     if (Math.abs(pr - this.pixelRatio) > 0.001) {
       this.pixelRatio = pr; this.renderer.setPixelRatio(pr);
       this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
@@ -454,7 +460,7 @@ export class SceneManager {
     this.pedFraction = q === 'LOW' ? 0.3 : q === 'MED' ? 0.65 : 1; this.pedestrians?.setCount(this.pedFraction);
     LAMP.uLampN.value = q === 'LOW' ? 14 : q === 'MED' || (q === 'AUTO' && this.isMobile) ? 22 : 24;
     this.weather.setDetail(q === 'LOW' ? 0.35 : q === 'MED' ? 0.65 : 1);
-    this.worldBuilder.setDetailScale(q === 'LOW' ? 0.5 : q === 'MED' ? 0.75 : 1);
+    this.tierDetail = q === 'LOW' ? 0.5 : q === 'MED' ? 0.75 : 1; this.worldBuilder.setDetailScale(this.tierDetail * this.autoDetail);
   }
   public get qualityTier(): QualityTier { return this.quality; }
 
