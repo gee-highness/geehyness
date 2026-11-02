@@ -47,3 +47,4 @@ __screenshots__/
 Thumbs.db
 .phys/
 *.apk
+/release
