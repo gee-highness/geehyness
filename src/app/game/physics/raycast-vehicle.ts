@@ -17,6 +17,10 @@ export class RaycastVehicle {
   public currentGear = 1;
   /** Reverse engaged: `throttle` then drives the car backwards (set by the input layer when brake is held at a standstill). */
   public reverse = false;
+  /** Driving assists (Forza-style defaults): counter-steer help when the rear steps out. 0 = off .. 1 = strong. */
+  public stabilityAssist = 0.6;
+  private shiftTimer = 0;          // torque is cut while a gear change completes
+  private _latF = [0, 0, 0, 0];    // tyre lateral force with relaxation (tyres do not react instantly)
   public currentRpm = 900;
   public engineLoad = 0;
   public isAutomatic = true;
@@ -336,8 +340,14 @@ export class RaycastVehicle {
     if (w.isSteerable) {
       // Speed-sensitive steering angle (less angle at top speed)
       const speedKmh = Math.abs(speedMs * 3.6);
-      const lockMultiplier = Math.max(0.35, 1.0 - speedKmh / 280);
-      steerRad = -this.steerInput * THREE.MathUtils.degToRad(35) * lockMultiplier;
+      const lockDeg = Math.max(4.2, 34 / (1 + Math.pow(speedKmh / 58, 1.5)));       // 34 deg parked, ~18 at 50 km/h, ~10 at 100, ~5 at 200
+      let steerCmd = this.steerInput;
+      if (this.stabilityAssist > 0 && speedKmh > 18 && !this.reverse) {              // body-slip counter-steer: catches slides like a good driver / the sim assists
+        const vLatB = this.velocity.dot(this._right), beta = Math.atan2(vLatB, Math.max(2, Math.abs(speedMs)));
+        const help = THREE.MathUtils.clamp(beta * 1.9 * this.stabilityAssist, -0.45, 0.45);
+        if (Math.abs(beta) > 0.07) steerCmd += (Math.abs(this.steerInput) > 0.6 && Math.sign(this.steerInput) === Math.sign(help) ? 0 : help) * THREE.MathUtils.clamp((Math.abs(beta) - 0.07) * 8, 0, 1);
+      }
+      steerRad = -THREE.MathUtils.clamp(steerCmd, -1.15, 1.15) * THREE.MathUtils.degToRad(lockDeg);
     }
 
     const wheelRot = this._qw.copy(this.quaternion).multiply(this._qs.setFromAxisAngle(RaycastVehicle.Y, steerRad));
@@ -359,7 +369,8 @@ export class RaycastVehicle {
 
     // Camber thrust bonus
     const camber = (wheelIndex % 2 === 0 ? this.tuning.camberFrontDeg : -this.tuning.camberFrontDeg) * (Math.PI / 180);
-    const effectivePeakGrip = this.config.tireGripPeak * surfaceGrip * (1.0 + Math.abs(camber) * 0.1);
+    const fz0 = (this.config.massKg * 9.81) / 4, loadSens = THREE.MathUtils.clamp(1 - 0.14 * (normalForceN / fz0 - 1), 0.78, 1.08);   // tyres lose mu as load rises: natural understeer / weight-transfer feel
+    const effectivePeakGrip = this.config.tireGripPeak * surfaceGrip * (1.0 + Math.abs(camber) * 0.1) * loadSens;
 
     // Pacejka Magic Formula curve parameters
     const B = 10.0;
@@ -370,7 +381,7 @@ export class RaycastVehicle {
     // Drive torque & braking (longitudinal) first, so the lateral force sees the friction circle
     let longForceN = 0;
     const tractionLimit = normalForceN * effectivePeakGrip;
-    if (w.isDriven && this.throttle > 0) {
+    if (w.isDriven && this.throttle > 0 && this.shiftTimer <= 0 && this.currentRpm < this.config.engineMaxRpm * 0.985) {
       const driveFraction = this.config.driveType === 'AWD' ? 0.25 : 0.5;
       const engineTorque = this.calculateEngineTorque(this.currentRpm) * this.throttle;
       const gearRatio = this.tuning.gearRatios[this.currentGear - 1] * this.tuning.finalDriveRatio;
@@ -394,7 +405,7 @@ export class RaycastVehicle {
     // Rolling resistance (worse on soft ground) + engine braking when off throttle
     const crr = this.getRollingResistance(ground.surfaceClass);
     longForceN -= Math.sign(vLong) * Math.min(Math.abs(vLong) * this.config.massKg * 0.1, normalForceN * crr);
-    if (this.throttle === 0 && w.isDriven && this.brake === 0) longForceN -= Math.sign(vLong) * Math.min(Math.abs(vLong) * 40, normalForceN * 0.04);
+    if (this.throttle === 0 && w.isDriven && this.brake === 0) longForceN -= Math.sign(vLong) * Math.min(Math.abs(vLong) * 40 + (this.currentRpm / this.config.engineMaxRpm) * 55 * this.tuning.gearRatios[this.currentGear - 1], normalForceN * 0.07);   // engine braking grows in lower gears
 
     const usage = Math.min(1, Math.abs(longForceN) / Math.max(1, tractionLimit));
     let latForceMagnitude = D * Math.sin(C * Math.atan(B * slipAngle - E * (B * slipAngle - Math.atan(B * slipAngle)))) * Math.sqrt(Math.max(0.04, 1 - usage * usage));
@@ -406,6 +417,8 @@ export class RaycastVehicle {
       w.isSkidding = true;
     }
 
+    { const speedAbs = Math.max(1.5, Math.abs(speedMs)), k = Math.min(1, dt * speedAbs / 0.32);                // tyre relaxation length ~0.32 m: removes the digital snap
+      this._latF[wheelIndex] += (latForceMagnitude - this._latF[wheelIndex]) * Math.max(0.18, k); latForceMagnitude = this._latF[wheelIndex]; }
     w.lateralForceN = latForceMagnitude;
     const latForceVec = this._lf.copy(wheelRight).multiplyScalar(-latForceMagnitude);
     netForce.add(latForceVec);
@@ -433,16 +446,14 @@ export class RaycastVehicle {
 
     this.currentRpm = THREE.MathUtils.damp(this.currentRpm, targetRpm, 14, dt);
 
-    // Automatic Gear Shifting
-    if (this.isAutomatic) {
-      if (this.currentRpm > this.config.enginePeakRpm * 1.08 && this.currentGear < 6) {
-        this.currentGear++;
-        this.currentRpm *= 0.72; // Gear drop
-      } else if (this.currentRpm < this.config.engineIdleRpm * 2.2 && this.currentGear > 1) {
-        this.currentGear--;
-        this.currentRpm *= 1.35; // Downshift blip
-      }
+    // Automatic gearbox: shift points move with throttle, a short torque cut while shifting, kickdown on hard throttle, rev-match blip on downshifts
+    this.shiftTimer = Math.max(0, this.shiftTimer - dt);
+    if (this.isAutomatic && !this.reverse && this.shiftTimer <= 0) {
+      const up = this.config.enginePeakRpm * (0.82 + 0.28 * this.throttle), down = Math.max(this.config.engineIdleRpm * 1.9, this.config.enginePeakRpm * (0.34 + 0.2 * this.throttle));
+      if (this.currentRpm > up && this.currentGear < 6 && this.brake < 0.3) { this.currentGear++; this.currentRpm *= 0.74; this.shiftTimer = 0.16; }
+      else if (this.currentRpm < down && this.currentGear > 1) { this.currentGear--; this.currentRpm *= 1.32; this.shiftTimer = 0.1; }
     }
+    if (this.reverse) this.currentGear = 1;
 
     // Exhaust Backfire & Pop-and-Bang Logic (when releasing throttle from high RPM)
     this.backfireTriggered = false;

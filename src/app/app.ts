@@ -425,6 +425,17 @@ export class App implements AfterViewInit, OnDestroy {
       else if (v.reverse && (throttle > 0.1 || fwd > 1.5 || brake < 0.05)) v.reverse = false;
       if (v.reverse) { throttle = brake; brake = 0; }
     }
+    // Input shaping: keyboard / touch are digital, so ramp them like a pad stick and pedals (no instant lock-to-lock, no wheelspin snap). Analog pad passes straight through.
+    {
+      const spdK = Math.hypot(this.vehicle.velocity.x, this.vehicle.velocity.z) * 3.6, digital = !pad.connected;
+      if (digital) {
+        const rate = steer === 0 || Math.sign(steer) !== Math.sign(this.steerSm) ? 7.5 : 3.6 / (1 + spdK / 95);
+        const d = steer - this.steerSm, mx = rate * dt; this.steerSm += Math.abs(d) < mx ? d : Math.sign(d) * mx;
+        const tr = (a: number, b: number, up: number, dn: number) => { const dd = b - a; return a + Math.max(-dn * dt, Math.min(up * dt, dd)); };
+        this.thrSm = tr(this.thrSm, throttle, 4.5, 9); this.brkSm = tr(this.brkSm, brake, 6, 12);
+        steer = this.steerSm; throttle = this.thrSm; brake = this.brkSm;
+      } else { this.steerSm = steer; this.thrSm = throttle; this.brkSm = brake; }
+    }
     this.vehicle.steerInput = steer;
     this.vehicle.throttle = throttle;
     this.vehicle.brake = brake;
@@ -449,6 +460,7 @@ export class App implements AfterViewInit, OnDestroy {
     }
   }
 
+  private steerSm = 0; private thrSm = 0; private brkSm = 0;
   private lastCrashRumble = 0;
   private slowTick = 0;
   private fpsT = 0;
