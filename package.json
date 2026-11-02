@@ -10,7 +10,8 @@
     "test": "ng test",
     "lint": "ng lint",
     "desktop": "electron electron/main.cjs",
-    "dist:linux": "npm run build && electron-builder --linux"
+    "dist:linux": "npm run build && electron-builder --linux",
+    "dist:win": "npm run build && electron-builder --win"
   },
   "private": true,
   "dependencies": {
@@ -79,6 +80,17 @@
       ],
       "category": "Game",
       "icon": "electron/icon.png"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "electron/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
     }
   }
 }

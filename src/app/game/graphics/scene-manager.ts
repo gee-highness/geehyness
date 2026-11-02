@@ -10,6 +10,21 @@ import { QualityTier } from '../../services/settings.service';
 import { CameraRig } from './camera-rig';
 import { WorldBuilder } from './world-builder';
 import { ParticleSystem } from './particle-system';
+
+/** Stylised "chunky low-poly" look: on by default (Y toggles + reloads). Low resolution is the aesthetic, not a compromise. */
+export const STYLE = (() => { try { return localStorage.getItem('shesha.style') !== '0'; } catch { return true; } })();
+let graded = false;
+/** One global colour grade patched into three's output chunk: saturation + contrast, then posterise with ordered dither (flat, printed, retro bands). */
+function applyStyleGrade(): void {
+  if (graded || !STYLE) return; graded = true;
+  THREE.ShaderChunk.colorspace_fragment += `
+  {
+    vec3 sc = gl_FragColor.rgb; float sl = dot(sc, vec3(0.299, 0.587, 0.114));
+    sc = mix(vec3(sl), sc, 1.24); sc = (sc - 0.5) * 1.08 + 0.5;
+    float dth = fract(dot(floor(gl_FragCoord.xy), vec2(0.7548776662, 0.5698402910)));
+    gl_FragColor.rgb = clamp(floor(sc * 13.0 + dth) / 13.0, 0.0, 1.0);
+  }`;
+}
 import { AssetLibrary } from './asset-library';
 import { RoadTraffic } from './road-traffic';
 import { CAR_CATALOG, CarDef } from '../cars';
@@ -102,6 +117,7 @@ export class SceneManager {
   private initRenderer(): void {
     const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints ?? 0) > 1;
     this.isMobile = mobile;
+    applyStyleGrade();
     this.renderer = new THREE.WebGLRenderer({
       antialias: !this.isSoftwareGl && !mobile, // MSAA off on phones (tile-GPU cost); resolution scaling carries the quality instead
       powerPreference: 'high-performance',
@@ -112,8 +128,8 @@ export class SceneManager {
     this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.92;
+    this.renderer.toneMapping = STYLE ? THREE.NeutralToneMapping : THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = STYLE ? 1.0 : 0.92;
 
     this.renderer.shadowMap.enabled = !this.isSoftwareGl && !this.isMobile;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -124,6 +140,7 @@ export class SceneManager {
     pmremGenerator.dispose();
 
     this.container.appendChild(this.renderer.domElement);
+    if (STYLE) { this.renderer.domElement.style.imageRendering = 'pixelated'; this.applyStyleRes(); }
     (window as unknown as { __shesha?: unknown }).__shesha = { breakdown: () => this.breakdown(), info: () => ({ ...this.renderer.info.render, geometries: this.renderer.info.memory.geometries, textures: this.renderer.info.memory.textures, pr: this.pixelRatio }) };
   }
 
@@ -414,8 +431,17 @@ export class SceneManager {
   public setCops(on: boolean): void { this.copsWanted = on; this.police?.setEnabled(on); }
   public policeUpdate(dt: number, pl: PlayerPose, st: Stealth, night: number): void { this.police?.update(dt, pl, st, night); }
 
+  /** Chunky-pixel mode: fixed internal height per tier, nearest-neighbour upscaled. Cheap on the GPU and part of the look. */
+  private applyStyleRes(): void {
+    if (!STYLE || !this.container) return;
+    const hgt = Math.max(1, this.container.clientHeight), tgt = this.quality === 'LOW' ? 300 : this.quality === 'HIGH' ? 600 : this.isMobile ? 400 : 480;
+    const pr = Math.min(1, Math.max(0.25, tgt / hgt)); this.maxPixelRatio = pr; this.pixelRatio = pr;
+    this.renderer.setPixelRatio(pr); this.renderer.setSize(this.container.clientWidth, hgt);
+  }
+
   public resize(): void {
     if (!this.container || !this.renderer) return;
+    if (STYLE) { this.applyStyleRes(); this.cameraRig.setAspect(this.container.clientWidth / Math.max(1, this.container.clientHeight)); return; }
     const w = this.container.clientWidth;
     const h = this.container.clientHeight;
     this.renderer.setSize(w, h);
@@ -438,7 +464,7 @@ export class SceneManager {
       else if (ad < 1) ad = Math.min(1, ad + 0.04);
     }
     if (Math.abs(ad - this.autoDetail) > 0.001) { this.autoDetail = ad; this.worldBuilder.setDetailScale(this.tierDetail * ad); }
-    if (Math.abs(pr - this.pixelRatio) > 0.001) {
+    if (!STYLE && Math.abs(pr - this.pixelRatio) > 0.001) {
       this.pixelRatio = pr; this.renderer.setPixelRatio(pr);
       this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     }
@@ -469,7 +495,7 @@ export class SceneManager {
     const cap = q === 'HIGH' ? Math.min(dpr, 2) : q === 'MED' ? Math.min(devCap, 1) : q === 'LOW' ? Math.min(devCap, 0.7) : devCap;
     this.maxPixelRatio = cap; this.pixelRatio = Math.min(this.pixelRatio, cap);
     if (q === 'HIGH' || q === 'LOW') this.pixelRatio = cap;
-    this.renderer.setPixelRatio(this.pixelRatio); this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+    this.renderer.setPixelRatio(this.pixelRatio); this.renderer.setSize(this.container.clientWidth, this.container.clientHeight); this.applyStyleRes();
     const shadows = !this.isSoftwareGl && (q === 'HIGH' || (q === 'AUTO' && !this.isMobile));
     if (shadows !== this.renderer.shadowMap.enabled) {
       this.renderer.shadowMap.enabled = shadows; this.sunLight.castShadow = shadows; this.worldBuilder.shadowsOn = shadows;
