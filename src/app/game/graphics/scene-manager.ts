@@ -108,7 +108,7 @@ export class SceneManager {
       preserveDrawingBuffer: false, // photo mode renders then reads in the same task
     });
     this.maxPixelRatio = this.isSoftwareGl ? 1 : mobile ? Math.min(window.devicePixelRatio, 1.5) : Math.min(window.devicePixelRatio, 2);
-    this.pixelRatio = mobile ? Math.min(this.maxPixelRatio, 1.0) : this.maxPixelRatio;
+    this.pixelRatio = mobile ? Math.min(this.maxPixelRatio, 1.25) : this.maxPixelRatio;
     this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -428,11 +428,11 @@ export class SceneManager {
     if (this.govTimer < 700) return;
     this.govTimer = 0;
     let pr = this.pixelRatio;
-    if (this.frameMs > 18.4) pr = Math.max(0.5, pr - (this.frameMs > 26 ? 0.2 : 0.08)); // aim for 60 fps (16.7 ms)
+    if (this.frameMs > 18.4) pr = Math.max(this.isMobile ? 0.8 : 0.7, pr - (this.frameMs > 26 ? 0.12 : 0.05)); // aim for 60 fps (16.7 ms)
     else if (this.frameMs < 13.6 && pr < this.maxPixelRatio) pr = Math.min(this.maxPixelRatio, pr + 0.04);
     // stage 2: resolution is already at its floor and frames are still slow -> shrink the draw distance (fewer triangles); grow it back when there is headroom
     let ad = this.autoDetail;
-    if (this.frameMs > 19.5 && pr <= 0.62) ad = Math.max(0.4, ad - 0.1);
+    if (this.frameMs > 19.5 && pr <= (this.isMobile ? 0.85 : 0.75)) ad = Math.max(0.35, ad - 0.1);
     else if (this.frameMs < 13 && ad < 1) ad = Math.min(1, ad + 0.05);
     if (Math.abs(ad - this.autoDetail) > 0.001) { this.autoDetail = ad; this.worldBuilder.setDetailScale(this.tierDetail * ad); }
     if (Math.abs(pr - this.pixelRatio) > 0.001) {

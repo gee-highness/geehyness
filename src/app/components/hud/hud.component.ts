@@ -35,6 +35,9 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
     .rail-btn:focus-visible{outline:2px solid #fbbf24}
     .compact .rail-btn{width:34px;height:34px}
     .compact .rail-tip{display:none}
+    nav.compact{z-index:40;max-width:calc(100vw - 340px);overflow-x:auto;scrollbar-width:none}
+    nav.compact::-webkit-scrollbar{display:none}
+    nav.compact .rail-btn{flex:0 0 auto}
     .rail-tip{position:absolute;right:54px;white-space:nowrap;background:rgba(9,9,11,.92);border:1px solid rgba(255,255,255,.12);padding:6px 10px;border-radius:8px;font-size:11px;font-weight:600;opacity:0;transform:translateX(6px);pointer-events:none;transition:.15s}
     .rail-btn:hover .rail-tip,.rail-btn:focus-visible .rail-tip{opacity:1;transform:none}
     kbd{display:inline-block;margin:0 2px;padding:1px 6px;border-radius:5px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);font:600 10px ui-monospace,monospace;color:#fde68a}
@@ -52,7 +55,7 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
         <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-amber-400 to-orange-600 grid place-items-center font-black text-zinc-950 text-sm shadow-lg">SH</div>
         <div class="leading-tight">
           <div class="text-[10px] uppercase tracking-[0.2em] text-amber-300/90 font-bold">{{ currentDistrictName() }}</div>
-          <div class="text-[11px] text-zinc-400 font-mono">{{ gpsCoordinates() }}</div>
+          <div class="text-[11px] text-zinc-400 font-mono" [class.hidden]="compact()">{{ gpsCoordinates() }}</div>
         </div>
       </div>
 
@@ -60,7 +63,7 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
       <div class="absolute top-3 sm:top-4 pointer-events-auto hud-card px-3 sm:px-4 py-2 sm:py-2.5 flex items-center gap-3 sm:gap-4 text-xs" [ngClass]="compact() ? 'right-[64px]' : 'right-3 sm:right-4'">
         <div class="flex items-center gap-1.5"><mat-icon class="text-amber-300 !text-base">schedule</mat-icon><span class="font-mono font-semibold">{{ formatTimeOfDay() }}</span></div>
         <div class="flex items-center gap-1.5"><mat-icon class="text-sky-300 !text-base">{{ getWeatherIcon() }}</mat-icon><span class="capitalize" [class.hidden]="compact()">{{ envService.weather().toLowerCase().replace('_', ' ') }}</span></div>
-        <div class="hidden md:flex items-center gap-1.5" [class.text-emerald-300]="gamepadService.isConnected()" [class.text-zinc-500]="!gamepadService.isConnected()">
+        <div class="items-center gap-1.5" [ngClass]="compact() ? 'hidden' : 'hidden md:flex'" [class.text-emerald-300]="gamepadService.isConnected()" [class.text-zinc-500]="!gamepadService.isConnected()">
           <mat-icon class="!text-base">sports_esports</mat-icon>
           <span>{{ gamepadService.isConnected() ? (gamepadService.isDualShock() ? 'DualShock 4' : 'Controller') : 'Keyboard' }}</span>
         </div>

@@ -230,7 +230,7 @@ export class App implements AfterViewInit, OnDestroy {
 
   private loop = (now: number): void => {
     let tp = performance.now();
-    const frameDelta = Math.min((now - this.lastTime) / 1000, 0.1);
+    const frameDelta = Math.min((now - this.lastTime) / 1000, 0.066);   // never feed physics more than ~4 steps: a slow frame must not snowball
     this.lastTime = now;
     this.pad = this.gamepadService.pollControls();
     this.handlePad(this.pad);
@@ -240,10 +240,12 @@ export class App implements AfterViewInit, OnDestroy {
 
       // Fixed 60 Hz physics sub-stepping
       if (!this.sceneManager.worldBuilder.ready) this.physicsAccumulator = 0;
-      while (this.physicsAccumulator >= this.FIXED_STEP) {
+      let guard = 0;
+      while (this.physicsAccumulator >= this.FIXED_STEP && guard++ < 4) {
         this.stepPhysics(this.FIXED_STEP);
         this.physicsAccumulator -= this.FIXED_STEP;
       }
+      if (this.physicsAccumulator > this.FIXED_STEP) this.physicsAccumulator = 0;
       tp = this.mark('physics', tp);
 
       // Day-Night environment tick

@@ -99,7 +99,7 @@ export class FeaturesBuilder {
   private guardrails(): void {
     const w = this.w, STEP = 8, RAIL: V3 = [0.72, 0.74, 0.76], POST: V3 = [0.5, 0.52, 0.55];
     for (const r of w.roadWays) {
-      if (r.c > 5 || r.br || r.u || r.dz || r.bay) continue;
+      if (r.c > 4 || r.br || r.u || r.dz || r.bay || r.sw || r.ms) continue;   // rural / trunk roads only: never town streets (pavements, parking bays, humps)
       const p = r.p; const half = r.w / 2 + 0.9;
       for (let i = 0; i + 3 < p.length; i += 2) {
         const ax = p[i] / 10, az = p[i + 1] / 10, cx = p[i + 2] / 10, cz = p[i + 3] / 10, L = Math.hypot(cx - ax, cz - az); if (L < 2) continue;
@@ -111,7 +111,8 @@ export class FeaturesBuilder {
             const ex = mx + nx * sd * half, ez = mz + nz * sd * half;
             if (w.roadAt(ex, ez) || w.roadAt(mx + nx * sd * (half + 2.5), mz + nz * sd * (half + 2.5))) continue;
             const drop = yr - this.h(mx + nx * sd * (half + 3), mz + nz * sd * (half + 3));
-            if (drop < 2.2) continue;
+            if (drop < 3.5) continue;
+            if (w.nearBuildingPublic(mx, mz) || w.nearBuildingPublic(ex, ez)) continue;
             const x0 = ex - tx * len / 2, z0 = ez - tz * len / 2, x1 = ex + tx * len / 2, z1 = ez + tz * len / 2;
             const y0 = this.h(x0, z0), y1 = this.h(x1, z1), ya = Math.max(y0, yr - 0.2), yb = Math.max(y1, yr - 0.2);
             const b = this.buf(mx, mz, 'props');
