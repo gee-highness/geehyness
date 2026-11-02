@@ -108,3 +108,33 @@ APK → `android/app/build/outputs/apk/debug/app-debug.apk` (~93 MB). Send with 
 ## Ideas not done yet
 - Draw house numbers from `meta.addr`; pedestrian crossings use; building collision with real roof ramps.
 - Real-device profiling (60 fps, rumble, controller feel) - never done.
+
+## Sixth session (latest) - read this first
+**Branch** `ccr-cac88f1d-gkebu8`, everything committed and pushed. Latest APK was built from the last world commit (then only docs/scripts changed).
+Plans: `docs/FIDELITY_PLAN.md` (brand-faithful stations/chains/landmarks, tiers + phases), `docs/REALISM_IDEAS.md` (every realism lever, impact/effort, recommended order), `docs/PLAN.md` (older roadmap).
+
+### Done this session
+- Data: merged the full OSM extract (`scripts/merge_osm_full.py`: 120k buildings, extra roads/POIs, landuse zoning, furniture) -> `build_world.py` (new args: osm dir = merged dir `/tmp/osmm`, dir2 = `/tmp/osmm/osm2`, dir3 = `/tmp/osm3`; raw zips in `data/`). Buildings overlapping roads are nudged clear, or shrunk to a 7x5 m kiosk (never dropped).
+- Materials: brick bond, basket-weave pavers, weathered render/slabs, window frames/trims/sills, glass reflections; noise is a texture lookup (`noiseTex()`), sky drawn last (depth-tested at far plane), close-up detail only within ~25 m.
+- Collisions: walls/fences/cliffs tested per 3 m piece (side-street mouths stay open), oversized "tank" colliders removed, rural-only guardrails with collision, `CollisionWorld.probe()` debug sweep.
+- Driving: reverse (hold brake at standstill, gear shows R), speed-sensitive steering lock, input ramping for keys/touch, tyre relaxation + load sensitivity, stability assist (lighter on RWD), shift delay/rev limiter/engine braking, stronger brakes. Physics benchmark: `scripts/physics_test.mjs` (esbuild command in its header).
+- UI: HUD rail no longer overlapped by the clock bar on phones (taps work), spinning-tyre logo (launcher/splash/favicon via `scripts/make_logo.py`; animated SVG on intro + HUD badge).
+- Perf: governor draws less distance first then lowers resolution (floor 100% on phones, MSAA on), traffic distance LOD (silhouette beyond 75 m), 300 m tree cells, 64 m parked-car blocks. Manzini CBD ~310k tris, ~175 calls (software renderer; no real-device numbers yet).
+
+### Mapillary (in progress)
+- User supplied a Mapillary **access token**. It is NOT in the repo. In the old container it lives in `/tmp/.mly` (mode 600); if the container is gone, ask the user for it again and pass it as `MAPILLARY_TOKEN=...` (env only, never write it to a file in the repo).
+- `scripts/fetch_mapillary.py` fetches street lights / poles / signs / traffic lights for the playable rectangle -> `data/mapillary_features.json` (tiles of 0.015 deg, resumable by rerunning). Credit line already added to `public/assets/CREDITS.txt` (CC BY-SA 4.0).
+- Test box over Manzini CBD gave 283 features (127 supports, 91 signs, 34 street lights, 18 traffic lights). Photos via `graph.mapillary.com/images?bbox=...` + `thumb_1024_url` work (reference only, never ship images).
+- NEXT: when the file exists, feed it to `build_world.py` (real lamps/poles/signs/signals replace the procedural ones), rebuild, check visually.
+
+### Immediate next steps
+1. Finish Mapillary integration (above).
+2. Phase 1 of `docs/FIDELITY_PLAN.md`: brand fuel stations (Galp orange fascia + diamond-logo pylon, Shell, Engen, Total, Puma, Sasol): add brands to `FUELS`/`KNOWN` in `build_world.py` (Galp is missing), brand-aware `petrolCanopy()` in `city-builder.ts`, `data/landmarks.json` spec, same-view photo-vs-game comparison. User's Galp reference photos: MR3 Manzini, orange/white canopy, tall white pylon with orange G diamond, Nissan red/white tower beside it.
+3. Real-device numbers from the user (phone model + FPS from key **F**) before more perf work; remaining perf ideas: worker-thread chunk generation, draw-call merging, LOD for distant buildings.
+4. The autopilot tour (`/tmp` scripts, not in repo) found no stuck spots; a full road-blocker rescan on the latest build has not been re-run.
+
+### Run/test notes learned
+- Start the test server with `(setsid nohup python3 -m http.server 4300 --directory dist/app/browser >/dev/null 2>&1 &)`; `pgrep -f "http.server 4300"` matches your own command line, so do not use it as an "is it running" check.
+- Headless software GL runs ~1-5 fps, so wall-clock driving tests are slow-motion; use `scripts/physics_test.mjs` for real simulated-time numbers.
+- New debug hooks on `window.__shesha`: `veh` (vehicle), `wb` (WorldBuilder incl. `collision.probe(x,z,rad,y)`), `top(x,z,h)` overhead camera, `tpRoad(x,z)`, `perf()`, `info()`, `breakdown()`.
+- Long foreground commands get interrupted by the user: run builds/tests with `setsid nohup ... &` and a Monitor.
