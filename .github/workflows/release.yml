@@ -27,6 +27,7 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci --legacy-peer-deps
       - run: npm run build
+      - run: sudo apt-get update && sudo apt-get install -y libarchive-tools
       - run: npx electron-builder --linux --publish never
       - env: { GH_TOKEN: '${{ github.token }}' }
         run: gh release upload "$TAG" release/*.AppImage release/*.pacman release/*.tar.gz --clobber
