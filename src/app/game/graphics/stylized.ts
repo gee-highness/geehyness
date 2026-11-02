@@ -8,11 +8,22 @@ import { addLampLight } from './lamp-light';
 export type StyleKind = 'asphalt' | 'panel' | 'tile' | 'metal' | 'slab' | 'gravel' | 'plate' | 'brick' | 'paver';
 const KIND_ID: Record<StyleKind, number> = { asphalt: 0, panel: 1, tile: 2, metal: 3, slab: 4, gravel: 5, plate: 6, brick: 7, paver: 8 };
 
+let _noise: THREE.DataTexture | null = null;
+/** 128x128 random-value texture: value noise becomes ONE bilinear texture fetch instead of four arithmetic hashes (big saving on phone GPUs). */
+export function noiseTex(): THREE.DataTexture {
+  if (_noise) return _noise;
+  const N = 128, d = new Uint8Array(N * N * 4); let r = 1337;
+  for (let i = 0; i < d.length; i++) { r = (Math.imul(r, 1664525) + 1013904223) >>> 0; d[i] = r >>> 24; }
+  const t = new THREE.DataTexture(d, N, N, THREE.RGBAFormat); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; t.needsUpdate = true;
+  return (_noise = t);
+}
+
 /** Noise + pattern library (functions only; usable by any shader that already has world position). */
 export const STYLE_FUNCS = /* glsl */ `
+uniform sampler2D uNoise;
 float sh1(vec2 p){ vec3 p3=fract(vec3(p.xyx)*.1031); p3+=dot(p3,p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }
 vec2 sh2(vec2 p){ vec3 p3=fract(vec3(p.xyx)*vec3(.1031,.1030,.0973)); p3+=dot(p3,p3.yzx+33.33); return fract((p3.xx+p3.yz)*p3.zy); }
-float svn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(sh1(i),sh1(i+vec2(1.,0.)),f.x), mix(sh1(i+vec2(0.,1.)),sh1(i+vec2(1.,1.)),f.x), f.y); }
+float svn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return texture2D(uNoise,(i+f+0.5)/128.).r; }
 float sfbm(vec2 p){ float a=.5,s=0.; for(int i=0;i<4;i++){ s+=a*svn(p); p=p*2.03+vec2(17.1,9.2); a*=.5; } return s; }
 float sridge(vec2 p){ return 1.-abs(sfbm(p)*2.-1.); }
 `;
@@ -32,6 +43,7 @@ SM styleMat(vec2 sp, vec3 wp, vec3 n){
   SM m; m.col = vec3(1.); m.h = 0.; m.rough = 0.; m.em = vec3(0.);
   float big = sfbm(sp*0.045 + 3.1), mid = sfbm(sp*0.42 + 7.7);
   float aaF = clamp(1. - fwidth(sp.x + sp.y) * 5.0, 0., 1.);            // fade high-frequency detail with distance (no shimmer)
+  float nearF = clamp(1. - fwidth(sp.x + sp.y) * 14., 0., 1.);        // 0 beyond ~25 m: skip the expensive close-up layers there
   float fine = mix(0.5, sfbm(sp*2.6 + 1.3), aaF);
 #if SK == 0
   // asphalt: graphite with worn lanes, patches, aggregate sparkle, hairline cracks
@@ -44,9 +56,12 @@ SM styleMat(vec2 sp, vec3 wp, vec3 n){
   // render / concrete: soft panels, trowel texture, rain streaks, grime blooms, hairline cracks, expansion joints
   vec3 pn = spanel(sp, vec2(2.6, 1.3), 0.18, 0.5);
   float streak = sfbm(vec2(sp.x*1.4, wp.y*0.09) + 5.);
-  float rain = smoothstep(0.5, 0.85, sfbm(vec2(sp.x*3.2, wp.y*0.035) + 21.)) * aaF;
-  float bloom = smoothstep(0.55, 0.8, sfbm(sp*0.16 + wp.y*0.05 + 40.));
-  float crk = smoothstep(0.972, 1.0, sridge(sp*vec2(1.1, 0.8) + vec2(wp.y*0.3, 5.))) * aaF;
+  float rain = 0., bloom = 0., crk = 0.;
+  if (nearF > 0.001) {
+    rain = smoothstep(0.5, 0.85, sfbm(vec2(sp.x*3.2, wp.y*0.035) + 21.)) * aaF;
+    bloom = smoothstep(0.55, 0.8, sfbm(sp*0.16 + wp.y*0.05 + 40.));
+    crk = smoothstep(0.972, 1.0, sridge(sp*vec2(1.1, 0.8) + vec2(wp.y*0.3, 5.))) * aaF;
+  }
   vec3 hue = mix(vec3(0.94,1.0,1.06), vec3(1.07,1.0,0.93), pn.z);
   m.col = 0.86 * hue * (0.9 + 0.18*pn.y) * (0.9 + 0.2*streak) * (1. - 0.2*pn.x) * (0.93 + 0.14*fine);
   m.col *= 1. - 0.22*rain - 0.14*bloom - 0.3*crk;
@@ -73,8 +88,8 @@ SM styleMat(vec2 sp, vec3 wp, vec3 n){
 #elif SK == 4
   // concrete paving slabs: joints with moss, per-slab shade, cracks, stains, gum spots, worn lanes
   vec3 pn = spanel(sp, vec2(1.15, 0.78), 0.55, 0.45);
-  float crk = smoothstep(0.975, 1.0, sridge(sp*1.7 + 4.)) * aaF;
-  float stn = smoothstep(0.6, 0.82, sfbm(sp*0.5 + 31.)) * 0.28;
+  float crk = nearF > 0.001 ? smoothstep(0.975, 1.0, sridge(sp*1.7 + 4.)) * aaF : 0.;
+  float stn = nearF > 0.001 ? smoothstep(0.6, 0.82, sfbm(sp*0.5 + 31.)) * 0.28 : 0.;
   float gum = step(0.992, sh1(floor(sp*7.))) * aaF * 0.25;
   m.col = mix(vec3(0.82,0.86,0.95), vec3(1.1,1.06,1.0), pn.y) * (1. - 0.4*pn.x) * (0.92 + 0.14*fine) * (1. - stn - crk*0.35 - gum);
   m.col = mix(m.col, vec3(0.2,0.25,0.15), pn.x * 0.35 * smoothstep(0.35, 0.7, mid));  // moss in joints
@@ -91,7 +106,7 @@ SM styleMat(vec2 sp, vec3 wp, vec3 n){
   float vb = mix(0.5, pn.y, aaB), vh = mix(0.5, pn.z, aaB);
   vec3 brk = mix(vec3(1.08,0.9,0.8), vec3(0.86,0.8,0.78), vh) * (0.72 + 0.5*vb);
   vec3 mortar = vec3(0.8,0.78,0.74);
-  float soot = smoothstep(0.55, 0.9, sfbm(vec2(sp.x*2.4, wp.y*0.05) + 3.)) * 0.28;
+  float soot = nearF > 0.001 ? smoothstep(0.55, 0.9, sfbm(vec2(sp.x*2.4, wp.y*0.05) + 3.)) * 0.28 : 0.;
   m.col = mix(brk, mortar, pn.x * 0.85) * (1. - soot) * (0.94 + 0.1*fine);
   m.h = -pn.x*1.1 + pn.y*0.18; m.rough = 0.1*pn.x - 0.06*pn.y;
 #elif SK == 8
@@ -107,7 +122,7 @@ SM styleMat(vec2 sp, vec3 wp, vec3 n){
   float hb = sh1(id * 2. + sub + (hz ? 0. : 37.)), aaP = clamp(1. - px2*14., 0., 1.);
   float vb = mix(0.5, hb, aaP);
   vec3 blk = mix(vec3(1.05,0.8,0.7), vec3(0.8,0.8,0.82), step(0.55, vb)) * (0.8 + 0.4*vb);
-  float oil = smoothstep(0.62, 0.8, sfbm(sp*0.35 + 12.)) * 0.3, wear = smoothstep(0.5, 0.75, big) * 0.18;
+  float oil = nearF > 0.001 ? smoothstep(0.62, 0.8, sfbm(sp*0.35 + 12.)) * 0.3 : 0., wear = smoothstep(0.5, 0.75, big) * 0.18;
   m.col = blk * (1. - oil) * (1. + wear*0.4);
   m.col = mix(m.col, vec3(0.2,0.24,0.16), joint * (0.5 + 0.3*mid));      // moss / dirt in the joints
   m.h = -joint*1.0 + vb*0.12; m.rough = 0.12*joint - 0.06*wear;
@@ -127,6 +142,7 @@ export function styledMaterial(kind: StyleKind, o: StyleOpts = {}): THREE.MeshSt
   const m = new THREE.MeshStandardMaterial({ color: o.color ?? 0xffffff, roughness: o.rough ?? 0.85, metalness: o.metal ?? 0.04, vertexColors: o.vertexColors ?? false, side: o.side ?? THREE.FrontSide });
   const bump = (o.bump ?? 1.0).toFixed(3);
   m.onBeforeCompile = (sh) => {
+    sh.uniforms['uNoise'] = { value: noiseTex() };
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vSW; varying vec3 vSN;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSW = (modelMatrix * vec4(transformed, 1.0)).xyz; vSN = normalize(mat3(modelMatrix) * objectNormal);');
     sh.fragmentShader = sh.fragmentShader

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { STYLE_FUNCS } from './stylized';
+import { STYLE_FUNCS, noiseTex } from './stylized';
 
 /** One stylized palette per sun elevation; drives the sky dome, sun, ambient, rim light and fog together. */
 export interface SkyPalette { zenith: THREE.Color; horizon: THREE.Color; sun: THREE.Color; sunI: number; day: number }
@@ -27,13 +27,13 @@ export function skyPalette(sunY: number, gloom: number, neo: boolean, out: SkyPa
 export class Sky {
   readonly uniforms = {
     uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uZenith: { value: new THREE.Color() }, uHorizon: { value: new THREE.Color() }, uSunCol: { value: new THREE.Color() },
-    uDay: { value: 1 }, uTime: { value: 0 }, uCover: { value: 0.55 }, uGloom: { value: 0 }, uFlash: { value: 0 }, uWind: { value: new THREE.Vector2(0.01, 0.004) },
+    uNoise: { value: noiseTex() }, uDay: { value: 1 }, uTime: { value: 0 }, uCover: { value: 0.55 }, uGloom: { value: 0 }, uFlash: { value: 0 }, uWind: { value: new THREE.Vector2(0.01, 0.004) },
   };
   readonly mesh: THREE.Mesh; readonly envMesh: THREE.Mesh;
   constructor(scene: THREE.Scene) {
     const mat = new THREE.ShaderMaterial({
-      uniforms: this.uniforms, side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false,
-      vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      uniforms: this.uniforms, side: THREE.BackSide, depthWrite: false, depthTest: true, fog: false,
+      vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position.z = gl_Position.w; }',
       fragmentShader: /* glsl */ `
         varying vec3 vDir; uniform vec3 uSunDir, uZenith, uHorizon, uSunCol; uniform float uDay, uTime, uCover, uGloom, uFlash; uniform vec2 uWind;
         ${STYLE_FUNCS}
@@ -71,7 +71,7 @@ export class Sky {
         }`,
     });
     const geo = new THREE.SphereGeometry(1, 40, 20);
-    this.mesh = new THREE.Mesh(geo, mat); this.mesh.frustumCulled = false; this.mesh.renderOrder = -100; this.mesh.scale.setScalar(3800); scene.add(this.mesh);
+    this.mesh = new THREE.Mesh(geo, mat); this.mesh.frustumCulled = false; this.mesh.renderOrder = 100; this.mesh.scale.setScalar(3800); scene.add(this.mesh);
     this.envMesh = new THREE.Mesh(geo, mat); this.envMesh.frustumCulled = false; this.envMesh.scale.setScalar(50);
   }
   update(camPos: THREE.Vector3, sunDir: THREE.Vector3, pal: SkyPalette, t: number, cover: number, gloom: number, flash: number): void {

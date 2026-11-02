@@ -103,7 +103,7 @@ export class SceneManager {
     const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints ?? 0) > 1;
     this.isMobile = mobile;
     this.renderer = new THREE.WebGLRenderer({
-      antialias: !mobile && !this.isSoftwareGl, // MSAA is too costly on phones; resolution scaling + FXAA-free crispness instead
+      antialias: !this.isSoftwareGl, // MSAA is too costly on phones; resolution scaling + FXAA-free crispness instead
       powerPreference: 'high-performance',
       preserveDrawingBuffer: false, // photo mode renders then reads in the same task
     });
@@ -427,13 +427,15 @@ export class SceneManager {
     this.govTimer += dtMs;
     if (this.govTimer < 700) return;
     this.govTimer = 0;
-    let pr = this.pixelRatio;
-    if (this.frameMs > 18.4) pr = Math.max(this.isMobile ? 0.8 : 0.7, pr - (this.frameMs > 26 ? 0.12 : 0.05)); // aim for 60 fps (16.7 ms)
-    else if (this.frameMs < 13.6 && pr < this.maxPixelRatio) pr = Math.min(this.maxPixelRatio, pr + 0.04);
-    // stage 2: resolution is already at its floor and frames are still slow -> shrink the draw distance (fewer triangles); grow it back when there is headroom
-    let ad = this.autoDetail;
-    if (this.frameMs > 19.5 && pr <= (this.isMobile ? 0.85 : 0.75)) ad = Math.max(0.35, ad - 0.1);
-    else if (this.frameMs < 13 && ad < 1) ad = Math.min(1, ad + 0.05);
+    let pr = this.pixelRatio, ad = this.autoDetail;
+    const floorPr = this.isMobile ? 1.0 : 0.85;                                   // 100% render scale is the floor: never visibly pixelated
+    if (this.frameMs > 18.4) {                                                    // over budget: first draw less (distance / chunk detail), only then lower resolution toward its floor
+      if (ad > 0.45) ad = Math.max(0.45, ad - (this.frameMs > 26 ? 0.15 : 0.07));
+      else pr = Math.max(floorPr, pr - (this.frameMs > 26 ? 0.1 : 0.04));
+    } else if (this.frameMs < 13.6) {                                             // headroom: resolution back up first, then distance
+      if (pr < this.maxPixelRatio) pr = Math.min(this.maxPixelRatio, pr + 0.04);
+      else if (ad < 1) ad = Math.min(1, ad + 0.04);
+    }
     if (Math.abs(ad - this.autoDetail) > 0.001) { this.autoDetail = ad; this.worldBuilder.setDetailScale(this.tierDetail * ad); }
     if (Math.abs(pr - this.pixelRatio) > 0.001) {
       this.pixelRatio = pr; this.renderer.setPixelRatio(pr);

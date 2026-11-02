@@ -27,7 +27,7 @@ interface Surf { way: RoadWay; h: number; elev: boolean; px: number; pz: number;
 interface RoadWay { c: number; w: number; u: number; o: number; n: string; p: number[]; sw?: number; bay?: number; dz?: number[]; br?: number; bk?: number; ms?: number; rg?: number; rb?: number }
 
 import { GeoBuf } from './geo-buf';
-import { styledMaterial, StyleKind, STYLE_FUNCS } from './stylized';
+import { styledMaterial, StyleKind, STYLE_FUNCS, noiseTex } from './stylized';
 import { addLampLight, LAMP, SLOT, setEmitter, clearEmitter } from './lamp-light';
 import { CityBuilder } from './city-builder';
 import { StreetBuilder } from './street-builder';
@@ -480,6 +480,7 @@ export class WorldBuilder {
     const mat = new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95, metalness: 0 });
     const tPrevKey = 'terrain-style';
     mat.onBeforeCompile = (sh) => {
+      sh.uniforms['uNoise'] = { value: noiseTex() };
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vW;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvW = (modelMatrix * vec4(transformed,1.0)).xyz;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vW;\n' + STYLE_FUNCS)

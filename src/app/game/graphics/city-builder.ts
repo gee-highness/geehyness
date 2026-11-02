@@ -120,11 +120,13 @@ export class CityBuilder {
             vec2 tuv = vec2((st + clamp(bay, 0.008, 0.992)) / 8.0, (min(fl, 1.0) + clamp(flr, 0.008, 0.992)) / 2.0);
             vec4 wm = textureGrad(uWinAtlas, tuv, dFdx(vWUv) * vec2(0.125, 0.5), dFdy(vWUv) * vec2(0.125, 0.5));
             vec2 gx_ = dFdx(vWUv) * vec2(0.125, 0.5), gy_ = dFdy(vWUv) * vec2(0.125, 0.5);
-            float nE = textureGrad(uWinAtlas, tuv + vec2(0.012, 0.0), gx_, gy_).r, nW = textureGrad(uWinAtlas, tuv - vec2(0.012, 0.0), gx_, gy_).r;
-            float nU = textureGrad(uWinAtlas, tuv + vec2(0.0, 0.032), gx_, gy_).r, nD = textureGrad(uWinAtlas, tuv - vec2(0.0, 0.032), gx_, gy_).r;
-            trim = clamp(max(max(nE, nW), max(nU, nD)) - wm.r, 0.0, 1.0);
-            sill = clamp(nD - wm.r, 0.0, 1.0); lintel = clamp(nU - wm.r, 0.0, 1.0);
-            frame = wm.r * (1.0 - min(min(nE, nW), min(nU, nD)));
+            if (dot(vViewPosition, vViewPosition) < 3600.0) {   // trim / sill / frame reads only within 60 m
+              float nE = textureGrad(uWinAtlas, tuv + vec2(0.012, 0.0), gx_, gy_).r, nW = textureGrad(uWinAtlas, tuv - vec2(0.012, 0.0), gx_, gy_).r;
+              float nU = textureGrad(uWinAtlas, tuv + vec2(0.0, 0.032), gx_, gy_).r, nD = textureGrad(uWinAtlas, tuv - vec2(0.0, 0.032), gx_, gy_).r;
+              trim = clamp(max(max(nE, nW), max(nU, nD)) - wm.r, 0.0, 1.0);
+              sill = clamp(nD - wm.r, 0.0, 1.0); lintel = clamp(nU - wm.r, 0.0, 1.0);
+              frame = wm.r * (1.0 - min(min(nE, nW), min(nU, nD)));
+            }
             if (st > 5.5 && st < 6.5) wm.r *= step(0.5, fract(bi*0.5));
             win = wm.r; glass = wm.g; mull = wm.b; door = wm.a * step(0.75, fract(bi*0.618+sd*7.0)) * step(st, 1.5);
           }
