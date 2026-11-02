@@ -42,3 +42,14 @@ dump("bld_extra", [e for e in ld(f"{full}/buildings_all.json") if e["id"] not in
 dump("landuse", ld(f"{full}/landuse_all.json"))
 for n in ("barriers", "trees", "power", "leisure", "misc"):
     pass
+
+# furniture_all -> merged copy of osm2 (barriers.json / misc.json get the elements they lack)
+if osm2 and os.path.exists(f"{full}/furniture_all.json"):
+    o2 = f"{out}/osm2"; os.makedirs(o2, exist_ok=True)
+    for f in glob.glob(f"{osm2}/*.json"):
+        json.dump({"elements": ld(f)}, open(f"{o2}/{os.path.basename(f)}", "w"), separators=(",", ":"))
+    fur = [e for e in ld(f"{full}/furniture_all.json") if inside(e)]
+    for name, pick in (("barriers", lambda t: "barrier" in t), ("misc", lambda t: "man_made" in t and "barrier" not in t)):
+        els = ld(f"{o2}/{name}.json"); ids = {e["id"] for e in els}
+        new = [e for e in fur if e["id"] not in ids and pick(e.get("tags", {}))]
+        json.dump({"elements": els + new}, open(f"{o2}/{name}.json", "w"), separators=(",", ":")); print("osm2/" + name, len(els), "+", len(new))

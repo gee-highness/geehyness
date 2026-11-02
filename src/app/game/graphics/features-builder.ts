@@ -70,7 +70,7 @@ export class FeaturesBuilder {
   }
 
   build(): void {
-    this.barriers(); this.realTrees(); this.power(); this.pitches(); this.pools(); this.parking(); this.tanks(); this.humps(); this.cliffs();
+    this.barriers(); this.guardrails(); this.realTrees(); this.power(); this.pitches(); this.pools(); this.parking(); this.tanks(); this.humps(); this.cliffs();
     this.flush();
   }
 
@@ -89,6 +89,39 @@ export class FeaturesBuilder {
           slab(this.buf(mx, mz, 'props'), (px, pz) => this.h(px, pz), mx - tx * len / 2, mz - tz * len / 2, mx + tx * len / 2, mz + tz * len / 2, t, hh, col, col2);
           const nx = -tz * t / 2, nz = tx * t / 2;
           w.collision.addPolygon([mx - tx * len / 2 + nx, mz - tz * len / 2 + nz, mx + tx * len / 2 + nx, mz + tz * len / 2 + nz, mx + tx * len / 2 - nx, mz + tz * len / 2 - nz, mx - tx * len / 2 - nx, mz - tz * len / 2 - nz], this.h(mx, mz) - 1, this.h(mx, mz) + hh);
+        }
+      }
+    }
+  }
+
+
+  // ------------------------------------------------------------------ guardrails on drop-offs (steep fall beside a road): visible W-beam rail + solid collision
+  private guardrails(): void {
+    const w = this.w, STEP = 8, RAIL: V3 = [0.72, 0.74, 0.76], POST: V3 = [0.5, 0.52, 0.55];
+    for (const r of w.roadWays) {
+      if (r.c > 5 || r.br || r.u || r.dz || r.bay) continue;
+      const p = r.p; const half = r.w / 2 + 0.9;
+      for (let i = 0; i + 3 < p.length; i += 2) {
+        const ax = p[i] / 10, az = p[i + 1] / 10, cx = p[i + 2] / 10, cz = p[i + 3] / 10, L = Math.hypot(cx - ax, cz - az); if (L < 2) continue;
+        const tx = (cx - ax) / L, tz = (cz - az) / L, nx = -tz, nz = tx, n = Math.max(1, Math.round(L / STEP));
+        for (let k = 0; k < n; k++) {
+          const s0 = (L * k) / n, s1 = (L * (k + 1)) / n, mx = ax + tx * (s0 + s1) / 2, mz = az + tz * (s0 + s1) / 2, len = s1 - s0;
+          const yr = w.groundHeightAt(mx, mz);
+          for (const sd of [-1, 1]) {
+            const ex = mx + nx * sd * half, ez = mz + nz * sd * half;
+            if (w.roadAt(ex, ez) || w.roadAt(mx + nx * sd * (half + 2.5), mz + nz * sd * (half + 2.5))) continue;
+            const drop = yr - this.h(mx + nx * sd * (half + 3), mz + nz * sd * (half + 3));
+            if (drop < 2.2) continue;
+            const x0 = ex - tx * len / 2, z0 = ez - tz * len / 2, x1 = ex + tx * len / 2, z1 = ez + tz * len / 2;
+            const y0 = this.h(x0, z0), y1 = this.h(x1, z1), ya = Math.max(y0, yr - 0.2), yb = Math.max(y1, yr - 0.2);
+            const b = this.buf(mx, mz, 'props');
+            this.quad(b, [[x0, ya + 0.45, z0], [x1, yb + 0.45, z1], [x1, yb + 0.85, z1], [x0, ya + 0.85, z0]], [-nz * sd * -1, 0, nx * sd * -1], RAIL);
+            this.quad(b, [[x1, yb + 0.45, z1], [x0, ya + 0.45, z0], [x0, ya + 0.85, z0], [x1, yb + 0.85, z1]], [nz * sd * -1, 0, -nx * sd * -1], RAIL);
+            this.box(b, x0, Math.min(ya, y0) - 0.1, z0, 0.1, 0.1, ya - Math.min(ya, y0) + 0.95, tx, tz, POST);
+            const q = 0.12;
+            w.collision.addPolygon([x0 + nx * q, z0 + nz * q, x1 + nx * q, z1 + nz * q, x1 - nx * q, z1 - nz * q, x0 - nx * q, z0 - nz * q], yr - 0.6, yr + 1.0);
+            w.markBarrier(mx, mz);
+          }
         }
       }
     }
