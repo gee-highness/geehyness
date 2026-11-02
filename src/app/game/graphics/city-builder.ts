@@ -405,6 +405,7 @@ export class CityBuilder {
     if (sid >= 0 && st.sign !== 'none') this.signPlate(pts, front, hs, top, sid, st.sign, cx, cz);
     if (st.props && roof === 'flat' && area > 70) this.roofProps(pb, pts, cx, cz, top - 0.45, use, r, area);
     if (use === 10 && front >= 0) this.churchTower(wallBuf, rb, pts, front, hs, top, st.tint, winCode, pb);
+    if ((use === 3 || use === 4 || use === 5 || use === 6) && area > 450 && front >= 0 && this.nearTown('matsapha', 1200, cx, cz)) this.retailModern(pb, pts, front, hs, top, r);
     if (use === 12 && front >= 0) this.petrolCanopy(pb, pts, front, hs, sid >= 0 ? fuelBrand(this.signList[sid]?.[0] ?? '') : undefined);
   }
 
@@ -521,6 +522,19 @@ export class CityBuilder {
     if (vera) { const np = Math.max(2, Math.round(wdt / 4.5)); for (let k = 0; k < np; k++) { const t = np === 1 ? 0.5 : k / (np - 1); const px = p0[0] + tx * wdt * t + nx * (out - 0.2), pz = p0[1] + tz * wdt * t + nz * (out - 0.2);
       this.box(b, px, y, pz, 0.14, yl - y, 0.14, Math.atan2(tz, tx), [0.4, 0.42, 0.45]); this.w.collision.addCircle(px, pz, 0.12); } }
   }
+  private nearTown(name: string, r: number, x: number, z: number): boolean { const t = (this.w.meta.snaps as Record<string, [number, number]> | undefined)?.[name]; return !!t && Math.hypot(t[0] - x, t[1] - z) < r; }
+
+  /** Modern strip-mall frontage (Matsapha Lifestyle Centre style): dark steel pergola with slats over the entrance walk, black cladding tower at one end. */
+  private retailModern(pb: GeoBuf, pts: [number, number][], i: number, hs: number[], top: number, r: number): void {
+    const n = pts.length, a = pts[i], c = pts[(i + 1) % n]; const dx = c[0] - a[0], dz = c[1] - a[1], len = Math.hypot(dx, dz); if (len < 14) return;
+    const tx = dx / len, tz = dz / len, nx = tz, nz = -tx, rot = Math.atan2(tz, tx), y = (hs[i] + hs[(i + 1) % n]) / 2, D = 3.4, W = Math.min(len * 0.9, 50), s0 = (len - W) / 2;
+    const steel = [0.14, 0.15, 0.17], at = (u: number, v: number): [number, number] => [a[0] + tx * (s0 + u) + nx * v, a[1] + tz * (s0 + u) + nz * v];
+    for (let u = 0; u <= W + 0.01; u += 5) { const [px, pz] = at(u, D); this.box(pb, px, y, pz, 0.2, 4.4, 0.2, rot, steel); this.w.collision.addCircle(px, pz, 0.15); }
+    const [bx, bz] = at(W / 2, D); this.box(pb, bx, y + 4.35, bz, W, 0.2, 0.25, rot, steel);                      // front beam
+    for (let u = 0.6; u < W; u += 1.3) { const [sx, sz] = at(u, D / 2); this.box(pb, sx, y + 4.5, sz, 0.1, 0.1, D, rot, steel); } // slats back to the wall
+    const [tx0, tz0] = at(-2, -2.5); this.box(pb, tx0, top - 0.6, tz0, 5.5, 3.6 + r * 1.2, 5.5, rot, [0.09, 0.09, 0.11]);   // dark cladding tower
+  }
+
   /** Town-centre test (Manzini / Mbabane cores) used for CBD-only building features. */
   private inCbd(x: number, z: number): boolean {
     const sn = this.w.meta.snaps as Record<string, [number, number]> | undefined; if (!sn) return false;

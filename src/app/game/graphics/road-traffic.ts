@@ -1,3 +1,4 @@
+import {makeQuantum, makeCoach} from './vehicles-sa';
 import * as THREE from 'three';
 import { AssetLibrary } from './asset-library';
 import type { WorldBuilder } from './world-builder';
@@ -22,7 +23,18 @@ export class RoadTraffic {
     this.populate();
   }
 
+  /** Minibus taxis (most common in towns) and long-distance coaches share the same lanes as the car models. */
+  private addPublicTransport(): void {
+    const stripes = [0x1e5bb8, 0x0e8a4a, 0xd7261e, 0xf2a900, 0x6a2c91];
+    for (let i = 0; i < 9; i++) {
+      const coach = i >= 7, g = coach ? makeCoach(stripes[i % 5]) : makeQuantum(stripes[i % 5]);
+      this.scene.add(g); g.visible = false;
+      this.agents.push({ dzs: [], cruise: coach ? 17 : 13, obj: g, pts: [], seg: 0, s: 0, speed: 0, w: 6, cum: [], len: 0 });
+    }
+  }
+
   private async populate(): Promise<void> {
+    this.addPublicTransport();
     for (let i = 0; i < this.N; i++) {
       const id = TRAFFIC_MODELS[i % TRAFFIC_MODELS.length];
       const def = CAR_CATALOG.find((c) => c.id === id);
