@@ -23,6 +23,18 @@ const houseRoof = (r: number): number[] => r < 0.38 ? ROOFS[1] : r < 0.58 ? ROOF
 const tileRoof = (r: number): number[] => r < 0.45 ? ROOFS[1] : r < 0.75 ? ROOFS[6] : r < 0.9 ? ROOFS[3] : ROOFS[0];
 const sheetRoof = (r: number): number[] => r < 0.4 ? ROOFS[0] : r < 0.7 ? ROOFS[4] : r < 0.9 ? ROOFS[5] : ROOFS[7];
 
+/** Fuel brands: sign plate colours, canopy fascia / underside, pump colour and price-pylon style (from street photos). */
+interface FuelBrand { key: string; bg: string; fg: string; fascia: number[]; body: number[]; pump: number[]; pylon: 'galp' | 'engen' | 'total' | 'shell' | 'puma' | 'mitra'; flags: boolean }
+const FUEL_BRANDS: FuelBrand[] = [
+  { key: 'GALP', bg: '#f26522', fg: '#ffffff', fascia: [0.95, 0.4, 0.13], body: [0.96, 0.96, 0.96], pump: [0.95, 0.4, 0.13], pylon: 'galp', flags: true },
+  { key: 'ENGEN', bg: '#0b3c9e', fg: '#ffffff', fascia: [0.04, 0.24, 0.62], body: [0.97, 0.97, 0.97], pump: [0.1, 0.3, 0.7], pylon: 'engen', flags: false },
+  { key: 'TOTAL', bg: '#e30613', fg: '#ffffff', fascia: [0.89, 0.02, 0.07], body: [0.96, 0.96, 0.96], pump: [0.89, 0.02, 0.07], pylon: 'total', flags: false },
+  { key: 'SHELL', bg: '#fbce07', fg: '#d4101a', fascia: [0.98, 0.8, 0.03], body: [0.96, 0.96, 0.96], pump: [0.98, 0.8, 0.03], pylon: 'shell', flags: false },
+  { key: 'PUMA', bg: '#00844a', fg: '#ffffff', fascia: [0.0, 0.52, 0.29], body: [0.96, 0.96, 0.96], pump: [0.84, 0.1, 0.12], pylon: 'puma', flags: false },
+  { key: 'MITRA', bg: '#2f3fa6', fg: '#ffffff', fascia: [0.18, 0.25, 0.65], body: [0.82, 0.83, 0.86], pump: [0.2, 0.6, 0.7], pylon: 'mitra', flags: false },
+];
+const fuelBrand = (text: string): FuelBrand | undefined => { const t = text.toUpperCase(); return FUEL_BRANDS.find((b) => t.includes(b.key)); };
+
 interface Style { wall: 'plaster' | 'brick' | 'concrete' | 'ironw'; tint: number[]; win: number; roof: 'hip' | 'gable' | 'flat' | 'lowgable' | 'canopy'; rtint: number[]; props: boolean; awn: boolean; sign: 'door' | 'big' | 'top' | 'none'; pitch: number }
 
 /**
@@ -57,7 +69,7 @@ export class CityBuilder {
   public neo = { value: 0 };
   private mats!: Record<string, THREE.Material>;
   private walls = new Map<string, Map<string, GeoBuf>>();
-  private signCols = 4; private signRows = 1;
+  private signCols = 4; private signRows = 1; private signList: string[][] = [];
 
   constructor(private w: WorldBuilder) {}
 
@@ -73,6 +85,8 @@ export class CityBuilder {
   // ------------------------------------------------------------------ materials
   private makeMaterials(signs: string[][]): void {
     const w = this.w;
+    this.signList = signs;
+    signs.forEach((sg) => { const fb = fuelBrand(sg[0]); if (fb) { sg[1] = fb.bg; sg[2] = fb.fg; } }); // true brand colours, not random
     const plaster = w.pbr('white_plaster_rough_01', 3, 0.9), brick = w.pbr('brick_wall_02', 3, 0.85);
     const concrete = w.pbr('concrete_wall_007', 3, 0.85), ironw = w.pbr('corrugated_iron', 3, 0.6); ironw.metalness = 0.25;
     const roof = w.pbr('corrugated_iron', 3, 0.5); roof.metalness = 0.45;
@@ -380,7 +394,7 @@ export class CityBuilder {
     if (sid >= 0 && st.sign !== 'none') this.signPlate(pts, front, hs, top, sid, st.sign, cx, cz);
     if (st.props && roof === 'flat' && area > 70) this.roofProps(pb, pts, cx, cz, top - 0.45, use, r, area);
     if (use === 10 && front >= 0) this.churchTower(wallBuf, rb, pts, front, hs, top, st.tint, winCode, pb);
-    if (use === 12 && front >= 0) this.petrolCanopy(pb, pts, front, hs, cx, cz);
+    if (use === 12 && front >= 0) this.petrolCanopy(pb, pts, front, hs, sid >= 0 ? fuelBrand(this.signList[sid]?.[0] ?? '') : undefined);
   }
 
   // ------------------------------------------------------------------ compound walls
@@ -545,15 +559,60 @@ export class CityBuilder {
     void win;
   }
 
-  private petrolCanopy(pb: GeoBuf, pts: [number, number][], i: number, hs: number[], cx: number, cz: number): void {
+  private petrolCanopy(pb: GeoBuf, pts: [number, number][], i: number, hs: number[], brand?: FuelBrand): void {
     const n = pts.length, a = pts[i], c = pts[(i + 1) % n]; const dx = c[0] - a[0], dz = c[1] - a[1], len = Math.hypot(dx, dz);
     const nx = dz / len, nz = -dx / len, tx = dx / len, tz = dz / len, rot = Math.atan2(tz, tx), y = Math.min(...hs);
-    const mx = (a[0] + c[0]) / 2 + nx * 8, mz = (a[1] + c[1]) / 2 + nz * 8;
-    this.box(pb, mx, y + 4.6, mz, 16, 0.5, 9, rot, [0.96, 0.96, 0.96]); this.box(pb, mx, y + 4.35, mz, 16.2, 0.25, 9.2, rot, [0.85, 0.12, 0.12]);
-    for (const [su, sv] of [[-5, -3], [5, -3], [-5, 3], [5, 3]]) {
-      const px = mx + tx * su + nx * sv, pz = mz + tz * su + nz * sv; this.box(pb, px, y, pz, 0.45, 4.6, 0.45, rot, [0.82, 0.82, 0.84]); this.w.collision.addCircle(px, pz, 0.35);
+    const br = brand ?? FUEL_BRANDS[2], W = Math.max(14, Math.min(len * 0.9, 24)), D = 11, H = 4.9;
+    // choose a forecourt spot that does not sit on a road: try outward offsets, then slide past the building ends
+    const ex = (a[0] + c[0]) / 2, ez = (a[1] + c[1]) / 2; let mx = NaN, mz = NaN;
+    const free = (qx: number, qz: number): boolean => { for (const su of [-0.6, 0, 0.6]) for (const sv of [-0.6, 0, 0.6]) if (this.w.roadAt(qx + tx * su * (W / 2 + 2) + nx * sv * (D / 2 + 2), qz + tz * su * (W / 2 + 2) + nz * sv * (D / 2 + 2))) return false; return true; };
+    search: for (const sg of [1, -1]) for (const d of [3, 7, 12]) for (const sh of [0, 1, -1]) {
+      const qx = ex + sg * nx * (D / 2 + d) + tx * sh * (len / 2 + W / 2 + 2), qz = ez + sg * nz * (D / 2 + d) + tz * sh * (len / 2 + W / 2 + 2);
+      if (free(qx, qz)) { mx = qx; mz = qz; break search; }
     }
-    for (const su of [-2.5, 2.5]) { const px = mx + tx * su, pz = mz + tz * su; this.box(pb, px, y, pz, 0.7, 1.4, 1.6, rot, [0.9, 0.18, 0.12]); }
-    void cx; void cz;
+    if (Number.isNaN(mx)) return; // no road-free forecourt spot: leave the bare kiosk
+    const P = (su: number, sv: number): [number, number] => [mx + tx * su + nx * sv, mz + tz * su + nz * sv];
+    const GREY = [0.62, 0.63, 0.66];
+    // canopy: light underside slab, white roof cap, brand fascia band all round (deeper on the road side)
+    this.box(pb, mx, y + H, mz, W, 0.3, D, rot, GREY);
+    this.box(pb, mx, y + H + 0.3, mz, W + 0.2, 0.35, D + 0.2, rot, br.body);
+    for (const [su, sv, bw, bd] of [[0, D / 2, W + 0.3, 0.3], [0, -D / 2, W + 0.3, 0.3], [W / 2, 0, 0.3, D], [-W / 2, 0, 0.3, D]] as number[][]) {
+      const [px, pz] = P(su, sv); this.box(pb, px, y + H - 0.25, pz, bw, 0.95, bd, rot, br.fascia);
+    }
+    // columns (2 rows) + pump islands with brand-coloured pumps
+    const cols = Math.max(2, Math.round(W / 7)); const cs = W * 0.8 / (cols - 1);
+    for (let k = 0; k < cols; k++) for (const sv of [-D * 0.28, D * 0.28]) {
+      const [px, pz] = P(-W * 0.4 + k * cs, sv); this.box(pb, px, y, pz, 0.45, H, 0.45, rot, br.body); this.w.collision.addCircle(px, pz, 0.35);
+    }
+    for (const su of [-W * 0.2, W * 0.2]) {
+      const [ix, iz] = P(su, 0); this.box(pb, ix, y, iz, 6, 0.2, 1.3, rot, [0.55, 0.55, 0.57]);
+      for (const k of [-1.6, 1.6]) { const [px, pz] = P(su + k, 0); this.box(pb, px, y + 0.2, pz, 0.7, 1.6, 0.9, rot, br.pump); this.box(pb, px, y + 1.5, pz, 0.72, 0.3, 0.92, rot, [0.12, 0.12, 0.14]); }
+    }
+    // price pylon at the road end of the forecourt
+    const px0 = a[0] + tx * Math.min(len * 0.12, 3) + nx * 1.5, pz0 = a[1] + tz * Math.min(len * 0.12, 3) + nz * 1.5;
+    this.pylon(pb, px0, y, pz0, rot, br, tx, tz);
+    this.w.collision.addCircle(px0, pz0, 0.8);
+    if (br.flags) for (let k = 0; k < 4; k++) { // Galp: row of flagpoles
+      const fx = a[0] + tx * (len * 0.3 + k * 2.2) + nx * 1.2, fz = a[1] + tz * (len * 0.3 + k * 2.2) + nz * 1.2;
+      this.box(pb, fx, y, fz, 0.12, 6.5, 0.12, rot, [0.85, 0.85, 0.88]); this.box(pb, fx + tx * 0.6, y + 5.6, fz + tz * 0.6, 1.1, 0.7, 0.04, rot, k % 2 ? [0.95, 0.4, 0.13] : [1, 1, 1]);
+    }
+  }
+
+  /** Tall brand price pylon: tower body, logo block, dark price board with red LED rows. */
+  private pylon(pb: GeoBuf, x: number, y: number, z: number, rot: number, br: FuelBrand, tx: number, tz: number): void {
+    const WHITE = [0.95, 0.95, 0.95], BOARD = [0.05, 0.05, 0.08], LED = [1, 0.15, 0.1];
+    const H = br.pylon === 'engen' ? 8.5 : br.pylon === 'galp' ? 9 : 7;
+    const body = br.pylon === 'engen' ? [0.04, 0.24, 0.62] : br.pylon === 'total' ? [0.89, 0.02, 0.07] : br.pylon === 'galp' ? WHITE : br.pylon === 'shell' ? [0.98, 0.8, 0.03] : br.pylon === 'puma' ? [0.0, 0.52, 0.29] : [0.18, 0.25, 0.65];
+    this.box(pb, x, y, z, 1.7, H, 0.5, rot, body);
+    this.box(pb, x, y, z, 2.0, 0.5, 0.8, rot, [0.5, 0.5, 0.52]);          // plinth
+    const top = y + H;
+    if (br.pylon === 'engen') { this.box(pb, x, top - 1.9, z, 1.72, 1.9, 0.52, rot, WHITE); this.box(pb, x, top - 1.5, z, 1.2, 1.0, 0.56, rot, [0.9, 0.05, 0.1]); this.box(pb, x + tx * 0.5, y + 0.2, z + tz * 0.5, 0.7, 2.6, 0.54, rot, WHITE); }
+    else if (br.pylon === 'total') { this.box(pb, x, top - 2.4, z, 1.72, 2.4, 0.52, rot, WHITE); this.box(pb, x, top - 1.7, z, 0.9, 0.9, 0.56, rot, [0.1, 0.25, 0.7]); this.box(pb, x, top - 2.2, z, 1.0, 0.3, 0.56, rot, [0.9, 0.05, 0.1]); }
+    else if (br.pylon === 'galp') { this.box(pb, x, top - 1.9, z, 1.1, 1.0, 0.56, rot, [0.95, 0.4, 0.13]); this.box(pb, x, top - 1.55, z, 0.45, 0.45, 0.6, rot, WHITE); }
+    else if (br.pylon === 'puma') { this.box(pb, x, y + 0.4, z, 1.74, 2.6, 0.52, rot, [0.84, 0.1, 0.12]); this.box(pb, x, top - 1.0, z, 1.74, 1.0, 0.52, rot, [0.0, 0.52, 0.29]); }
+    else if (br.pylon === 'mitra') { this.box(pb, x + tx * 0.5, y, z + tz * 0.5, 0.6, H, 0.54, rot, [0.78, 0.79, 0.82]); this.box(pb, x - tx * 0.3, top - 1.6, z - tz * 0.3, 0.5, 1.2, 0.58, rot, [0.1, 0.7, 0.75]); }
+    else { this.box(pb, x, top - 1.6, z, 1.72, 1.6, 0.52, rot, WHITE); this.box(pb, x, top - 1.2, z, 0.9, 0.8, 0.56, rot, br.pylon === 'shell' ? [0.85, 0.07, 0.1] : [0.1, 0.25, 0.7]); }
+    for (const k of [0, 1]) { const yy = y + H * 0.45 - k * 1.3; this.box(pb, x, yy, z, 1.5, 1.1, 0.58, rot, BOARD); this.box(pb, x, yy + 0.35, z, 1.0, 0.35, 0.62, rot, LED); }
+
   }
 }

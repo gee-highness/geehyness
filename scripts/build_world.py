@@ -174,9 +174,9 @@ SHOPS = [("SHOPRITE", "#e1251b", "#ffffff"), ("PICK n PAY", "#0b3d91", "#ffd200"
          ("TAKE AWAYS", "#c2410c", "#ffffff"), ("LIQUOR STORE", "#1f2937", "#fbbf24"), ("CLOTHING", "#be185d", "#ffffff"), ("BAKERY", "#b45309", "#ffffff"),
          ("KFC", "#e4002b", "#ffffff"), ("DEBONAIRS PIZZA", "#d71920", "#ffd200"), ("GENERAL DEALER", "#365314", "#ffffff"), ("CASH LOAN", "#0f766e", "#ffffff")]
 BANKS = [("STANDARD BANK", "#0033a0", "#ffffff"), ("FNB", "#00a19c", "#ffffff"), ("NEDBANK", "#00703c", "#ffffff"), ("ESWATINI BANK", "#1d4ed8", "#ffffff")]
-FUELS = [("ENGEN", "#e2001a", "#ffffff"), ("SHELL", "#fbce07", "#d4101a"), ("TOTAL", "#e30613", "#ffffff"), ("PUMA", "#d71920", "#ffffff")]
+FUELS = [("GALP", "#f26522", "#ffffff"), ("ENGEN", "#0b3c9e", "#ffffff"), ("SHELL", "#fbce07", "#d4101a"), ("TOTAL", "#e30613", "#ffffff"), ("PUMA", "#00844a", "#ffffff"), ("MITRA", "#2f3fa6", "#ffffff")]
 KNOWN = {"shoprite": SHOPS[0], "pick n pay": SHOPS[1], "spar": SHOPS[2], "ok": SHOPS[3], "boxer": SHOPS[4], "pep": SHOPS[5], "kfc": SHOPS[20], "mtn": SHOPS[7],
-         "standard bank": BANKS[0], "fnb": BANKS[1], "nedbank": BANKS[2], "engen": FUELS[0], "shell": FUELS[1], "total": FUELS[2]}
+         "standard bank": BANKS[0], "fnb": BANKS[1], "nedbank": BANKS[2], "galp": FUELS[0], "engen": FUELS[1], "shell": FUELS[2], "total": FUELS[3], "puma": FUELS[4], "mitra": FUELS[5]}
 def brand_for(name, pool, h):
     n = (name or "").lower()
     for k, v in KNOWN.items():

@@ -138,3 +138,10 @@ Plans: `docs/FIDELITY_PLAN.md` (brand-faithful stations/chains/landmarks, tiers 
 - Headless software GL runs ~1-5 fps, so wall-clock driving tests are slow-motion; use `scripts/physics_test.mjs` for real simulated-time numbers.
 - New debug hooks on `window.__shesha`: `veh` (vehicle), `wb` (WorldBuilder incl. `collision.probe(x,z,rad,y)`), `top(x,z,h)` overhead camera, `tpRoad(x,z)`, `perf()`, `info()`, `breakdown()`.
 - Long foreground commands get interrupted by the user: run builds/tests with `setsid nohup ... &` and a Monitor.
+
+## Seventh session
+- Offline PWA (`scripts/gen-sw.mjs` -> `sw.js`), Electron Linux build (`electron/`, `npm run dist:linux`), `vercel.json`, release workflow (`.github/workflows/release.yml`, tag `v*` -> AppImage/pacman/tar.gz on the Releases page). SSR removed (static build). Release workflow NOT yet run.
+- Fidelity Phase 1 started: brand fuel stations (`FUEL_BRANDS` in `city-builder.ts`: Galp, Engen, Total, Shell, Puma(green), Mitra). Brand canopy fascia, columns, pump islands, price pylons, Galp flagpoles; forecourt spot is road-aware (tries outward/inward/slid positions, else bare kiosk). Sign-plate colours forced to true brand colours. `build_world.py` FUELS/KNOWN now include Galp/Puma/Mitra (needs a world rebuild to bake in).
+- Reference photos (Engen Fairview, Total Manzini + Riverstone, Puma Mbabane pylon, Mitra Manzini, Mbabane aerial) were supplied by the user; NOT committed (Google imagery - reference only).
+- Visual check was overhead only: canopy rectangle on the Galp at (105,-258) looks mis-sized/overlaps the kiosk - verify with a ground-level view and tune `W/D`, then compare against photos. Nissan tower beside the MR3 Galp not built.
+- Mapillary fetch finished in an earlier container (2960 features) but `data/mapillary_features.json` is not in this checkout - confirm, then feed to `build_world.py`.
