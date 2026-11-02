@@ -466,7 +466,7 @@ export class WorldBuilder {
   public pbr(name: string, tile: number, rough = 0.9): THREE.MeshStandardMaterial {
     const map: Record<string, [StyleKind, number, number]> = { // name -> [kind, base colour, bump]
       asphalt_02: ['asphalt', 0x2c3140, 1.0], gravel_road: ['gravel', 0x8a7a68, 1.2], white_plaster_rough_01: ['panel', 0xffffff, 0.7], concrete_wall_007: ['panel', 0xe6e9ef, 0.7],
-      brick_wall_02: ['tile', 0xffffff, 1.0], corrugated_iron: ['metal', 0xffffff, 1.0], herringbone_pavement_03: ['slab', 0xdcd8d0, 0.9], concrete_pavement: ['slab', 0xe4e6ea, 0.9],
+      brick_wall_02: ['brick', 0xffffff, 1.0], corrugated_iron: ['metal', 0xffffff, 1.0], herringbone_pavement_03: ['paver', 0xeae6e0, 1.0], concrete_pavement: ['slab', 0xe4e6ea, 0.9],
     };
     const [kind, col, bump] = map[name] ?? ['plate', 0xffffff, 0.8];
     const m = styledMaterial(kind, { color: col, rough, bump });

@@ -5,8 +5,8 @@ import { addLampLight } from './lamp-light';
  * Stylized procedural materials: every pattern is computed in the fragment shader from world position with hashed per-cell
  * variation and domain warping, so nothing repeats and no image textures are loaded (less memory, faster start).
  */
-export type StyleKind = 'asphalt' | 'panel' | 'tile' | 'metal' | 'slab' | 'gravel' | 'plate';
-const KIND_ID: Record<StyleKind, number> = { asphalt: 0, panel: 1, tile: 2, metal: 3, slab: 4, gravel: 5, plate: 6 };
+export type StyleKind = 'asphalt' | 'panel' | 'tile' | 'metal' | 'slab' | 'gravel' | 'plate' | 'brick' | 'paver';
+const KIND_ID: Record<StyleKind, number> = { asphalt: 0, panel: 1, tile: 2, metal: 3, slab: 4, gravel: 5, plate: 6, brick: 7, paver: 8 };
 
 /** Noise + pattern library (functions only; usable by any shader that already has world position). */
 export const STYLE_FUNCS = /* glsl */ `
@@ -41,12 +41,17 @@ SM styleMat(vec2 sp, vec3 wp, vec3 n){
   m.col = mix(vec3(0.74,0.78,0.9), vec3(1.12,1.1,1.2), wornp) * (0.86 + 0.28*mid) * (0.92 + 0.16*fine) - crack*0.12 + spark*0.12;
   m.h = fine*0.6; m.rough = -0.12*wornp + 0.1*(1.-mid);
 #elif SK == 1
-  // large composite panels, per-panel hue/tone shift, weathered vertical streaks
+  // render / concrete: soft panels, trowel texture, rain streaks, grime blooms, hairline cracks, expansion joints
   vec3 pn = spanel(sp, vec2(2.6, 1.3), 0.18, 0.5);
   float streak = sfbm(vec2(sp.x*1.4, wp.y*0.09) + 5.);
+  float rain = smoothstep(0.5, 0.85, sfbm(vec2(sp.x*3.2, wp.y*0.035) + 21.)) * aaF;
+  float bloom = smoothstep(0.55, 0.8, sfbm(sp*0.16 + wp.y*0.05 + 40.));
+  float crk = smoothstep(0.972, 1.0, sridge(sp*vec2(1.1, 0.8) + vec2(wp.y*0.3, 5.))) * aaF;
   vec3 hue = mix(vec3(0.94,1.0,1.06), vec3(1.07,1.0,0.93), pn.z);
-  m.col = 0.84 * hue * (0.9 + 0.18*pn.y) * (0.9 + 0.2*streak) * (1. - 0.22*pn.x) * (0.95 + 0.1*fine);
-  m.h = -pn.x*0.7 + fine*0.15; m.rough = 0.12*pn.x - 0.1*pn.y;
+  m.col = 0.86 * hue * (0.9 + 0.18*pn.y) * (0.9 + 0.2*streak) * (1. - 0.2*pn.x) * (0.93 + 0.14*fine);
+  m.col *= 1. - 0.22*rain - 0.14*bloom - 0.3*crk;
+  m.col *= mix(vec3(1.), vec3(0.93,0.96,0.9), bloom * 0.6);              // faint algae / damp tint
+  m.h = -pn.x*0.7 + (fine - 0.5)*0.5 - crk*0.8; m.rough = 0.12*pn.x - 0.1*pn.y + 0.12*rain;
   m.em = vec3(0.0);
 #elif SK == 2
   // staggered ceramic tiles, strong per-tile hue variation
@@ -66,15 +71,46 @@ SM styleMat(vec2 sp, vec3 wp, vec3 n){
   m.col = tone * (0.84 + 0.2*rib) * (1. - 0.3*seam) * mix(vec3(1.), vec3(1.15,0.7,0.5), rust);
   m.h = rib*0.5 - seam*0.8; m.rough = -0.18 + 0.3*rust; 
 #elif SK == 4
-  // irregular paving slabs with joints and per-slab shade
+  // concrete paving slabs: joints with moss, per-slab shade, cracks, stains, gum spots, worn lanes
   vec3 pn = spanel(sp, vec2(1.15, 0.78), 0.55, 0.45);
-  m.col = mix(vec3(0.82,0.86,0.95), vec3(1.1,1.06,1.0), pn.y) * (1. - 0.38*pn.x) * (0.92 + 0.14*fine);
-  m.h = -pn.x*0.8 + fine*0.2; m.rough = 0.1*pn.x;
+  float crk = smoothstep(0.975, 1.0, sridge(sp*1.7 + 4.)) * aaF;
+  float stn = smoothstep(0.6, 0.82, sfbm(sp*0.5 + 31.)) * 0.28;
+  float gum = step(0.992, sh1(floor(sp*7.))) * aaF * 0.25;
+  m.col = mix(vec3(0.82,0.86,0.95), vec3(1.1,1.06,1.0), pn.y) * (1. - 0.4*pn.x) * (0.92 + 0.14*fine) * (1. - stn - crk*0.35 - gum);
+  m.col = mix(m.col, vec3(0.2,0.25,0.15), pn.x * 0.35 * smoothstep(0.35, 0.7, mid));  // moss in joints
+  m.h = -pn.x*0.8 + fine*0.2 - crk*0.7; m.rough = 0.1*pn.x + 0.1*stn;
 #elif SK == 5
   // gravel: layered speckle, no tiling
   float s1 = mix(0.5, sh1(floor(sp*9.)), aaF), s2 = mix(0.5, sh1(floor(sp*23.)+7.), aaF);
   m.col = mix(vec3(0.78,0.74,0.7), vec3(1.15,1.08,1.0), mid) * (0.8 + 0.3*s1) * (0.9 + 0.2*s2);
   m.h = (s1*0.6 + s2*0.4) * 0.25; m.rough = 0.04;
+#elif SK == 7
+  // running-bond brick: per-brick tone, mortar joints, efflorescence and soot streaks
+  vec3 pn = spanel(sp, vec2(0.225, 0.075), 0.003, 0.5);
+  float aaB = clamp(1. - fwidth(sp.x + sp.y) * 36., 0., 1.);
+  float vb = mix(0.5, pn.y, aaB), vh = mix(0.5, pn.z, aaB);
+  vec3 brk = mix(vec3(1.08,0.9,0.8), vec3(0.86,0.8,0.78), vh) * (0.72 + 0.5*vb);
+  vec3 mortar = vec3(0.8,0.78,0.74);
+  float soot = smoothstep(0.55, 0.9, sfbm(vec2(sp.x*2.4, wp.y*0.05) + 3.)) * 0.28;
+  m.col = mix(brk, mortar, pn.x * 0.85) * (1. - soot) * (0.94 + 0.1*fine);
+  m.h = -pn.x*1.1 + pn.y*0.18; m.rough = 0.1*pn.x - 0.06*pn.y;
+#elif SK == 8
+  // basket-weave block paving rotated 45deg: two-tone blocks, dark joints, moss in the seams, oil stains, wear
+  vec2 r = mat2(0.7071, -0.7071, 0.7071, 0.7071) * sp;
+  vec2 id = floor(r / 0.2), f = fract(r / 0.2);
+  bool hz = mod(id.x + id.y, 2.) < 1.;
+  vec2 ff = hz ? f : f.yx;
+  float sub = floor(ff.y * 2.), sf = fract(ff.y * 2.);
+  float e = min(min(ff.x, 1. - ff.x) * 0.2, min(sf, 1. - sf) * 0.1);
+  float px2 = fwidth(r.x) + fwidth(r.y);
+  float joint = (1. - smoothstep(0.004, 0.014 + px2*0.6, e)) * clamp(1. - px2*7., 0., 1.);
+  float hb = sh1(id * 2. + sub + (hz ? 0. : 37.)), aaP = clamp(1. - px2*14., 0., 1.);
+  float vb = mix(0.5, hb, aaP);
+  vec3 blk = mix(vec3(1.05,0.8,0.7), vec3(0.8,0.8,0.82), step(0.55, vb)) * (0.8 + 0.4*vb);
+  float oil = smoothstep(0.62, 0.8, sfbm(sp*0.35 + 12.)) * 0.3, wear = smoothstep(0.5, 0.75, big) * 0.18;
+  m.col = blk * (1. - oil) * (1. + wear*0.4);
+  m.col = mix(m.col, vec3(0.2,0.24,0.16), joint * (0.5 + 0.3*mid));      // moss / dirt in the joints
+  m.h = -joint*1.0 + vb*0.12; m.rough = 0.12*joint - 0.06*wear;
 #else
   // plate (decor / default): clean sci-fi plating with thin inset lines
   vec3 pn = spanel(sp, vec2(1.8, 1.8), 0.15, 0.0);

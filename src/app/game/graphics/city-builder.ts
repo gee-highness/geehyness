@@ -114,11 +114,17 @@ export class CityBuilder {
         .replace(sh.fragmentShader.includes('/*STYLE_DONE*/') ? '/*STYLE_DONE*/' : '#include <map_fragment>', `${sh.fragmentShader.includes('/*STYLE_DONE*/') ? '/*STYLE_DONE*/' : '#include <map_fragment>'}
           float st = min(floor(vWin + 0.001), 7.0), sd = floor(fract(vWin) * 1000.0 + 0.5) / 1000.0;
           float bay = fract(vWUv.x), flr = fract(vWUv.y), fl = floor(vWUv.y), bi = floor(vWUv.x);
-          float win = 0.0, door = 0.0, mull = 0.0, glass = 0.0;
+          float win = 0.0, door = 0.0, mull = 0.0, glass = 0.0, trim = 0.0, sill = 0.0, lintel = 0.0, frame = 0.0;
           if (st > 0.5) {
             // baked mask atlas: 8 styles across, ground floor / upper floor rows; R=window G=glass B=mullion A=door zone
             vec2 tuv = vec2((st + clamp(bay, 0.008, 0.992)) / 8.0, (min(fl, 1.0) + clamp(flr, 0.008, 0.992)) / 2.0);
             vec4 wm = textureGrad(uWinAtlas, tuv, dFdx(vWUv) * vec2(0.125, 0.5), dFdy(vWUv) * vec2(0.125, 0.5));
+            vec2 gx_ = dFdx(vWUv) * vec2(0.125, 0.5), gy_ = dFdy(vWUv) * vec2(0.125, 0.5);
+            float nE = textureGrad(uWinAtlas, tuv + vec2(0.012, 0.0), gx_, gy_).r, nW = textureGrad(uWinAtlas, tuv - vec2(0.012, 0.0), gx_, gy_).r;
+            float nU = textureGrad(uWinAtlas, tuv + vec2(0.0, 0.032), gx_, gy_).r, nD = textureGrad(uWinAtlas, tuv - vec2(0.0, 0.032), gx_, gy_).r;
+            trim = clamp(max(max(nE, nW), max(nU, nD)) - wm.r, 0.0, 1.0);
+            sill = clamp(nD - wm.r, 0.0, 1.0); lintel = clamp(nU - wm.r, 0.0, 1.0);
+            frame = wm.r * (1.0 - min(min(nE, nW), min(nU, nD)));
             if (st > 5.5 && st < 6.5) wm.r *= step(0.5, fract(bi*0.5));
             win = wm.r; glass = wm.g; mull = wm.b; door = wm.a * step(0.75, fract(bi*0.618+sd*7.0)) * step(st, 1.5);
           }
@@ -129,7 +135,18 @@ export class CityBuilder {
           diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.3 + vec3(0.015,0.025,0.045), uNeo * (1.0 - win));
           diffuseColor.rgb = mix(diffuseColor.rgb, glassCol, win * 0.92);
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.5,0.5,0.52), mull * 0.6 * step(0.5, st));
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.13,0.08,0.06), door * 0.9);`)
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.13,0.08,0.06), door * 0.9);
+          // architectural detail: window frames, painted trim, projecting sills (lit top, shadowed underside), lintels, floor slab bands, ground-floor grime, sky reflection
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16,0.17,0.19), frame * 0.85 * step(0.5, st));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93,0.91,0.86), trim * 0.55 * (1.0 - win) * step(0.5, st) * (1.0 - uNeo));
+          diffuseColor.rgb *= 1.0 - 0.28 * lintel * (1.0 - win) * step(0.5, st);
+          diffuseColor.rgb *= 1.0 + 0.14 * sill * (1.0 - win) * step(0.5, st);
+          float slabBand = (1.0 - smoothstep(0.0, 0.035, abs(flr - 0.015))) * step(1.0, vWUv.y) * (1.0 - win);
+          diffuseColor.rgb *= 1.0 - 0.16 * slabBand;
+          float baseG = 1.0 - smoothstep(0.0, 0.42, vWUv.y);
+          diffuseColor.rgb *= 1.0 - baseG * (0.3 + 0.2 * h11(bi * 5.3 + sd * 17.0));
+          float refl = smoothstep(0.35, 0.95, fract(bay * 0.7 + flr * 0.6 + sd * 3.0));
+          diffuseColor.rgb += vec3(0.2, 0.32, 0.4) * refl * win * (0.3 + 0.7 * glass) * (1.0 - uNight * 0.85) * (1.0 - uNeo);`)
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
           roughnessFactor = mix(roughnessFactor, 0.05, win * 0.9);`)
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
