@@ -136,7 +136,7 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
           <div class="absolute inset-0 flex flex-col items-center justify-center">
             <div class="text-[64px] max-sm:text-[46px] leading-none font-black tabular-nums tracking-tight drop-shadow-[0_2px_12px_rgba(0,0,0,.6)]" [class.!text-[32px]]="compact()">{{ telemetryService.speedKmh() }}</div>
             <div class="text-[11px] font-bold tracking-[0.3em] text-zinc-300 -mt-0.5">KM/H</div>
-            <div class="mt-2 flex items-baseline gap-1"><span class="text-3xl max-sm:text-xl font-black text-amber-300">{{ telemetryService.currentGear() }}</span><span class="text-[10px] text-zinc-400 font-bold">GEAR</span></div>
+            <div class="mt-2 flex items-baseline gap-1"><span class="text-3xl max-sm:text-xl font-black text-amber-300">{{ telemetryService.currentGear() < 0 ? 'R' : telemetryService.currentGear() }}</span><span class="text-[10px] text-zinc-400 font-bold">GEAR</span></div>
             <div class="text-[10px] text-emerald-300 font-semibold mt-1 max-w-[120px] truncate">{{ telemetryService.currentSurface() }}</div>
           </div>
         </div>

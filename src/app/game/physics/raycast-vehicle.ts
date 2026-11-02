@@ -15,6 +15,8 @@ export class RaycastVehicle {
 
   // Drivetrain state
   public currentGear = 1;
+  /** Reverse engaged: `throttle` then drives the car backwards (set by the input layer when brake is held at a standstill). */
+  public reverse = false;
   public currentRpm = 900;
   public engineLoad = 0;
   public isAutomatic = true;
@@ -375,6 +377,7 @@ export class RaycastVehicle {
       const wheelDriveForce = (engineTorque * gearRatio * 0.9 /* driveline efficiency */) / 0.33 * driveFraction;
       // Locking diff keeps power on the grippy wheel
       longForceN = Math.min(wheelDriveForce, tractionLimit * (0.92 + (this.tuning.diffAccelLockPct / 100) * 0.2));
+      if (this.reverse) longForceN = -longForceN * 0.8 * Math.max(0, 1 - Math.max(0, -vLong) / 9);   // reverse: gentler, tops out near 30 km/h
     }
 
     if (this.brake > 0) {
@@ -499,7 +502,7 @@ export class RaycastVehicle {
     return {
       speedKmh,
       rpm: this.currentRpm,
-      gear: this.currentGear,
+      gear: this.reverse ? -1 : this.currentGear,
       throttle: this.throttle,
       brake: this.brake,
       handbrake: this.handbrake,

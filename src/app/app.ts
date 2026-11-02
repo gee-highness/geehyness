@@ -417,6 +417,14 @@ export class App implements AfterViewInit, OnDestroy {
       handbrake = this.keyHandbrake;
     }
 
+    // Reverse: brake held at (almost) a standstill with no throttle -> drive backwards; any throttle or forward motion cancels it
+    {
+      const v = this.vehicle, fx = 2 * (v.quaternion.x * v.quaternion.z + v.quaternion.w * v.quaternion.y), fz = 1 - 2 * (v.quaternion.x * v.quaternion.x + v.quaternion.y * v.quaternion.y);
+      const fwd = v.velocity.x * fx + v.velocity.z * fz;
+      if (!v.reverse && brake > 0.1 && throttle < 0.05 && fwd < 0.8) v.reverse = true;
+      else if (v.reverse && (throttle > 0.1 || fwd > 1.5 || brake < 0.05)) v.reverse = false;
+      if (v.reverse) { throttle = brake; brake = 0; }
+    }
     this.vehicle.steerInput = steer;
     this.vehicle.throttle = throttle;
     this.vehicle.brake = brake;
