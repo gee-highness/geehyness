@@ -58,13 +58,11 @@ export class BridgeBuilder {
         // beam / retaining wall face
         const pc = Math.floor(cum / 3.5) % 2 ? conc.map((v) => v * 0.93) : conc; // panel joints like the real cast-concrete walls
         this.quad(b, [[sd.E0[0], b0, sd.E0[1]], [sd.E1[0], b1, sd.E1[1]], [sd.E1[0], sd.y1, sd.E1[1]], [sd.E0[0], sd.y0, sd.E0[1]]], [nx, 0, nz], pc, [[cum / 3, b0 / 3], [(cum + seg) / 3, b1 / 3], [(cum + seg) / 3, sd.y1 / 3], [cum / 3, sd.y0 / 3]]);
-        // parapet: solid base band + open slots + top rail + posts every ~4 m (as on the Manzini interchange)
-        const ix0 = sd.E0[0] - nx * 0.4, iz0 = sd.E0[1] - nz * 0.4, ix1 = sd.E1[0] - nx * 0.4, iz1 = sd.E1[1] - nz * 0.4, bh = 0.45, th = 0.2, ph = 1.1;
-        const face = (xa: number, za: number, xb: number, zb: number, ya: number, yb: number, h0: number, h1: number, sx: number, sz: number): void =>
-          this.quad(b, [[xa, ya + h0, za], [xb, yb + h0, zb], [xb, yb + h1, zb], [xa, ya + h1, za]], [sx, 0, sz], rail, [[cum / 3, 0], [(cum + seg) / 3, 0], [(cum + seg) / 3, 0.3], [cum / 3, 0.3]]);
-        for (const [h0, h1] of [[0, bh], [ph - th, ph]]) { face(ix0, iz0, ix1, iz1, sd.y0, sd.y1, h0, h1, -nx, -nz); face(sd.E0[0], sd.E0[1], sd.E1[0], sd.E1[1], sd.y0, sd.y1, h0, h1, nx, nz); }
-        for (const h of [bh, ph]) this.quad(b, [[ix0, sd.y0 + h, iz0], [ix1, sd.y1 + h, iz1], [sd.E1[0], sd.y1 + h, sd.E1[1]], [sd.E0[0], sd.y0 + h, sd.E0[1]]], [0, 1, 0], rail, [[ix0 / 3, iz0 / 3], [ix1 / 3, iz1 / 3], [sd.E1[0] / 3, sd.E1[1] / 3], [sd.E0[0] / 3, sd.E0[1] / 3]]);
-        if (Math.floor((cum + seg) / 4) > Math.floor(cum / 4)) { const f = 0.5, px = (ix0 + sd.E0[0]) / 2 * (1 - f) + (ix1 + sd.E1[0]) / 2 * f, pz = (iz0 + sd.E0[1]) / 2 * (1 - f) + (iz1 + sd.E1[1]) / 2 * f; this.box(b, px, Math.min(sd.y0, sd.y1) + bh, pz, 0.3, 0.4, ph - bh, tx, tz, rail); }
+        // parapet: plain solid concrete wall along the deck edge (no rails/posts: town overpasses here have none)
+        const ix0 = sd.E0[0] - nx * 0.4, iz0 = sd.E0[1] - nz * 0.4, ix1 = sd.E1[0] - nx * 0.4, iz1 = sd.E1[1] - nz * 0.4, ph = 0.95;
+        this.quad(b, [[ix0, sd.y0, iz0], [ix1, sd.y1, iz1], [ix1, sd.y1 + ph, iz1], [ix0, sd.y0 + ph, iz0]], [-nx, 0, -nz], conc, [[cum / 3, 0], [(cum + seg) / 3, 0], [(cum + seg) / 3, 0.3], [cum / 3, 0.3]]);
+        this.quad(b, [[ix0, sd.y0 + ph, iz0], [ix1, sd.y1 + ph, iz1], [sd.E1[0], sd.y1 + ph, sd.E1[1]], [sd.E0[0], sd.y0 + ph, sd.E0[1]]], [0, 1, 0], conc, [[ix0 / 3, iz0 / 3], [ix1 / 3, iz1 / 3], [sd.E1[0] / 3, sd.E1[1] / 3], [sd.E0[0] / 3, sd.E0[1] / 3]]);
+        this.quad(b, [[sd.E0[0], sd.y0, sd.E0[1]], [sd.E1[0], sd.y1, sd.E1[1]], [sd.E1[0], sd.y1 + ph, sd.E1[1]], [sd.E0[0], sd.y0 + ph, sd.E0[1]]], [nx, 0, nz], conc, [[cum / 3, 0], [(cum + seg) / 3, 0], [(cum + seg) / 3, 0.3], [cum / 3, 0.3]]);
         // solid for the car at deck level only
         const yy = Math.min(sd.y0, sd.y1);
         w.collision.addPolygon([ix0, iz0, ix1, iz1, sd.E1[0], sd.E1[1], sd.E0[0], sd.E0[1]], yy - 0.4, yy + 1.4);

@@ -355,7 +355,7 @@ export class WorldBuilder {
     this.visDirty = false; this.visX = px; this.visZ = pz; this.visT = now;
     for (const t of this.terrainTiles) {
       const dx = Math.max(Math.abs(t.cx - px) - 640, 0), dz = Math.max(Math.abs(t.cz - pz) - 640, 0), d = Math.hypot(dx, dz);
-      t.lod0.visible = d < 1500; t.lod1.visible = d >= 1500 && d < 5200;
+      t.lod0.visible = d < 950 * this.detailScale; t.lod1.visible = d >= 950 * this.detailScale && d < 4200;
     }
     const doShadow = this.shadowsOn && now - this.shadowT > 600; if (doShadow) this.shadowT = now;
     for (const c of this.chunks) {
@@ -581,7 +581,7 @@ export class WorldBuilder {
     const markTex = () => {
       const c = document.createElement('canvas'); c.width = 256; c.height = 256; const x = c.getContext('2d')!;
       x.clearRect(0, 0, 256, 256); x.fillStyle = 'rgba(244,196,36,0.93)';          // yellow edge lines (Eswatini / SADC practice, seen on Mapillary frames)
-      for (const o of [0, 128]) { x.fillRect(o + 6, 0, 5, 256); x.fillRect(o + 117, 0, 5, 256); }
+      for (const o of [0, 128]) { x.fillRect(o + 7, 0, 3, 256); x.fillRect(o + 118, 0, 3, 256); }
       x.fillStyle = 'rgba(240,240,235,0.92)'; x.fillRect(128 + 61, 20, 6, 110);   // white dashed centre line
       const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
     };
