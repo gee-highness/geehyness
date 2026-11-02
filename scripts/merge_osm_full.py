@@ -28,7 +28,13 @@ base = ld(f"{osm}/roads.json"); have = {e["id"] for e in base}
 add = [e for e in ld(f"{full}/roads_all.json") if e["type"] == "way" and "highway" in e.get("tags", {}) and e["id"] not in have and inside(e)]
 dump("roads", base + add)
 base = ld(f"{osm}/points.json"); have = {e["id"] for e in base}
-dump("points", base + [e for e in ld(f"{full}/pois_all.json") if e["id"] not in have and inside(e)])
+def as_node(e):  # ways/relations become a point at their centroid (build_world expects lat/lon)
+    if "lat" in e: return e
+    pts = [(g["lat"], g["lon"]) for g in e.get("geometry", [])] or [(g["lat"], g["lon"]) for m in e.get("members", []) for g in m.get("geometry", [])]
+    if not pts: return None
+    return {"type": "node", "id": e["id"], "lat": sum(q[0] for q in pts) / len(pts), "lon": sum(q[1] for q in pts) / len(pts), "tags": e.get("tags", {})}
+pois = [as_node(e) for e in ld(f"{full}/pois_all.json") if e["id"] not in have and inside(e)]
+dump("points", base + [e for e in pois if e])
 seen = set()
 for f in glob.glob(f"{osm}/bld_*.json") + (glob.glob(f"{osm2}/bld_*.json") if osm2 else []):
     seen.update(e["id"] for e in ld(f))
