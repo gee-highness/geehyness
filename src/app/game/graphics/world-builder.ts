@@ -20,7 +20,7 @@ interface WorldMeta {
   places: { n: string; k: string; p: [number, number] }[];
   pois: { n: string; k: string; p: [number, number] }[];
   signals: [number, number][];
-  busstops?: { p: [number, number]; n: string }[]; lamps?: [number, number][]; upoles?: [number, number, number][]; bills?: [number, number, number][]; signs?: [number, number, number][]; addr?: [number, number, string][]; views?: { p: [number, number]; n: string }[];
+  busstops?: { p: [number, number]; n: string }[]; lamps?: [number, number][]; upoles?: [number, number, number][]; msigns?: [number, number, string][]; xwalks?: [number, number][]; furn?: [number, number, string][]; bills?: [number, number, number][]; signs?: [number, number, number][]; addr?: [number, number, string][]; views?: { p: [number, number]; n: string }[];
   snaps: Record<string, [number, number]>;
 }
 interface Surf { way: RoadWay; h: number; elev: boolean; px: number; pz: number; d: number }
@@ -717,6 +717,7 @@ export class WorldBuilder {
     });
   }
 
+  public animalSpots: number[][] = []; public footSpots: number[][] = [];
   public overlapsRoad(pts: [number, number][], cx: number, cz: number): boolean {
     if (this.roadAt(cx, cz)) return true;
     for (let i = 0; i < pts.length; i++) {

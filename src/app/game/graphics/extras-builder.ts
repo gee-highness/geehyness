@@ -42,7 +42,7 @@ export class ExtrasBuilder {
   build(scene: THREE.Scene): void {
     this.railway();
     this.levelCrossings();
-    this.busShelters(); this.regSigns(); this.billboards();
+    this.busShelters(); this.regSigns(); this.billboards(); this.typedSigns(); this.zebras(); this.furniture();
     this.speedSigns(scene);
     this.roundabouts(); this.footbridges(); this.animals();
     this.viewpoints();
@@ -120,6 +120,81 @@ export class ExtrasBuilder {
       this.box(b, px, y + 1.85, pz, 0.05, 0.62, 0.62, tx, tz, kind === 1 ? [0.8, 0.1, 0.1] : c);
       if (kind === 1) this.box(b, px, y + 1.88, pz, 0.06, 0.4, 0.4, tx, tz, c);
       w.collision.addCircle(px, pz, 0.12);
+    }
+  }
+
+  // ------------------------------------------------------------------ typed signs from Mapillary (real sign classes drawn with matching faces)
+  private typedSigns(): void {
+    const w = this.w, list = w.meta.msigns ?? []; if (!list.length) return;
+    const KEYS = ['stop', 'yield', 'noentry', 'turn', 'noover', 'w_child', 'w_ped', 'w_bump', 'w_curve', 'w_junc', 'w_narrow', 'w_gen', 'dir', 'info', 'gen'];
+    const cv = document.createElement('canvas'); cv.width = 512; cv.height = 512; const g = cv.getContext('2d')!; const C = 128;
+    const tri = (x: number, y: number, fill: string, edge: string): void => { g.beginPath(); g.moveTo(x + 64, y + 8); g.lineTo(x + 120, y + 112); g.lineTo(x + 8, y + 112); g.closePath(); g.fillStyle = fill; g.fill(); g.lineWidth = 9; g.strokeStyle = edge; g.stroke(); };
+    const disc = (x: number, y: number, fill: string, edge: string): void => { g.beginPath(); g.arc(x + 64, y + 64, 58, 0, 7); g.fillStyle = fill; g.fill(); g.lineWidth = 10; g.strokeStyle = edge; g.stroke(); };
+    const txt = (t: string, x: number, y: number, col: string, fs: number): void => { g.fillStyle = col; g.font = `800 ${fs}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, x, y); };
+    KEYS.forEach((k, i) => {
+      const x = (i % 4) * C, y = Math.floor(i / 4) * C; g.save(); g.beginPath(); g.rect(x, y, C, C); g.clip();
+      if (k === 'stop') { g.beginPath(); for (let a = 0; a < 8; a++) { const t = (a + 0.5) * Math.PI / 4; g.lineTo(x + 64 + Math.cos(t) * 62, y + 64 + Math.sin(t) * 62); } g.closePath(); g.fillStyle = '#c4141c'; g.fill(); g.lineWidth = 6; g.strokeStyle = '#fff'; g.stroke(); txt('STOP', x + 64, y + 66, '#fff', 36); }
+      else if (k === 'yield') { g.beginPath(); g.moveTo(x + 8, y + 16); g.lineTo(x + 120, y + 16); g.lineTo(x + 64, y + 116); g.closePath(); g.fillStyle = '#fff'; g.fill(); g.lineWidth = 12; g.strokeStyle = '#c4141c'; g.stroke(); }
+      else if (k === 'noentry') { disc(x, y, '#c4141c', '#fff'); g.fillStyle = '#fff'; g.fillRect(x + 28, y + 54, 72, 20); }
+      else if (k === 'turn') { disc(x, y, '#1d56b8', '#fff'); g.strokeStyle = '#fff'; g.lineWidth = 12; g.beginPath(); g.moveTo(x + 88, y + 90); g.lineTo(x + 88, y + 50); g.lineTo(x + 44, y + 50); g.stroke(); g.beginPath(); g.moveTo(x + 36, y + 50); g.lineTo(x + 56, y + 34); g.lineTo(x + 56, y + 66); g.closePath(); g.fillStyle = '#fff'; g.fill(); }
+      else if (k === 'noover') { disc(x, y, '#fff', '#c4141c'); g.strokeStyle = '#c4141c'; g.lineWidth = 10; g.beginPath(); g.moveTo(x + 26, y + 102); g.lineTo(x + 102, y + 26); g.stroke(); }
+      else if (k.startsWith('w_')) {
+        tri(x, y, '#ffd23a', '#c4141c'); g.fillStyle = '#111'; g.strokeStyle = '#111'; g.lineWidth = 7;
+        if (k === 'w_child') { g.beginPath(); g.arc(x + 50, y + 62, 7, 0, 7); g.arc(x + 76, y + 66, 6, 0, 7); g.fill(); g.fillRect(x + 44, y + 70, 12, 22); g.fillRect(x + 71, y + 72, 10, 18); }
+        else if (k === 'w_ped') { g.beginPath(); g.arc(x + 64, y + 60, 7, 0, 7); g.fill(); g.fillRect(x + 58, y + 68, 12, 26); g.beginPath(); g.moveTo(x + 58, y + 94); g.lineTo(x + 50, y + 106); g.moveTo(x + 70, y + 94); g.lineTo(x + 78, y + 106); g.stroke(); }
+        else if (k === 'w_bump') { g.beginPath(); g.arc(x + 64, y + 96, 26, Math.PI, 0); g.stroke(); }
+        else if (k === 'w_curve') { g.beginPath(); g.moveTo(x + 50, y + 100); g.quadraticCurveTo(x + 50, y + 62, x + 82, y + 56); g.stroke(); }
+        else if (k === 'w_junc') { g.fillRect(x + 60, y + 52, 8, 52); g.fillRect(x + 60, y + 72, 30, 8); }
+        else if (k === 'w_narrow') { g.fillRect(x + 42, y + 56, 8, 48); g.fillRect(x + 78, y + 56, 8, 48); }
+        else txt('!', x + 64, y + 78, '#111', 54);
+      }
+      else if (k === 'dir') { g.fillStyle = '#0c7a43'; g.fillRect(x + 4, y + 20, 120, 88); g.strokeStyle = '#fff'; g.lineWidth = 5; g.strokeRect(x + 9, y + 25, 110, 78); g.fillStyle = '#fff'; g.fillRect(x + 22, y + 58, 62, 12); g.beginPath(); g.moveTo(x + 84, y + 44); g.lineTo(x + 108, y + 64); g.lineTo(x + 84, y + 84); g.closePath(); g.fill(); }
+      else if (k === 'info') { g.fillStyle = '#1d56b8'; g.fillRect(x + 12, y + 12, 104, 104); txt('i', x + 64, y + 68, '#fff', 80); }
+      else { g.fillStyle = '#e8e8e8'; g.fillRect(x + 12, y + 12, 104, 104); g.strokeStyle = '#333'; g.lineWidth = 6; g.strokeRect(x + 12, y + 12, 104, 104); }
+      g.restore();
+    });
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4; tex.magFilter = THREE.LinearFilter;
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.4, side: THREE.DoubleSide, toneMapped: false });
+    const geo = new GeoBuf();
+    for (const [x, z, key] of list) {
+      const rd = w.nearestRoadSegment(x, z, 6); if (!rd || rd.dist > 22 || rd.way.dz) continue; const ki = KEYS.indexOf(key); if (ki < 0) continue;
+      const dx = x - rd.px, dz = z - rd.pz; let l = Math.hypot(dx, dz), nx: number, nz: number; if (l < 0.5) { nx = -rd.tz; nz = rd.tx; l = 1; } else { nx = dx / l; nz = dz / l; }
+      const off = Math.max(rd.way.w / 2 + 0.9, l); const px = rd.px + nx * off, pz = rd.pz + nz * off; if (w.roadAt(px, pz)) continue;
+      const y = w.groundHeightAt(px, pz), tx = rd.tx, tz = rd.tz, big = key === 'dir', hs = big ? 0.9 : 0.4, hh = big ? 0.5 : 0.4, py = y + (big ? 2.7 : 1.9);
+      this.box(this.buf(px, pz, 'props'), px, y, pz, 0.08, 0.08, py - y, tx, tz, [0.55, 0.57, 0.6]); w.collision.addCircle(px, pz, 0.1);
+      const u0 = (ki % 4) / 4, u1 = (ki % 4 + 1) / 4, v0 = 1 - (Math.floor(ki / 4) + 1) / 4, v1 = 1 - Math.floor(ki / 4) / 4;
+      for (const f of [1, -1]) {                                                                    // a face for each direction of travel
+        const fx = -tx * f, fz = -tz * f, sx = -fz, sz = fx, o = 0.06 * f;
+        const a = geo.vert(px - sx * hs + tx * o, py - hh, pz - sz * hs + tz * o, fx, 0, fz, u0, v0, [1, 1, 1]), b = geo.vert(px + sx * hs + tx * o, py - hh, pz + sz * hs + tz * o, fx, 0, fz, u1, v0, [1, 1, 1]);
+        const c = geo.vert(px + sx * hs + tx * o, py + hh, pz + sz * hs + tz * o, fx, 0, fz, u1, v1, [1, 1, 1]), d = geo.vert(px - sx * hs + tx * o, py + hh, pz - sz * hs + tz * o, fx, 0, fz, u0, v1, [1, 1, 1]);
+        geo.tri(a, b, c); geo.tri(a, c, d);
+      }
+    }
+    if (!geo.empty) { const m = new THREE.Mesh(geo.toGeometry(false, false), mat); m.name = 'typedsigns'; m.frustumCulled = false; w.landmarksGroup.add(m); w.registerChunk(m, 0, 0, 1e7, 1e9); }
+  }
+
+  // ------------------------------------------------------------------ real zebra crossings (Mapillary markings)
+  private zebras(): void {
+    const w = this.w;
+    for (const [x, z] of w.meta.xwalks ?? []) {
+      const rd = w.nearestRoadSegment(x, z, 6); if (!rd || rd.dist > 14 || rd.way.dz) continue;
+      const tx = rd.tx, tz = rd.tz, nx = -tz, nz = tx, cx = rd.px, cz = rd.pz, n = Math.max(3, Math.floor(rd.way.w)), b = this.buf(cx, cz, 'props');
+      for (let k = 0; k < n; k++) { const lat = (k - (n - 1) / 2) * 1.0, px = cx + nx * lat, pz = cz + nz * lat; this.box(b, px, w.groundHeightAt(px, pz) + 0.035, pz, 3.0, 0.5, 0.01, tx, tz, [0.96, 0.96, 0.94]); }
+    }
+  }
+
+  // ------------------------------------------------------------------ street furniture seen by Mapillary (manholes, junction boxes, bins, cones, temporary barriers)
+  private furniture(): void {
+    const w = this.w;
+    for (const [x, z, kind] of w.meta.furn ?? []) {
+      const rd = w.nearestRoadSegment(x, z, 7); const tx = rd?.tx ?? 1, tz = rd?.tz ?? 0, b = this.buf(x, z, 'props'), y = w.groundHeightAt(x, z), onRoad = !!w.roadAt(x, z);
+      if (kind === 'manhole') { if (onRoad) this.box(b, x, y + 0.03, z, 0.8, 0.8, 0.012, tx, tz, [0.17, 0.17, 0.19]); }
+      else if (onRoad && kind !== 'barrier' && kind !== 'cone') continue;
+      else if (kind === 'box') { this.box(b, x, y, z, 0.5, 1.0, 1.1, tx, tz, [0.5, 0.52, 0.55]); w.collision.addCircle(x, z, 0.5); }
+      else if (kind === 'can') { this.box(b, x, y, z, 0.5, 0.5, 0.9, tx, tz, [0.16, 0.3, 0.2]); w.collision.addCircle(x, z, 0.3); }
+      else if (kind === 'cone') { this.box(b, x, y, z, 0.32, 0.32, 0.6, tx, tz, [0.95, 0.4, 0.08]); this.box(b, x, y + 0.3, z, 0.34, 0.34, 0.08, tx, tz, [0.95, 0.95, 0.95]); }
+      else if (kind === 'barrier') { this.box(b, x, y, z, 1.8, 0.35, 0.5, tx, tz, [0.96, 0.96, 0.96]); this.box(b, x, y + 0.5, z, 1.8, 0.36, 0.4, tx, tz, [0.95, 0.42, 0.08]); w.collision.addCircle(x, z, 0.7); }
+      else if (kind === 'banner') { this.box(b, x, y, z, 0.08, 0.08, 4.5, tx, tz, [0.5, 0.52, 0.55]); this.box(b, x, y + 2.6, z, 0.06, 0.9, 1.6, tx, tz, [0.85, 0.25, 0.2]); }
     }
   }
 
@@ -223,13 +298,14 @@ export class ExtrasBuilder {
 
   // ------------------------------------------------------------------ pedestrian footbridges (steel, over arterial roads at out-of-town bus stops, as on the MR3)
   private footbridges(): void {
+    const cx0 = (v: number): number => v;
     const w = this.w, sn = (w.meta.snaps ?? {}) as Record<string, [number, number]>; const placed: number[][] = []; const steel: V3 = [0.62, 0.64, 0.68], rail: V3 = [0.5, 0.52, 0.56];
     for (const bs of w.meta.busstops ?? []) {
       if (placed.length >= 6) break; const [x, z] = bs.p;
       if (['manzini', 'mbabane'].some((k) => sn[k] && Math.hypot(sn[k][0] - x, sn[k][1] - z) < 700)) continue;
       if (placed.some((q) => Math.hypot(q[0] - x, q[1] - z) < 900)) continue;
       const rd = w.nearestRoadSegment(x, z, 3); if (!rd || rd.dist > 25 || rd.way.dz || rd.way.w < 6) continue;
-      placed.push([x, z]); const nx = -rd.tz, nz = rd.tx, half = rd.way.w / 2 + 3.2, cx = rd.px, cz = rd.pz, y = w.groundHeightAt(cx, cz), b = this.buf(cx, cz, 'props'), top = 5.6;
+      placed.push([x, z]); w.footSpots.push([Math.round(cx0(x)), Math.round(z)]); const nx = -rd.tz, nz = rd.tx, half = rd.way.w / 2 + 3.2, cx = rd.px, cz = rd.pz, y = w.groundHeightAt(cx, cz), b = this.buf(cx, cz, 'props'), top = 5.6;
       this.box(b, cx, y + top, cz, half * 2, 2.0, 0.3, nx, nz, steel);                                              // deck
       for (const o of [-0.95, 0.95]) this.box(b, cx + rd.tx * o, y + top + 0.3, cz + rd.tz * o, half * 2, 0.08, 1.3, nx, nz, rail); // side screens
       this.box(b, cx, y + top + 1.6, cz, half * 2, 2.1, 0.1, nx, nz, [0.55, 0.57, 0.6]);                          // roof
@@ -259,7 +335,7 @@ export class ExtrasBuilder {
           this.box(b, x, y + 0.62 * sc, z, 1.9 * sc, 0.7 * sc, 0.7 * sc, fx, fz, c);                                  // body
           this.box(b, x + fx * 1.15 * sc, y + 0.85 * sc, z + fz * 1.15 * sc, 0.45 * sc, 0.34 * sc, 0.4 * sc, fx, fz, c); // head
           for (const [lu, lv] of [[0.7, 0.22], [0.7, -0.22], [-0.7, 0.22], [-0.7, -0.22]]) this.box(b, x + fx * lu * sc - fz * lv * sc, y, z + fz * lu * sc + fx * lv * sc, 0.13 * sc, 0.13 * sc, 0.65 * sc, fx, fz, c);
-          w.collision.addCircle(x, z, 0.55 * sc + 0.15); made++;
+          w.collision.addCircle(x, z, 0.55 * sc + 0.15); made++; w.animalSpots.push([Math.round(x), Math.round(z)]);
         }
       }
     }
