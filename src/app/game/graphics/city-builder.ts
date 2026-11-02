@@ -73,7 +73,7 @@ export class CityBuilder {
 
   constructor(private w: WorldBuilder) {}
 
-  private static size(mat: string): number { return mat === 'props' || mat === 'sign' ? 400 : CH; }
+  private static size(mat: string): number { return mat === 'props' || mat === 'sign' ? 200 : 400; } // small cells = tight distance culling
   private buf(cx: number, cz: number, mat: string): GeoBuf {
     const sz = CityBuilder.size(mat);
     const k = `${sz}:${Math.floor(cx / sz)},${Math.floor(cz / sz)}`;
@@ -259,10 +259,10 @@ export class CityBuilder {
   }
 
   /** Build the area around the start synchronously so it is ready before the intro ends (after barriers/features exist). */
-  prime(): void { const sp = this.w.meta.spawn; this.stream(sp.x, sp.z, 1300, 1e9); }
+  prime(): void { const sp = this.w.meta.spawn; this.stream(sp.x, sp.z, 900, 1e9); }
 
   /** Called every frame: builds nearby chunks within a small time budget (keeps the frame rate smooth). */
-  update(px: number, pz: number): void { this.stream(px, pz, 1500, 1.6); }
+  update(px: number, pz: number): void { this.stream(px, pz, 900, 1.6); }
 
   private stream(px: number, pz: number, radius: number, budgetMs: number): void {
     const t0 = performance.now();
@@ -296,10 +296,10 @@ export class CityBuilder {
   /** Turn queued buffers into meshes, one at a time, inside the frame budget. */
   private drainEmit(t0: number, budgetMs: number): boolean {
     while (this.emitQ.length) {
-      const q = this.emitQ.shift()!; const isProp = q.mk === 'props' || q.mk === 'sign';
-      const mesh = new THREE.Mesh(q.buf.toGeometry(q.mk !== 'sign', !isProp), this.mats[q.mk]);
+      const q = this.emitQ.shift()!; const card = q.mk === 'card', isProp = q.mk === 'props' || q.mk === 'sign' || card;
+      const mesh = new THREE.Mesh(q.buf.toGeometry(q.mk !== 'sign', !isProp), card ? this.mats['props'] : this.mats[q.mk]);
       mesh.name = 'bld:' + q.mk; mesh.castShadow = false; mesh.receiveShadow = true;
-      this.w.registerChunk(mesh, q.cx, q.cz, q.sz * 0.75, isProp ? 420 : 1150); this.w.landmarksGroup.add(mesh);
+      this.w.registerChunk(mesh, q.cx, q.cz, q.sz * 0.75, card ? 820 : isProp ? 190 : 400); if (card) mesh.userData['near'] = 380; this.w.landmarksGroup.add(mesh);
       if (performance.now() - t0 > budgetMs) return false;
     }
     return true;
@@ -379,6 +379,17 @@ export class CityBuilder {
     if (roof === 'flat') this.flatRoof(cb, pts, top - 0.45, st.rtint, use !== 0 && use !== 8);
     else if (roof === 'hip') this.hipRoof(rb, pts, cx, cz, top, st.rtint, area);
     else this.gableRoof(rb, wallBuf, ocx, ocz, ux, uz, vx, vz, halfU, halfV, top, st.rtint, st.pitch, st.tint, winCode, roof === 'lowgable');
+
+    // far-LOD "flat plane" card: two crossed quads through the oriented box, drawn only beyond ~380 m instead of the full building
+    if (use !== 17 && (area >= 40 || top - maxH > 9)) {
+      const kb = this.buf(cx, cz, 'card'), y0 = Math.min(...hs) - 0.5, wc = st.tint.map((v) => v * 0.82), rc = st.rtint.map((v) => v * 0.9);
+      for (const [ax, az, hl] of [[ux, uz, halfU], [vx, vz, halfV]] as number[][]) {
+        const nx2 = -az, nz2 = ax;
+        const a0 = kb.vert(ocx - ax * hl, y0, ocz - az * hl, nx2, 0, nz2, 0, 0, wc), a1 = kb.vert(ocx + ax * hl, y0, ocz + az * hl, nx2, 0, nz2, 1, 0, wc);
+        const a2 = kb.vert(ocx + ax * hl, top, ocz + az * hl, nx2, 0, nz2, 1, 1, rc), a3 = kb.vert(ocx - ax * hl, top, ocz - az * hl, nx2, 0, nz2, 0, 1, rc);
+        kb.tri(a0, a1, a2); kb.tri(a0, a2, a3);
+      }
+    }
 
     // collision footprint + tree rejection
     if (use !== 17 && !w.overlapsRoad(pts, cx, cz)) w.collision.addPolygon(pts.flatMap((p) => [p[0], p[1]]), Math.min(...hs) - 1, top, roof === 'flat' && area > 30);

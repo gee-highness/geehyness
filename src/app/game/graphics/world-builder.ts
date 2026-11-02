@@ -361,7 +361,7 @@ export class WorldBuilder {
     for (const c of this.chunks) {
       const dx = Math.max(Math.abs(c.cx - px) - c.half, 0), dz = Math.max(Math.abs(c.cz - pz) - c.half, 0); // exact distance to the chunk's box
       const d = Math.hypot(dx, dz);
-      c.obj.visible = d < (c.obj.userData['far'] ?? 3000) * this.detailScale;
+      const ud = c.obj.userData; c.obj.visible = d < (ud['far'] ?? 3000) * this.detailScale && d >= (ud['near'] ?? 0) * this.detailScale;
       if (doShadow && c.obj.visible) c.obj.castShadow = d < 230; // only nearby geometry casts into the shadow map
     }
   }
@@ -696,7 +696,7 @@ export class WorldBuilder {
         else col.setRGB(0.22 + r * 0.12, 0.42 + r * 0.14, 0.18 + r * 0.06);
         im.setColorAt(i, col);
       });
-      im.userData['far'] = 460; im.computeBoundingSphere();
+      im.userData['far'] = 380; im.computeBoundingSphere();
       const [cxI, czI] = key.split(',').map(Number);
       im.visible = false; this.visDirty = true; this.chunks.push({ obj: im, cx: (cxI + 0.5) * TCH, cz: (czI + 0.5) * TCH, r: TCH * 0.75, half: TCH / 2 });
       this.foliageGroup.add(im);
@@ -790,9 +790,9 @@ export class WorldBuilder {
       // stylised light pool on the ground under each lamp (additive, strength follows the night factor)
       { this.glowMat ??= this.makeGlowMat(); const glow = new THREE.InstancedMesh(WorldBuilder.glowGeo(), this.glowMat, list.length); glow.name = 'lamp-glow'; glow.renderOrder = 3;
         list.forEach((l2, i) => { const gx = l2.x + Math.cos(l2.rot) * 2.3, gz = l2.z - Math.sin(l2.rot) * 2.3; m4.compose(new THREE.Vector3(gx, this.groundHeightAt(gx, gz) + 0.07, gz), new THREE.Quaternion(), new THREE.Vector3(1, 1, 1)); glow.setMatrixAt(i, m4); });
-        glow.computeBoundingSphere?.(); const [gx2, gz2] = key.split(',').map(Number); this.registerChunk(glow, (gx2 + 0.5) * CHUNK, (gz2 + 0.5) * CHUNK, CHUNK * 0.75, 420); this.roadInfrastructureGroup.add(glow); }
+        glow.computeBoundingSphere?.(); const [gx2, gz2] = key.split(',').map(Number); this.registerChunk(glow, (gx2 + 0.5) * CHUNK, (gz2 + 0.5) * CHUNK, CHUNK * 0.75, 320); this.roadInfrastructureGroup.add(glow); }
       poles.computeBoundingSphere(); heads.computeBoundingSphere(); const [ix, iz] = key.split(',').map(Number);
-      for (const o of [poles, heads]) { this.registerChunk(o, (ix + 0.5) * CHUNK, (iz + 0.5) * CHUNK, CHUNK * 0.75, 700); this.roadInfrastructureGroup.add(o); }
+      for (const o of [poles, heads]) { this.registerChunk(o, (ix + 0.5) * CHUNK, (iz + 0.5) * CHUNK, CHUNK * 0.75, 460); this.roadInfrastructureGroup.add(o); }
     });
   }
 

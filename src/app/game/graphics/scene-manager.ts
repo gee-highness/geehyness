@@ -263,7 +263,7 @@ export class SceneManager {
     this.baseDaylight = daylight; this.scene.environmentIntensity = 0.04 + 0.96 * dark;
     if (this.worldBuilder.city) { this.worldBuilder.city.night.value = THREE.MathUtils.clamp(1 - (daylight - 0.06) / 0.3, 0, 1); this.worldBuilder.city.neo.value += ((this.neo ? 1 : 0) - this.worldBuilder.city.neo.value) * 0.5; }
     this.worldBuilder.setNightGlow?.(this.worldBuilder.city ? this.worldBuilder.city.night.value : 0);
-    if (this.scene.fog) { const f = this.scene.fog as THREE.FogExp2; f.color.copy(pal.horizon).multiplyScalar(0.55 + 0.45 * daylight); f.density = env.fogDensity * 0.4 * (this.neo ? 1.4 : 1); }
+    if (this.scene.fog) { const f = this.scene.fog as THREE.FogExp2; f.color.copy(pal.horizon).multiplyScalar(0.55 + 0.45 * daylight); f.density = Math.max(env.fogDensity * 0.4 * (this.neo ? 1.4 : 1), 0.0014); } // floor: hides the cut-off distance (~65% haze at 700 m)
     this.refreshEnvironmentMap();
 
     // Wet road puddles and mirror reflections

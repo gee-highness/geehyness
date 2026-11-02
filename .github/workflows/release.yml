@@ -9,8 +9,17 @@ on:
         required: true
 permissions:
   contents: write
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
 jobs:
+  create:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env: { GH_TOKEN: '${{ github.token }}' }
+        run: gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Shesha $TAG" --generate-notes --target "$GITHUB_SHA"
   linux:
+    needs: create
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,10 +28,22 @@ jobs:
       - run: npm ci --legacy-peer-deps
       - run: npm run build
       - run: npx electron-builder --linux --publish never
-      - name: Publish release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      - env: { GH_TOKEN: '${{ github.token }}' }
+        run: gh release upload "$TAG" release/*.AppImage release/*.pacman release/*.tar.gz --clobber
+  android:
+    needs: create
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - run: npm ci --legacy-peer-deps
+      - run: npm run build
+      - run: npx cap sync android
+      - run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - env: { GH_TOKEN: '${{ github.token }}' }
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Shesha $TAG" --generate-notes --target "$GITHUB_SHA"
-          gh release upload "$TAG" release/*.AppImage release/*.pacman release/*.tar.gz --clobber
+          cp android/app/build/outputs/apk/debug/app-debug.apk shesha-android.apk
+          gh release upload "$TAG" shesha-android.apk --clobber
