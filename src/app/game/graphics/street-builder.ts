@@ -78,6 +78,12 @@ export class StreetBuilder {
     return pts;
   }
 
+  /** Pavements only where photos show them: town centres and dense blocks (not suburbs, rural edges or the open MR3). */
+  private paved(x: number, z: number): boolean {
+    const nb = this.w.buildingsNear(x, z); if (nb < 5) return false; if (nb >= 26) return true;
+    let d = 1e9; for (const k of Object.keys(this.w.meta.snaps ?? {})) { const s = (this.w.meta.snaps as Record<string, [number, number]>)[k]; d = Math.min(d, Math.hypot(s[0] - x, s[1] - z)); }
+    return d < 1000;
+  }
   private urban(x: number, z: number): boolean { return this.w.buildingsNear(x, z) >= 4; }
 
   // ------------------------------------------------------------------ pavements
@@ -96,7 +102,7 @@ export class StreetBuilder {
       let any = false;
       for (let i = 0; i + 1 < pts.length; i++) {
         const mx = (pts[i][0] + pts[i + 1][0]) / 2, mz = (pts[i][1] + pts[i + 1][1]) / 2;
-        if (!this.urban(mx, mz)) continue;
+        if (!this.paved(mx, mz)) continue;
         const useBrick = Math.hypot(mx + 750, mz + 210) < 1100;
         const y0 = lift(way.c);
         for (const side of [0, 1]) {

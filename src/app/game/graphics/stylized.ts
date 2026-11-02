@@ -87,12 +87,12 @@ SM styleMat(vec2 sp, vec3 wp, vec3 n){
   m.h = rib*0.5 - seam*0.8; m.rough = -0.18 + 0.3*rust; 
 #elif SK == 4
   // concrete paving slabs: joints with moss, per-slab shade, cracks, stains, gum spots, worn lanes
-  vec3 pn = spanel(sp, vec2(1.15, 0.78), 0.55, 0.45);
+  vec3 pn = spanel(sp, vec2(1.35, 0.85), 0.55, 0.5);
   float crk = nearF > 0.001 ? smoothstep(0.975, 1.0, sridge(sp*1.7 + 4.)) * aaF : 0.;
   float stn = nearF > 0.001 ? smoothstep(0.6, 0.82, sfbm(sp*0.5 + 31.)) * 0.28 : 0.;
   float gum = step(0.992, sh1(floor(sp*7.))) * aaF * 0.25;
   m.col = mix(vec3(0.82,0.86,0.95), vec3(1.1,1.06,1.0), pn.y) * (1. - 0.4*pn.x) * (0.92 + 0.14*fine) * (1. - stn - crk*0.35 - gum);
-  m.col = mix(m.col, vec3(0.2,0.25,0.15), pn.x * 0.35 * smoothstep(0.35, 0.7, mid));  // moss in joints
+  m.col = mix(m.col, vec3(0.16,0.17,0.17), pn.x * 0.55);  // dark joints between flagstones
   m.h = -pn.x*0.8 + fine*0.2 - crk*0.7; m.rough = 0.1*pn.x + 0.1*stn;
 #elif SK == 5
   // gravel: layered speckle, no tiling

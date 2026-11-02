@@ -422,7 +422,12 @@ export class CityBuilder {
     const wall = (a: [number, number], b: [number, number]) => {
       const dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz); if (len < 0.5) return;
       const mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
-      slab(pb, (px, pz) => w.calculateRawTerrainHeight(px, pz), a[0], a[1], b[0], b[1], 0.22, 1.75, tint, cap);
+      if (r > 0.55) { // brick plinth + iron railings (seen on school / residential frontages)
+        slab(pb, (px, pz) => w.calculateRawTerrainHeight(px, pz), a[0], a[1], b[0], b[1], 0.3, 0.6, [0.55, 0.3, 0.24], [0.45, 0.25, 0.2]);
+        const n = Math.max(1, Math.round(len / 2.2)), ang = Math.atan2(dz, dx);
+        for (let k = 0; k <= n; k++) { const px = a[0] + dx * k / n, pz = a[1] + dz * k / n; this.box(pb, px, w.calculateRawTerrainHeight(px, pz) + 0.55, pz, 0.07, 1.0, 0.07, ang, [0.09, 0.1, 0.11]); }
+        this.box(pb, (a[0] + b[0]) / 2, w.calculateRawTerrainHeight((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) + 1.45, (a[1] + b[1]) / 2, len, 0.06, 0.06, ang, [0.09, 0.1, 0.11]);
+      } else slab(pb, (px, pz) => w.calculateRawTerrainHeight(px, pz), a[0], a[1], b[0], b[1], 0.22, 1.75, tint, cap);
       const nx = -dz / len * 0.1, nz = dx / len * 0.1, tx = dx / len * len / 2, tz = dz / len * len / 2;
       w.collision.addPolygon([mx - tx + nx, mz - tz + nz, mx + tx + nx, mz + tz + nz, mx + tx - nx, mz + tz - nz, mx - tx - nx, mz - tz - nz]);
     };
@@ -500,10 +505,12 @@ export class CityBuilder {
 
   private awning(b: GeoBuf, pts: [number, number][], i: number, hs: number[], r: number): void {
     const n = pts.length, a = pts[i], c = pts[(i + 1) % n]; const dx = c[0] - a[0], dz = c[1] - a[1], len = Math.hypot(dx, dz);
-    const nx = dz / len, nz = -dx / len, tx = dx / len, tz = dz / len; const wdt = Math.min(len * 0.9, 12), s0 = (len - wdt) / 2;
-    const col = pick(AWNING, r * 5.3), y = (hs[i] + hs[(i + 1) % n]) / 2;
+    const nx = dz / len, nz = -dx / len, tx = dx / len, tz = dz / len;
+    const vera = this.inCbd(a[0], a[1]) && len >= 6;                       // town-centre shop rows: continuous verandah over the pavement, posts at the kerb
+    const wdt = vera ? Math.min(len * 0.98, 30) : Math.min(len * 0.9, 12), s0 = (len - wdt) / 2;
+    const col = vera ? [0.45, 0.47, 0.5] : pick(AWNING, r * 5.3), y = (hs[i] + hs[(i + 1) % n]) / 2;
     const p0: [number, number] = [a[0] + tx * s0, a[1] + tz * s0], p1: [number, number] = [p0[0] + tx * wdt, p0[1] + tz * wdt];
-    const out = 1.7, yh = y + 3.0, yl = y + 2.55;
+    const out = vera ? 3.0 : 1.7, yh = y + 3.0, yl = y + 2.55;
     const sn = [nx * 0.45, 0.89, nz * 0.45], sl = Math.hypot(sn[0], sn[1], sn[2]);
     const v = [b.vert(p0[0], yh, p0[1], sn[0] / sl, sn[1] / sl, sn[2] / sl, 0, 0, col), b.vert(p1[0], yh, p1[1], sn[0] / sl, sn[1] / sl, sn[2] / sl, 0, 0, col),
       b.vert(p1[0] + nx * out, yl, p1[1] + nz * out, sn[0] / sl, sn[1] / sl, sn[2] / sl, 0, 0, col), b.vert(p0[0] + nx * out, yl, p0[1] + nz * out, sn[0] / sl, sn[1] / sl, sn[2] / sl, 0, 0, col)];
@@ -511,6 +518,13 @@ export class CityBuilder {
     const v2 = [b.vert(p0[0], yh, p0[1], -sn[0] / sl, -sn[1] / sl, -sn[2] / sl, 0, 0, [col[0] * 0.55, col[1] * 0.55, col[2] * 0.55]), b.vert(p1[0], yh, p1[1], -sn[0] / sl, -sn[1] / sl, -sn[2] / sl, 0, 0, [col[0] * 0.55, col[1] * 0.55, col[2] * 0.55]),
       b.vert(p1[0] + nx * out, yl, p1[1] + nz * out, -sn[0] / sl, -sn[1] / sl, -sn[2] / sl, 0, 0, [col[0] * 0.55, col[1] * 0.55, col[2] * 0.55]), b.vert(p0[0] + nx * out, yl, p0[1] + nz * out, -sn[0] / sl, -sn[1] / sl, -sn[2] / sl, 0, 0, [col[0] * 0.55, col[1] * 0.55, col[2] * 0.55])];
     b.tri(v2[0], v2[1], v2[2]); b.tri(v2[0], v2[2], v2[3]);
+    if (vera) { const np = Math.max(2, Math.round(wdt / 4.5)); for (let k = 0; k < np; k++) { const t = np === 1 ? 0.5 : k / (np - 1); const px = p0[0] + tx * wdt * t + nx * (out - 0.2), pz = p0[1] + tz * wdt * t + nz * (out - 0.2);
+      this.box(b, px, y, pz, 0.14, yl - y, 0.14, Math.atan2(tz, tx), [0.4, 0.42, 0.45]); this.w.collision.addCircle(px, pz, 0.12); } }
+  }
+  /** Town-centre test (Manzini / Mbabane cores) used for CBD-only building features. */
+  private inCbd(x: number, z: number): boolean {
+    const sn = this.w.meta.snaps as Record<string, [number, number]> | undefined; if (!sn) return false;
+    return ['manzini', 'mbabane'].some((k) => sn[k] && Math.hypot(sn[k][0] - x, sn[k][1] - z) < 650);
   }
 
   private signPlate(pts: [number, number][], i: number, hs: number[], top: number, sid: number, kind: string, cx: number, cz: number): void {
