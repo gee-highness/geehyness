@@ -103,12 +103,12 @@ export class SceneManager {
     const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints ?? 0) > 1;
     this.isMobile = mobile;
     this.renderer = new THREE.WebGLRenderer({
-      antialias: !this.isSoftwareGl, // MSAA is too costly on phones; resolution scaling + FXAA-free crispness instead
+      antialias: !this.isSoftwareGl && !mobile, // MSAA off on phones (tile-GPU cost); resolution scaling carries the quality instead
       powerPreference: 'high-performance',
       preserveDrawingBuffer: false, // photo mode renders then reads in the same task
     });
     this.maxPixelRatio = this.isSoftwareGl ? 1 : mobile ? Math.min(window.devicePixelRatio, 1.5) : Math.min(window.devicePixelRatio, 2);
-    this.pixelRatio = mobile ? Math.min(this.maxPixelRatio, 1.25) : this.maxPixelRatio;
+    this.pixelRatio = mobile ? Math.min(this.maxPixelRatio, 1.0) : this.maxPixelRatio;
     this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -428,7 +428,7 @@ export class SceneManager {
     if (this.govTimer < 700) return;
     this.govTimer = 0;
     let pr = this.pixelRatio, ad = this.autoDetail;
-    const floorPr = this.isMobile ? 1.0 : 0.85;                                   // 100% render scale is the floor: never visibly pixelated
+    const floorPr = this.isMobile ? 0.75 : 0.85;                                  // phones may drop to 0.75 render scale before missing 60 fps (GTA3-style softness beats stutter)
     if (this.frameMs > 18.4) {                                                    // over budget: first draw less (distance / chunk detail), only then lower resolution toward its floor
       if (ad > 0.45) ad = Math.max(0.45, ad - (this.frameMs > 26 ? 0.15 : 0.07));
       else pr = Math.max(floorPr, pr - (this.frameMs > 26 ? 0.1 : 0.04));
@@ -442,6 +442,9 @@ export class SceneManager {
       this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     }
   }
+
+  /** Compile every shader program once, up front, so first sight of a material never hitches mid-drive. */
+  public warm(): void { try { this.renderer.compile(this.scene, this.cameraRig.camera); } catch { /* best effort */ } }
 
   /** Apply a graphics tier. AUTO keeps the device defaults; the dynamic-resolution governor still runs inside each tier's cap. */
   public setQuality(q: QualityTier): void {

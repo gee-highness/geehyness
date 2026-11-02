@@ -220,7 +220,7 @@ export class App implements AfterViewInit, OnDestroy {
       }
 
       // Start animation loop
-      this.lastTime = performance.now();
+      this.lastTime = performance.now(); if (location.search.includes('bench')) this.benchStart();
       this.loop(this.lastTime);
     });
   }
@@ -228,7 +228,30 @@ export class App implements AfterViewInit, OnDestroy {
   private perf: Record<string, number> = {};
   private mark(k: string, t0: number): number { const t = performance.now(); this.perf[k] = (this.perf[k] ?? 0) * 0.9 + (t - t0) * 0.1; return t; }
 
+  private warmed = false; private benchRec: { dt: number[]; t0: number; el: HTMLElement | null } | null = null;
+  /** Benchmark: B (or ?bench) records frame times for 60 s, then shows + downloads a JSON report (p50/p95/p99, long frames, draw stats). */
+  private benchStart(): void {
+    if (this.benchRec) return; const el = document.createElement('pre');
+    el.style.cssText = 'position:fixed;left:8px;top:8px;z-index:99999;margin:0;padding:8px 10px;font:12px/1.35 monospace;color:#9ff;background:rgba(0,0,0,.72);border-radius:8px;pointer-events:none;max-width:70vw;white-space:pre-wrap';
+    document.body.appendChild(el); this.benchRec = { dt: [], t0: performance.now(), el };
+  }
+  private benchTick(dtMs: number): void {
+    const b = this.benchRec; if (!b) return; b.dt.push(dtMs); const secs = (performance.now() - b.t0) / 1000;
+    if (b.el && b.dt.length % 15 === 0) b.el.textContent = `BENCH ${secs.toFixed(0)}/60 s  ${(1000 / (b.dt.slice(-30).reduce((a, c) => a + c, 0) / Math.min(30, b.dt.length))).toFixed(0)} fps`;
+    if (secs < 60) return;
+    const d = b.dt.slice(30).sort((x, y) => x - y), q = (f: number): number => Math.round(d[Math.min(d.length - 1, Math.floor(d.length * f))] * 10) / 10;
+    const sh = (window as unknown as { __shesha?: { info?: () => Record<string, number> } }).__shesha;
+    const rep = { when: new Date().toISOString(), ua: navigator.userAgent, dpr: window.devicePixelRatio, screen: `${screen.width}x${screen.height}`, frames: d.length, p50: q(0.5), p95: q(0.95), p99: q(0.99), max: q(1),
+      over20ms: d.filter((v) => v > 20).length, over33ms: d.filter((v) => v > 33).length, avgFps: Math.round(1000 / (d.reduce((a, c) => a + c, 0) / d.length)), render: sh?.info?.(), cpuMs: this.perf, quality: this.sceneManager.qualityTier, pixelRatio: this.sceneManager.resolution };
+    const txt = JSON.stringify(rep, null, 1); if (b.el) { b.el.style.pointerEvents = 'auto'; b.el.textContent = 'BENCH DONE (saved as shesha-bench.json)\n' + txt; }
+    console.info('[bench]', txt); this.benchRec = null;
+    try { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([txt], { type: 'application/json' })); a.download = 'shesha-bench.json'; a.click(); } catch { /* shown on screen anyway */ }
+  }
+
   private loop = (now: number): void => {
+    if (this.lastTime > 0 && now - this.lastTime < 14) { this.animFrameId = requestAnimationFrame(this.loop); return; } // hold 60 fps on 90/120 Hz panels: even pacing, less heat
+    if (!this.warmed && this.sceneManager.worldBuilder.ready) { this.warmed = true; this.sceneManager.warm(); }
+    if (this.lastTime > 0) this.benchTick(now - this.lastTime);
     let tp = performance.now();
     const frameDelta = Math.min((now - this.lastTime) / 1000, 0.066);   // never feed physics more than ~4 steps: a slow frame must not snowball
     this.lastTime = now;
@@ -513,6 +536,7 @@ export class App implements AfterViewInit, OnDestroy {
     this.audioService.unlockAudio();
     if (!this.started()) { if (event.code === 'Enter') this.begin(); return; }
 
+    if (event.code === 'KeyB') { this.benchStart(); return; }
     if (event.code === 'KeyF') { this.hudComponent?.showFps.update((v) => !v); return; }
     if (event.code === 'KeyY') { this.settings.toggleTheme(); return; }
     if (event.code === 'KeyQ') { this.settings.cycleQuality(); return; }
