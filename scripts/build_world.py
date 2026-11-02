@@ -375,7 +375,7 @@ def road_inside(g_):
             for sx_, sz_ in RS.get((a_, b_), ()):
                 if min(xs_) <= sx_ <= max(xs_) and min(zs_) <= sz_ <= max(zs_) and pip(g_, sx_, sz_): hit_.append((sx_, sz_))
     return hit_
-moved = dropped = 0; BR2 = []
+moved = dropped = shrunk = 0; BR2 = []
 for t_, g_, area_, cx_, cz_ in BR:
     h_ = road_inside(g_) if area_ < 3000 else []
     if len(h_) >= 2:
@@ -386,10 +386,25 @@ for t_, g_, area_, cx_, cz_ in BR:
             g2_ = [(q[0] + dx_ * st_, q[1] + dz_ * st_) for q in g_]
             if not road_inside(g2_): g_ = g2_; cx_ += dx_ * st_; cz_ += dz_ * st_; ok_ = True; break
         if ok_: moved += 1
-        else: dropped += 1; continue   # cannot clear the road within 24 m: drop it
+        else:   # cannot slide clear: keep a small 7 x 5 m building on a road-free patch inside its own footprint (e.g. a petrol-station kiosk), else drop it
+            k0_ = max(range(len(g_)), key=lambda i: math.hypot(g_[(i + 1) % len(g_)][0] - g_[i][0], g_[(i + 1) % len(g_)][1] - g_[i][1]))
+            a_, b_ = g_[k0_], g_[(k0_ + 1) % len(g_)]; ul_ = math.hypot(b_[0] - a_[0], b_[1] - a_[1]) or 1; ux_, uz_ = (b_[0] - a_[0]) / ul_, (b_[1] - a_[1]) / ul_; vx_, vz_ = -uz_, ux_
+            xs0 = [q[0] for q in g_]; zs0 = [q[1] for q in g_]; best_ = None
+            gx_ = min(xs0)
+            while gx_ <= max(xs0):
+                gz_ = min(zs0)
+                while gz_ <= max(zs0):
+                    box_ = [(gx_ + ux_ * du + vx_ * dv, gz_ + uz_ * du + vz_ * dv) for du, dv in ((-3.5, -2.5), (3.5, -2.5), (3.5, 2.5), (-3.5, 2.5))]
+                    if all(pip(g_, q[0], q[1]) for q in box_) and not road_inside(box_):
+                        d_ = math.hypot(gx_ - cx_, gz_ - cz_)
+                        if best_ is None or d_ < best_[0]: best_ = (d_, box_, gx_, gz_)
+                    gz_ += 2.0
+                gx_ += 2.0
+            if best_: g_ = best_[1]; cx_, cz_ = best_[2], best_[3]; area_ = 35.0; shrunk += 1
+            else: dropped += 1; continue
     BR2.append((t_, g_, area_, cx_, cz_))
 BR = BR2
-print("buildings moved off roads:", moved, "dropped:", dropped)
+print("buildings moved off roads:", moved, "shrunk:", shrunk, "dropped:", dropped)
 MATS = P(-26.494482, 31.308351)  # Matsapha centre
 CBD = P(-26.4981, 31.3742)  # Manzini CBD (Nkose'luhlaza / Ngwane St core)
 CBD2 = P(-26.3257, 31.1447)  # Mbabane CBD
