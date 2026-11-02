@@ -73,6 +73,24 @@ export class CollisionWorld {
   }
 
   /** Resolve the car against statics and moving colliders. Call once per physics step, after integration. */
+  /** Debug: static colliders overlapping a car-sized disc at (x,z) for a car at height y. Returns 'p<i>' / 'c<i>' ids. */
+  probe(x: number, z: number, rad: number, y: number): string[] {
+    const out: string[] = [], c = { nx: 0, nz: 0, pen: 0 }, gx = Math.floor(x / this.CELL), gz = Math.floor(z / this.CELL);
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+      const key = this.key(gx + a, gz + b);
+      for (const i of this.polyGrid.get(key) ?? []) {
+        if (y > this.polyY[i * 2 + 1] + (this.polyRoof[i] ? -0.6 : 1.3) || y < this.polyY[i * 2] - 1.3) continue;
+        const bb = i * 4; if (x < this.polyBox[bb] - rad || x > this.polyBox[bb + 2] + rad || z < this.polyBox[bb + 1] - rad || z > this.polyBox[bb + 3] + rad) continue;
+        if (this.polyContact(i, x, z, rad, c)) out.push('p' + i);
+      }
+      for (const i of this.circleGrid.get(key) ?? []) {
+        if (y > this.circleY[i * 2 + 1] + 1.3 || y < this.circleY[i * 2] - 1.3) continue;
+        const d = Math.hypot(x - this.circles[i * 3], z - this.circles[i * 3 + 1]); if (d < rad + this.circles[i * 3 + 2]) out.push('c' + i);
+      }
+    }
+    return out;
+  }
+
   resolve(v: RaycastVehicle, dynamics: DynamicCollider[] = [], dt = 1 / 60): CollisionResult {
     const res: CollisionResult = { impactSpeed: 0, hitKind: 'none', hitId: -1 };
     const L = v.config.wheelBaseM + 1.45, rad = Math.max(0.9, v.config.trackWidthM * 0.52);
