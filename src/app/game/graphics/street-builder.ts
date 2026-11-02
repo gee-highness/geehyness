@@ -310,13 +310,13 @@ export class StreetBuilder {
     for (const [key, list] of this.carCells) {
       const [ix, iz] = key.split(',').map(Number); const dx = Math.max(Math.abs((ix + 0.5) * 160 - px) - 80, 0), dz = Math.max(Math.abs((iz + 0.5) * 160 - pz) - 80, 0), d = Math.hypot(dx, dz);
       const have = this.carMeshes.get(key);
-      if (d < 60 && !have && built < 2 && this.carMat) {
+      if (d < 30 && !have && built < 2 && this.carMat) {
         const geos: THREE.BufferGeometry[] = []; const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
         for (const c of list) { const parts = this.carParts.get(c.m); if (!parts) continue; const y = w.groundHeightAt(c.x, c.z) - 0.02; M.compose(new THREE.Vector3(c.x, y, c.z), Q.setFromAxisAngle(up, c.rot), new THREE.Vector3(1, 1, 1)); for (const p of parts) geos.push(p.clone().applyMatrix4(M)); }
         const g = geos.length ? mergeGeometries(geos) : null; if (!g) { this.carMeshes.set(key, new THREE.Mesh()); continue; }
         for (const q of geos) q.dispose(); g.computeBoundingSphere();
         const mesh = new THREE.Mesh(g, this.carMat); mesh.name = 'parkedcars'; mesh.frustumCulled = true; w.landmarksGroup.add(mesh); this.carMeshes.set(key, mesh); built++;
-      } else if (d > 120 && have) { if (have.geometry) have.geometry.dispose(); w.landmarksGroup.remove(have); this.carMeshes.delete(key); }
+      } else if (d > 75 && have) { if (have.geometry) have.geometry.dispose(); w.landmarksGroup.remove(have); this.carMeshes.delete(key); }
     }
   }
 

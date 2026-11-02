@@ -355,7 +355,7 @@ export class WorldBuilder {
     this.visDirty = false; this.visX = px; this.visZ = pz; this.visT = now;
     for (const t of this.terrainTiles) {
       const dx = Math.max(Math.abs(t.cx - px) - 640, 0), dz = Math.max(Math.abs(t.cz - pz) - 640, 0), d = Math.hypot(dx, dz);
-      t.lod0.visible = d < 1900; t.lod1.visible = d >= 1900 && d < 5200;
+      t.lod0.visible = d < 1500; t.lod1.visible = d >= 1500 && d < 5200;
     }
     const doShadow = this.shadowsOn && now - this.shadowT > 600; if (doShadow) this.shadowT = now;
     for (const c of this.chunks) {
@@ -672,6 +672,7 @@ export class WorldBuilder {
     const paint = (g: THREE.BufferGeometry, c: THREE.Color) => { const a = new Float32Array(g.attributes['position'].count * 3); for (let i = 0; i < a.length; i += 3) { a[i] = c.r; a[i + 1] = c.g; a[i + 2] = c.b; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g.toNonIndexed(); };
     const geo = mergeGeometries([paint(trunk, new THREE.Color(0x4a3524)), paint(mkCanopy(2.4, 4.4), new THREE.Color(0xffffff)), paint(mkCanopy(1.7, 5.8), new THREE.Color(0xffffff))].map((g) => { g.deleteAttribute('uv'); return g; }))!;
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, flatShading: true });
+    const TCH = 300;   // tree cells: small enough that distant trees really drop out (was one 800 m block)
     const byChunk = new Map<string, { x: number; z: number; c: number }[]>();
     const all: { x: number; z: number; c: number }[] = this.streets.streetTrees.concat(this.extraTrees);
     for (let i = 0; i < n; i++) all.push({ x: dv.getFloat32(i * 9, true), z: dv.getFloat32(i * 9 + 4, true), c: dv.getUint8(i * 9 + 8) });
@@ -679,7 +680,7 @@ export class WorldBuilder {
       if (this.roadAt(x, z)) continue;
       if (this.nearBuilding(x, z)) continue;
       this.collision.addCircle(x, z, 0.38);
-      const k = `${Math.floor(x / CHUNK)},${Math.floor(z / CHUNK)}`; let l = byChunk.get(k); if (!l) { l = []; byChunk.set(k, l); } l.push({ x, z, c });
+      const k = `${Math.floor(x / TCH)},${Math.floor(z / TCH)}`; let l = byChunk.get(k); if (!l) { l = []; byChunk.set(k, l); } l.push({ x, z, c });
     }
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color();
     byChunk.forEach((list, key) => {
@@ -695,9 +696,9 @@ export class WorldBuilder {
         else col.setRGB(0.22 + r * 0.12, 0.42 + r * 0.14, 0.18 + r * 0.06);
         im.setColorAt(i, col);
       });
-      im.userData['far'] = 650; im.computeBoundingSphere();
+      im.userData['far'] = 460; im.computeBoundingSphere();
       const [cxI, czI] = key.split(',').map(Number);
-      im.visible = false; this.visDirty = true; this.chunks.push({ obj: im, cx: (cxI + 0.5) * CHUNK, cz: (czI + 0.5) * CHUNK, r: CHUNK * 0.75, half: CHUNK / 2 });
+      im.visible = false; this.visDirty = true; this.chunks.push({ obj: im, cx: (cxI + 0.5) * TCH, cz: (czI + 0.5) * TCH, r: TCH * 0.75, half: TCH / 2 });
       this.foliageGroup.add(im);
     });
   }
