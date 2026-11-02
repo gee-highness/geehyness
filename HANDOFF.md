@@ -98,7 +98,7 @@ APK → `android/app/build/outputs/apk/debug/app-debug.apk` (~93 MB). Send with 
 
 ## Fourth session (enhancement plan, slice 1)
 - Measured: after GC the live JS heap is <100 MB (the ~600 MB `usedJSHeapSize` was uncollected garbage). Real mobile risks are GPU/texture memory (59 x 1k JPG textures), draw calls (150-340) and triangles (260-690k). Parked-car detail radius now 60 m; static geometry drops its CPU copy after upload (`GeoBuf.toGeometry`).
-- Terrain: 40 m DEM from AWS z13 (`fetch_dem.py 40 13 data/dem.json`), terrain mesh 40 m (LOD1 320 m), `data/dem.json` replaced, `public/assets/world` regenerated.
+- Terrain: 40 m grid sampled (bicubic) from Copernicus GLO-30 native 30 m posts via `scripts/fetch_dem_glo30.py` (replaces AWS terrarium z13, which was resampled + offset ~1 px); `data/dem.json` and `public/assets/world` regenerated.
 - Road graph + GPS (`game/road-graph.ts`, `NavigationService`): A* over OSM ways, turn-by-turn guidance on the HUD, route drawn on map + radar, auto re-route. Debug: `__shesha.nav`.
 - Neo-Eswatini (futuristic procedural theme) is designed but NOT started; traffic lights/lane AI not started; textures not compressed (no KTX2 tool in sandbox).
 
