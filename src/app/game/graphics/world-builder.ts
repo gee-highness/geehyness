@@ -20,7 +20,7 @@ interface WorldMeta {
   places: { n: string; k: string; p: [number, number] }[];
   pois: { n: string; k: string; p: [number, number] }[];
   signals: [number, number][];
-  busstops?: { p: [number, number]; n: string }[]; lamps?: [number, number][]; signs?: [number, number, number][]; addr?: [number, number, string][]; views?: { p: [number, number]; n: string }[];
+  busstops?: { p: [number, number]; n: string }[]; lamps?: [number, number][]; upoles?: [number, number, number][]; bills?: [number, number, number][]; signs?: [number, number, number][]; addr?: [number, number, string][]; views?: { p: [number, number]; n: string }[];
   snaps: Record<string, [number, number]>;
 }
 interface Surf { way: RoadWay; h: number; elev: boolean; px: number; pz: number; d: number }
@@ -580,9 +580,9 @@ export class WorldBuilder {
     // world-space UVs => repeat is 1/tile on uv=metres
     const markTex = () => {
       const c = document.createElement('canvas'); c.width = 256; c.height = 256; const x = c.getContext('2d')!;
-      x.clearRect(0, 0, 256, 256); x.fillStyle = 'rgba(240,240,235,0.92)';
+      x.clearRect(0, 0, 256, 256); x.fillStyle = 'rgba(244,196,36,0.93)';          // yellow edge lines (Eswatini / SADC practice, seen on Mapillary frames)
       for (const o of [0, 128]) { x.fillRect(o + 6, 0, 5, 256); x.fillRect(o + 117, 0, 5, 256); }
-      x.fillRect(128 + 61, 20, 6, 110);
+      x.fillStyle = 'rgba(240,240,235,0.92)'; x.fillRect(128 + 61, 20, 6, 110);   // white dashed centre line
       const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
     };
     const mk = () => new THREE.MeshStandardMaterial({ map: markTex(), transparent: true, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, depthWrite: false });

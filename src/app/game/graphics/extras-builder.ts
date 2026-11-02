@@ -42,7 +42,7 @@ export class ExtrasBuilder {
   build(scene: THREE.Scene): void {
     this.railway();
     this.levelCrossings();
-    this.busShelters(); this.regSigns();
+    this.busShelters(); this.regSigns(); this.billboards();
     this.speedSigns(scene);
     this.roundabouts();
     this.viewpoints();
@@ -121,6 +121,19 @@ export class ExtrasBuilder {
       if (kind === 1) this.box(b, px, y + 1.88, pz, 0.06, 0.4, 0.4, tx, tz, c);
       w.collision.addCircle(px, pz, 0.12);
     }
+  }
+
+  // ------------------------------------------------------------------ roadside advertising + shop signs (real positions from Mapillary)
+  private billboards(): void {
+    const w = this.w; const PAL: V3[] = [[0.85, 0.12, 0.1], [0.1, 0.35, 0.75], [0.95, 0.75, 0.1], [0.1, 0.55, 0.3], [0.95, 0.95, 0.95], [0.9, 0.4, 0.1]];
+    (w.meta.bills ?? []).forEach(([x, z, kind], i) => {
+      const rd = w.nearestRoadSegment(x, z, 7); if (!rd || rd.dist > 30 || rd.way.dz || w.roadAt(x, z)) return;
+      const y = w.groundHeightAt(x, z), b = this.buf(x, z, 'props'), rot = Math.atan2(rd.tz, rd.tx), c = PAL[i % PAL.length], steel: V3 = [0.4, 0.42, 0.45];
+      if (kind === 0) { // roadside advertising board on two posts
+        this.box(b, x, y, z, 0.12, 0.12, 3.4, rot, steel); this.box(b, x, y + 3.4, z, 0.14, 1.0, 3.0, rot, [0.92, 0.92, 0.92]); this.box(b, x, y + 3.45, z, 0.16, 0.9, 2.8, rot, c);
+      } else { this.box(b, x, y, z, 0.08, 0.08, 2.4, rot, steel); this.box(b, x, y + 2.2, z, 0.1, 0.55, 1.1, rot, c); } // shop sign on a post
+      w.collision.addCircle(x, z, 0.2);
+    });
   }
 
   // ------------------------------------------------------------------ bus shelters

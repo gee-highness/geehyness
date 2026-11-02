@@ -163,7 +163,27 @@ export class StreetBuilder {
 
   // ------------------------------------------------------------------ utility poles + wires
   private poles(): void {
-    const w = this.w; const wood = [0.36, 0.26, 0.17], arm = [0.3, 0.22, 0.15];
+    const w = this.w; const wood = [0.36, 0.26, 0.17], arm = [0.3, 0.22, 0.15], steel = [0.5, 0.52, 0.55];
+    // real poles from Mapillary first (procedural ones below skip anywhere near a real pole)
+    const realGrid = new Map<number, number[]>(); const gk = (x: number, z: number): number => Math.floor(x / 30) * 100003 + Math.floor(z / 30);
+    const realUtil: [number, number, number][] = [];
+    for (const [x, z, kind] of w.meta.upoles ?? []) {
+      const rd = w.nearestRoadSegment(x, z, 8); if (!rd || rd.dist > 40 || rd.way.dz || w.roadAt(x, z)) continue;
+      const y = w.groundHeightAt(x, z), b = this.buf(x, z, 'props'), rot = Math.atan2(rd.tz, rd.tx);
+      if (kind === 0) { this.box(b, x, y, z, 0.26, 8.4, 0.26, rot, wood); this.box(b, x, y + 7.6, z, 0.14, 0.14, 2.0, rot, arm); realUtil.push([x, z, y + 7.7]); }
+      else this.box(b, x, y, z, 0.16, 6.2, 0.16, rot, steel);
+      w.collision.addCircle(x, z, 0.2);
+      const k = gk(x, z); let l = realGrid.get(k); if (!l) { l = []; realGrid.set(k, l); } l.push(x, z);
+    }
+    // sagging wires between neighbouring real utility poles (each pair once)
+    for (let i = 0; i < realUtil.length; i++) {
+      const a = realUtil[i]; let bi = -1, bd = 75;
+      for (let j = i + 1; j < realUtil.length; j++) { const d = Math.hypot(realUtil[j][0] - a[0], realUtil[j][1] - a[1]); if (d > 12 && d < bd) { bd = d; bi = j; } }
+      if (bi < 0) continue; const c = realUtil[bi]; const key = `${Math.floor(a[0] / CH)},${Math.floor(a[1] / CH)}`; let arr = this.wires.get(key); if (!arr) { arr = []; this.wires.set(key, arr); }
+      for (const o of [-0.8, 0, 0.8]) { let lx = a[0], ly = a[2], lz = a[1] + o;
+        for (let s2 = 1; s2 <= 6; s2++) { const t = s2 / 6, x2 = a[0] + (c[0] - a[0]) * t, z2 = a[1] + (c[1] - a[1]) * t + o, y2 = a[2] + (c[2] - a[2]) * t - Math.sin(t * Math.PI) * 0.7; arr.push(lx, ly, lz, x2, y2, z2); lx = x2; ly = y2; lz = z2; } }
+    }
+    const nearReal = (x: number, z: number): boolean => { for (let a = -1; a <= 1; a++) for (let c = -1; c <= 1; c++) { const l = realGrid.get(gk(x + a * 30, z + c * 30)); if (l) for (let i = 0; i < l.length; i += 2) if (Math.abs(l[i] - x) < 22 && Math.abs(l[i + 1] - z) < 22) return true; } return false; };
     for (const way of w.roadWays) {
       if (way.c < 4 || way.c > 6 || way.u || way.dz) continue;
       const pts = this.resample(way.p, 4); let acc = 0; let prev: [number, number, number] | null = null;
@@ -172,7 +192,7 @@ export class StreetBuilder {
         if (acc < 42) continue; acc = 0;
         const tx = (pts[i + 1][0] - pts[i][0]) / L, tz = (pts[i + 1][1] - pts[i][1]) / L;
         const off = way.w / 2 + (way.sw ?? 0) + 1.3, px = pts[i][0] - tz * off, pz = pts[i][1] + tx * off;
-        if (Math.hypot(px + 750, pz + 210) > 2300 || !this.urban(px, pz) || w.roadAt(px, pz)) { prev = null; continue; }
+        if (Math.hypot(px + 750, pz + 210) > 2300 || !this.urban(px, pz) || w.roadAt(px, pz) || nearReal(px, pz)) { prev = null; continue; }
         const y = w.calculateRawTerrainHeight(px, pz), b = this.buf(px, pz, 'props'); const rot = Math.atan2(tz, tx);
         this.box(b, px, y, pz, 0.26, 8.2, 0.26, rot, wood); this.box(b, px, y + 7.5, pz, 0.14, 0.14, 2.0, rot, arm);
         w.collision.addCircle(px, pz, 0.2);
