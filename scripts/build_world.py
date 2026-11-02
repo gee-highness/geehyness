@@ -19,6 +19,9 @@ random.seed(7)
 
 def P(lat, lon): return ((lon - LON0) * KX, -(lat - LAT0) * KZ)
 def load(n): return json.load(open(f"{osm_dir}/{n}.json"))["elements"]
+def load0(n):
+    f = f"{osm_dir}/{n}.json"
+    return json.load(open(f))["elements"] if os.path.exists(f) else []
 def load2(n):
     f = f"{dir2}/{n}.json" if dir2 else None
     return json.load(open(f))["elements"] if f and os.path.exists(f) else []
@@ -209,7 +212,7 @@ for i, ((x, z), t) in enumerate(poi_xy): PHASH[(int(x // 60), int(z // 60))].app
 cent = []  # building centroids for density
 BR = []
 seen = set()
-for n_, ldr in [("bld_manzini", load), ("bld_ezulwini", load)] + [(n, load2) for n in ("bld_lobamba", "bld_malkerns", "bld_matsapha1", "bld_matsapha2", "bld_mbabane1", "bld_mbabane2")]:
+for n_, ldr in [("bld_manzini", load), ("bld_ezulwini", load), ("bld_extra", load0)] + [(n, load2) for n in ("bld_lobamba", "bld_malkerns", "bld_matsapha1", "bld_matsapha2", "bld_mbabane1", "bld_mbabane2")]:
     for e in ldr(n_):
         if e["id"] in seen: continue
         seen.add(e["id"]); t = e.get("tags", {})
@@ -338,6 +341,24 @@ def pip(g, x, z):
         a, b = g[i], g[i - 1]
         if (a[1] > z) != (b[1] > z) and x < (b[0] - a[0]) * (z - a[1]) / (b[1] - a[1]) + a[0]: ins = not ins
     return ins
+# zoning from OSM landuse polygons (landuse.json from merge_osm_full.py): grid-hashed point-in-polygon
+LUZ = {"industrial": "ind", "commercial": "com", "retail": "com", "residential": "res", "farmland": "farm", "farmyard": "farm", "construction": "con", "garden": "res", "allotments": "farm", "orchard": "farm"}
+LU, LUH = [], defaultdict(list)
+for e in load0("landuse"):
+    z_ = LUZ.get((e.get("tags") or {}).get("landuse"))
+    if not z_: continue
+    gs = [poly(e)] if e["type"] == "way" else [[P(g["lat"], g["lon"]) for g in m["geometry"]] for m in e.get("members", []) if m.get("role") == "outer" and m.get("geometry")]
+    for g in gs:
+        if len(g) < 4: continue
+        xs = [q[0] for q in g]; zs = [q[1] for q in g]; i = len(LU); LU.append((z_, g))
+        for a in range(int(min(xs) // 200), int(max(xs) // 200) + 1):
+            for b in range(int(min(zs) // 200), int(max(zs) // 200) + 1): LUH[(a, b)].append(i)
+def landzone(x, z):
+    best = None
+    for i in LUH.get((int(x // 200), int(z // 200)), ()):
+        if pip(LU[i][1], x, z): best = LU[i][0] if best != "com" and best != "ind" else best
+    return best
+print("landuse zones", len(LU))
 MATS = P(-26.494482, 31.308351)  # Matsapha centre
 CBD = P(-26.4981, 31.3742)  # Manzini CBD (Nkose'luhlaza / Ngwane St core)
 CBD2 = P(-26.3257, 31.1447)  # Mbabane CBD
@@ -369,6 +390,11 @@ for t, g, area, cx, cz in BR:
     elif sh in ("car_repair", "car", "car_parts"): use = 8 if area < 400 else 7
     elif sh: use = 3
     elif t.get("tourism") in ("hotel", "guest_house", "hostel", "motel", "apartment", "chalet"): use = 13
+    lz = landzone(cx, cz) if use < 0 else None
+    if use < 0 and lz == "ind": use = 7 if area > 180 else 8
+    elif use < 0 and lz == "com": use = 4 if area > 1200 else (6 if (area > 380 and h_ < 0.4) else 3)
+    elif use < 0 and lz == "farm": use = 7 if area > 500 else 8
+    elif use < 0 and lz == "res" and area > 60: use = 2 if (dens >= 20 and area > 260 and h_ < 0.3) else (1 if area > 190 and h_ < 0.55 else 0)
     if use < 0:  # plain building=yes: infer from where it stands
         if kind == 9 or d_mat < 2300 and area > 300 and dens < 14: use = 7 if area > 220 else 8
         elif d_cbd < 900 and area > 1500: use = 5 if h_ < 0.4 else 4
