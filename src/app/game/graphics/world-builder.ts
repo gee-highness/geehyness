@@ -670,34 +670,48 @@ export class WorldBuilder {
     const trunk = new THREE.CylinderGeometry(0.2, 0.32, 3.2, 5); trunk.translate(0, 1.6, 0);
     const mkCanopy = (r: number, y: number) => { const g = new THREE.IcosahedronGeometry(r, 0); g.translate(0, y, 0); return g; };
     const paint = (g: THREE.BufferGeometry, c: THREE.Color) => { const a = new Float32Array(g.attributes['position'].count * 3); for (let i = 0; i < a.length; i += 3) { a[i] = c.r; a[i + 1] = c.g; a[i + 2] = c.b; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g.toNonIndexed(); };
-    const geo = mergeGeometries([paint(trunk, new THREE.Color(0x4a3524)), paint(mkCanopy(2.4, 4.4), new THREE.Color(0xffffff)), paint(mkCanopy(1.7, 5.8), new THREE.Color(0xffffff))].map((g) => { g.deleteAttribute('uv'); return g; }))!;
+    const geo = mergeGeometries([paint(trunk, new THREE.Color(1.2, 0.5, 0.85)), paint(mkCanopy(2.4, 4.4), new THREE.Color(0xffffff)), paint(mkCanopy(1.7, 5.8), new THREE.Color(0xffffff))].map((g) => { g.deleteAttribute('uv'); return g; }))!;
+    // conifer / eucalyptus-pine (tall, narrow, stacked cones) and palm (slender trunk + flat fan crown): species vary by altitude and place
+    const cone = (r: number, h: number, y: number) => { const g = new THREE.ConeGeometry(r, h, 6); g.translate(0, y, 0); return g; };
+    const geoCon = mergeGeometries([paint(trunk, new THREE.Color(3.4, 1.0, 2.2)), paint(cone(2.0, 3.4, 4.2), new THREE.Color(0xffffff)), paint(cone(1.5, 3.0, 6.0), new THREE.Color(0xffffff)), paint(cone(1.0, 2.6, 7.6), new THREE.Color(0xffffff))].map((g) => { g.deleteAttribute('uv'); return g; }))!;
+    const ptrunk = new THREE.CylinderGeometry(0.14, 0.22, 7.2, 5); ptrunk.translate(0, 3.6, 0);
+    const crown = new THREE.ConeGeometry(2.8, 1.1, 7); crown.translate(0, 7.6, 0);
+    const crown2 = new THREE.ConeGeometry(1.5, 0.9, 7); crown2.translate(0, 8.2, 0);
+    const geoPalm = mergeGeometries([paint(ptrunk, new THREE.Color(0x8d7d5e)), paint(crown, new THREE.Color(0x3f7d2c)), paint(crown2, new THREE.Color(0x4f9236))].map((g) => { g.deleteAttribute('uv'); return g; }))!;
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, flatShading: true });
     const TCH = 300;   // tree cells: small enough that distant trees really drop out (was one 800 m block)
-    const byChunk = new Map<string, { x: number; z: number; c: number }[]>();
+    const sn = this.meta.snaps as Record<string, [number, number]> | undefined;
+    const cbd = (x: number, z: number): boolean => !!sn && ['manzini', 'matsapha'].some((k) => sn[k] && Math.hypot(sn[k][0] - x, sn[k][1] - z) < 900);
+    type T = { x: number; z: number; c: number; sp: number };
+    const byChunk = new Map<string, T[]>();
     const all: { x: number; z: number; c: number }[] = this.streets.streetTrees.concat(this.extraTrees);
     for (let i = 0; i < n; i++) all.push({ x: dv.getFloat32(i * 9, true), z: dv.getFloat32(i * 9 + 4, true), c: dv.getUint8(i * 9 + 8) });
     for (const { x, z, c } of all) {
       if (this.roadAt(x, z)) continue;
       if (this.nearBuilding(x, z)) continue;
       this.collision.addCircle(x, z, 0.38);
-      const k = `${Math.floor(x / TCH)},${Math.floor(z / TCH)}`; let l = byChunk.get(k); if (!l) { l = []; byChunk.set(k, l); } l.push({ x, z, c });
+      const alt = this.calculateRawTerrainHeight(x, z), h1 = WorldBuilder.hash(x * 1.7, z * 0.9);
+      // 0 round broadleaf, 1 conifer/eucalyptus (plantations + highveld > ~900 m), 2 palm (low-altitude towns)
+      const sp = c === 5 || (alt > 900 && h1 < 0.55) ? 1 : (alt < 800 && cbd(x, z) && h1 < 0.3 ? 2 : 0);
+      const k = `${sp}:${Math.floor(x / TCH)},${Math.floor(z / TCH)}`; let l = byChunk.get(k); if (!l) { l = []; byChunk.set(k, l); } l.push({ x, z, c, sp });
     }
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color();
     byChunk.forEach((list, key) => {
-      const im = new THREE.InstancedMesh(geo, mat, list.length); im.name = 'trees'; im.castShadow = true;
+      const sp = list[0].sp; const im = new THREE.InstancedMesh(sp === 1 ? geoCon : sp === 2 ? geoPalm : geo, mat, list.length); im.name = 'trees'; im.castShadow = true;
       list.forEach((t, i) => {
-        const s = 0.7 + WorldBuilder.hash(t.x, t.z) * 0.9;
+        const s = (sp === 2 ? 0.85 : 0.7) + WorldBuilder.hash(t.x, t.z) * (sp === 2 ? 0.4 : 0.9);
         q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), WorldBuilder.hash(t.z, t.x) * 6.28);
-        m4.compose(new THREE.Vector3(t.x, this.calculateRawTerrainHeight(t.x, t.z) - 0.2, t.z), q, new THREE.Vector3(s, s * (t.c === 5 ? 1.5 : 1), s));
+        m4.compose(new THREE.Vector3(t.x, this.calculateRawTerrainHeight(t.x, t.z) - 0.2, t.z), q, new THREE.Vector3(s, s * (t.c === 5 ? 1.5 : sp === 1 ? 1.2 : 1), s));
         im.setMatrixAt(i, m4);
         const r = WorldBuilder.hash(t.x * 2, t.z * 3);
-        if (t.c === 5) col.setRGB(0.1 + r * 0.06, 0.25 + r * 0.14, 0.1 + r * 0.05);
+        if (sp === 2) return;                                                           // palm keeps its baked colours
+        if (sp === 1) col.setRGB(0.07 + r * 0.05, 0.22 + r * 0.12, 0.1 + r * 0.05);
         else if (t.c === 10 || (t.c === 8 && r > 0.82)) col.setRGB(0.5 + r * 0.1, 0.34, 0.74); // jacaranda blossom
         else col.setRGB(0.22 + r * 0.12, 0.42 + r * 0.14, 0.18 + r * 0.06);
         im.setColorAt(i, col);
       });
       im.userData['far'] = 380; im.computeBoundingSphere();
-      const [cxI, czI] = key.split(',').map(Number);
+      const [cxI, czI] = key.split(':')[1].split(',').map(Number);
       im.visible = false; this.visDirty = true; this.chunks.push({ obj: im, cx: (cxI + 0.5) * TCH, cz: (czI + 0.5) * TCH, r: TCH * 0.75, half: TCH / 2 });
       this.foliageGroup.add(im);
     });

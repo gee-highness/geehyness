@@ -155,6 +155,7 @@ export class SceneManager {
 
     // African distance fog blending mountains into the sky
     this.scene.fog = new THREE.FogExp2(0xcdd8dc, 0.00022);
+    this.makeHills();
   }
 
   public spawnVehicle(config: VehicleArchetypeConfig, visuals: VisualCustomization, def: CarDef = CAR_CATALOG[0]): void {
@@ -443,6 +444,20 @@ export class SceneManager {
     }
   }
 
+  private hills?: THREE.Mesh; private hillMat = new THREE.MeshBasicMaterial({ color: 0x8fa3ad, fog: false, side: THREE.DoubleSide });
+  /** Far skyline ring of low-poly Highveld hills (outside the playable DEM): one ~320-tri mesh that follows the camera, tinted like distant haze. */
+  private makeHills(): void {
+    const seg = 160, R = 3900, pos: number[] = [], idx: number[] = [];
+    for (let i = 0; i <= seg; i++) {
+      const a = (i / seg) * Math.PI * 2, x = Math.cos(a) * R, z = Math.sin(a) * R;
+      const h = Math.max(50, 110 + 120 * Math.sin(a * 3 + 1) + 70 * Math.sin(a * 7 + 2) + 40 * Math.sin(a * 13 + 0.5) + 25 * Math.sin(a * 29));
+      pos.push(x, -400, z, x, h, z);
+      if (i < seg) { const b = i * 2; idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2); }
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
+    this.hills = new THREE.Mesh(g, this.hillMat); this.hills.frustumCulled = false; this.hills.renderOrder = -1; this.scene.add(this.hills);
+  }
+
   /** Compile every shader program once, up front, so first sight of a material never hitches mid-drive. */
   public warm(): void { if (this.isSoftwareGl) return; try { void this.renderer.compileAsync(this.scene, this.cameraRig.camera).catch(() => undefined); } catch { /* best effort */ } }
 
@@ -476,6 +491,7 @@ export class SceneManager {
   public topView: { x: number; z: number; h: number } | null = null;
   public render(dtMs = 16): void {
     this.govern(dtMs);
+    if (this.hills) { const c = this.cameraRig.camera.position; this.hills.position.set(c.x, c.y - 20, c.z); const f = this.scene.fog as THREE.FogExp2 | null; if (f) this.hillMat.color.copy(f.color).multiplyScalar(0.8).lerp(new THREE.Color(0.38, 0.5, 0.58), 0.18); }
     if (this.topView) { const c = this.cameraRig.camera, t = this.topView; c.up.set(0, 0, -1); c.position.set(t.x, this.worldBuilder.calculateRawTerrainHeight(t.x, t.z) + t.h, t.z); c.lookAt(t.x, c.position.y - 100, t.z); c.fov = 50; c.updateProjectionMatrix(); }
     this.renderer.render(this.scene, this.cameraRig.camera);
   }
