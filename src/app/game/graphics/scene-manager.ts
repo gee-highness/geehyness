@@ -491,7 +491,7 @@ export class SceneManager {
   public topView: { x: number; z: number; h: number } | null = null;
   public render(dtMs = 16): void {
     this.govern(dtMs);
-    if (this.hills) { const c = this.cameraRig.camera.position; this.hills.position.set(c.x, c.y - 20, c.z); const f = this.scene.fog as THREE.FogExp2 | null; if (f) this.hillMat.color.copy(f.color).multiplyScalar(0.8).lerp(new THREE.Color(0.38, 0.5, 0.58), 0.18); }
+    if (this.hills) { const c = this.cameraRig.camera.position; this.hills.position.set(c.x, c.y - 20, c.z); const f = this.scene.fog as THREE.FogExp2 | null; if (f) this.hillMat.color.copy(f.color).multiplyScalar(0.7).lerp(new THREE.Color(0.3, 0.4, 0.46), 0.35); }
     if (this.topView) { const c = this.cameraRig.camera, t = this.topView; c.up.set(0, 0, -1); c.position.set(t.x, this.worldBuilder.calculateRawTerrainHeight(t.x, t.z) + t.h, t.z); c.lookAt(t.x, c.position.y - 100, t.z); c.fov = 50; c.updateProjectionMatrix(); }
     this.renderer.render(this.scene, this.cameraRig.camera);
   }
