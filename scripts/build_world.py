@@ -359,6 +359,37 @@ def landzone(x, z):
         if pip(LU[i][1], x, z): best = LU[i][0] if best != "com" and best != "ind" else best
     return best
 print("landuse zones", len(LU))
+# ---- buildings must not sit on drivable roads: nudge any small footprint sideways (away from the road) until no road sample is inside it
+RS = defaultdict(list)
+for r_ in roads:
+    if r_["c"] > 6 or r_.get("br") or r_.get("u") or r_.get("dz"): continue
+    q_ = r_["p"]
+    for i_ in range(0, len(q_) - 3, 2):
+        ax_, az_, bx_, bz_ = q_[i_] / 10, q_[i_ + 1] / 10, q_[i_ + 2] / 10, q_[i_ + 3] / 10; n_ = max(1, int(math.hypot(bx_ - ax_, bz_ - az_) / 2))
+        for k_ in range(n_ + 1):
+            sx_, sz_ = ax_ + (bx_ - ax_) * k_ / n_, az_ + (bz_ - az_) * k_ / n_; RS[(int(sx_ // 30), int(sz_ // 30))].append((sx_, sz_))
+def road_inside(g_):
+    xs_ = [q[0] for q in g_]; zs_ = [q[1] for q in g_]; hit_ = []
+    for a_ in range(int(min(xs_) // 30), int(max(xs_) // 30) + 1):
+        for b_ in range(int(min(zs_) // 30), int(max(zs_) // 30) + 1):
+            for sx_, sz_ in RS.get((a_, b_), ()):
+                if min(xs_) <= sx_ <= max(xs_) and min(zs_) <= sz_ <= max(zs_) and pip(g_, sx_, sz_): hit_.append((sx_, sz_))
+    return hit_
+moved = dropped = 0; BR2 = []
+for t_, g_, area_, cx_, cz_ in BR:
+    h_ = road_inside(g_) if area_ < 3000 else []
+    if len(h_) >= 2:
+        mx_ = sum(q[0] for q in h_) / len(h_); mz_ = sum(q[1] for q in h_) / len(h_); dx_, dz_ = cx_ - mx_, cz_ - mz_; L_ = math.hypot(dx_, dz_)
+        if L_ < 0.5: dx_, dz_, L_ = 1.0, 0.0, 1.0
+        dx_, dz_ = dx_ / L_, dz_ / L_; ok_ = False
+        for st_ in range(1, 25):
+            g2_ = [(q[0] + dx_ * st_, q[1] + dz_ * st_) for q in g_]
+            if not road_inside(g2_): g_ = g2_; cx_ += dx_ * st_; cz_ += dz_ * st_; ok_ = True; break
+        if ok_: moved += 1
+        else: dropped += 1; continue   # cannot clear the road within 24 m: drop it
+    BR2.append((t_, g_, area_, cx_, cz_))
+BR = BR2
+print("buildings moved off roads:", moved, "dropped:", dropped)
 MATS = P(-26.494482, 31.308351)  # Matsapha centre
 CBD = P(-26.4981, 31.3742)  # Manzini CBD (Nkose'luhlaza / Ngwane St core)
 CBD2 = P(-26.3257, 31.1447)  # Mbabane CBD
