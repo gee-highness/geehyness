@@ -37,3 +37,7 @@ bash scripts/termux_osm.sh points3,cliffs3,hydro3  # just what build_world.py co
 `<category>.json` when all tiles of that category are done. `points3/cliffs3/hydro3` feed `build_world.py` directly; the other
 categories (`roads_all`, `buildings_all`, `landuse_all`, `pois_all`, `furniture_all`, `power_all`, `rail_all`, `boundaries_all`,
 `places_all`, `routes_all`) are the full raw dumps for future converters. Move the zip to your PC / back into this repo to rebuild.
+
+## Height refinement (OSM-synced)
+`dem_glo30_raw.json` = raw GLO-30 grid. `dem.json` = that grid after `python3 -I scripts/refine_dem.py /tmp/osm /tmp/osm2 data/dem_glo30_raw.json data/dem.json data/height_report.json data/ndsm_debug.png`:
+roof/canopy bias removed where OSM confirms buildings/vegetation, terrain pulled onto smoothed grade-limited road profiles. `height_report.json` lists blobs taller than the ground that OSM does not explain (candidate unmapped buildings). Pavements/kerbs are far below GLO-30's 30 m resolution, so they stay derived from OSM road geometry.
