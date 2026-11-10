@@ -1,3 +1,4 @@
+import { carStatic, carPaintMat, PAINTS, CarKind } from './car-gen';
 import * as THREE from 'three';
 import { addLampLight } from './lamp-light';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -302,16 +303,14 @@ export class StreetBuilder {
   /** Registers parking spots (cheap data only); geometry is created lazily by updateCars(). */
   public async placeParked(list: { m: string; x: number; z: number; rot: number }[]): Promise<void> {
     const w = this.w;
-    for (const m of new Set(list.map((l) => l.m))) {
-      if (this.carParts.has(m)) continue;
-      const model = await AssetLibrary.load(`assets/models/cars/${m}.glb`).catch(() => null); if (!model) continue;
-      model.updateWorldMatrix(true, true);
-      const bb = new THREE.Box3().setFromObject(model); const s = 4.3 / Math.max(0.5, bb.max.z - bb.min.z);
-      const parts: THREE.BufferGeometry[] = [];
-      model.traverse((o) => { const me = o as THREE.Mesh; if (me.isMesh) { const g = me.geometry.clone(); g.applyMatrix4(me.matrixWorld); g.scale(s, s, s); g.translate(0, -bb.min.y * s, 0); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k); parts.push(g.index ? g.toNonIndexed() : g); } });
-      this.carParts.set(m, parts);
+    // parked cars are generated bodies in real paint colours (kind follows the old model name, colour varies per spot)
+    const KIND: Record<string, CarKind> = { taxi: 'sedan', sedan: 'sedan', 'sedan-sports': 'sedan', 'hatchback-sports': 'hatch', suv: 'suv', 'suv-luxury': 'suv', van: 'minibus', delivery: 'bakkie', 'delivery-flat': 'bakkie', truck: 'bakkie', 'truck-flat': 'bakkie', police: 'sedan', ambulance: 'minibus' };
+    for (const c of list) {
+      const k = Math.floor(rnd(c.x * 0.37 + c.z * 0.91) * PAINTS.length), kind = KIND[c.m] ?? (['sedan', 'hatch', 'bakkie', 'suv'] as CarKind[])[Math.floor(rnd(c.x + c.z * 3.1) * 4)];
+      const key = `${kind}#${k}`; c.m = key;
+      if (!this.carParts.has(key)) this.carParts.set(key, [carStatic(kind, kind === 'minibus' ? [0.94, 0.94, 0.92] : PAINTS[k], kind === 'minibus' ? PAINTS[9 + (k % 3)] : undefined)]);
     }
-    if (!this.carMat) { const atlas = (await AssetLibrary.load('assets/models/cars/sedan.glb')).getObjectByProperty('isMesh', true) as THREE.Mesh; this.carMat = (atlas.material as THREE.Material).clone(); }
+    if (!this.carMat) this.carMat = carPaintMat;
     const tint = (g: THREE.BufferGeometry, c: number[]) => { const n = g.attributes['position'].count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) { a[i * 3] = c[0]; a[i * 3 + 1] = c[1]; a[i * 3 + 2] = c[2]; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); g.deleteAttribute('uv'); return g; };
     const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0); const lod = new Map<string, THREE.BufferGeometry[]>();
     for (const c of list) {

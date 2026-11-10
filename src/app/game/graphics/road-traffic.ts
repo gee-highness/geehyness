@@ -1,4 +1,5 @@
 import {makeQuantum, makeCoach} from './vehicles-sa';
+import { makeCar, PAINTS, CarKind } from './car-gen';
 import * as THREE from 'three';
 import { AssetLibrary } from './asset-library';
 import type { WorldBuilder } from './world-builder';
@@ -35,19 +36,13 @@ export class RoadTraffic {
 
   private async populate(): Promise<void> {
     this.addPublicTransport();
+    // the real street mix: white/silver sedans, hatches, bakkies and SUVs (generated bodies, ~1.5k triangles, one material)
+    const MIX: CarKind[] = ['sedan', 'bakkie', 'hatch', 'suv', 'sedan', 'hatch', 'bakkie', 'sedan', 'suv', 'hatch'];
     for (let i = 0; i < this.N; i++) {
-      const id = TRAFFIC_MODELS[i % TRAFFIC_MODELS.length];
-      const def = CAR_CATALOG.find((c) => c.id === id);
-      const model = def ? (await AssetLibrary.load(def.file).catch(() => null)) : null;
-      if (!model || !def) continue;
-      const car = model.clone(true);
-      const wheels = def.wheels.map((n) => car.getObjectByName(n)).filter(Boolean) as THREE.Object3D[];
-      let s = 2.2;
-      if (wheels.length === 4) { car.updateWorldMatrix(true, true); const p = wheels.map((w) => w.getWorldPosition(new THREE.Vector3())); s = 2.7 / (Math.abs((p[0].z + p[1].z) / 2 - (p[2].z + p[3].z) / 2) || 1); }
-      const g = new THREE.Group(); g.userData['wheels'] = wheels; g.userData['car'] = car; car.scale.setScalar(s); car.updateWorldMatrix(true, true); car.position.y = -new THREE.Box3().setFromObject(car).min.y; g.add(car); g.visible = false;
-      { // distance LOD: a two-box silhouette in the car's own colour stands in beyond ~75 m (24 triangles instead of thousands)
-        let col = 0x888888; car.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && /body|paint|car/i.test(m.name) && (m.material as THREE.MeshStandardMaterial).color) col = (m.material as THREE.MeshStandardMaterial).color.getHex(); });
-        const px = new THREE.Group(), bm = new THREE.MeshStandardMaterial({ color: col, roughness: 0.5, metalness: 0.3 }), gm = RoadTraffic.glassMat;
+      const kind = MIX[i % MIX.length], col = PAINTS[(i * 7 + 3) % PAINTS.length];
+      const g = makeCar(kind, col); g.visible = false;
+      { // distance LOD: a two-box silhouette in the car's own colour stands in beyond ~75 m
+        const px = new THREE.Group(), bm = new THREE.MeshStandardMaterial({ color: new THREE.Color(col[0], col[1], col[2]), roughness: 0.5, metalness: 0.3 }), gm = RoadTraffic.glassMat;
         const b1 = new THREE.Mesh(RoadTraffic.boxA, bm); b1.position.set(0, 0.62, 0); const b2 = new THREE.Mesh(RoadTraffic.boxB, gm); b2.position.set(0, 1.2, -0.15);
         px.add(b1, b2); px.visible = false; g.add(px); g.userData['proxy'] = px;
       }
