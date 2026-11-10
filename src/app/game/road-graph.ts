@@ -36,6 +36,7 @@ export class RoadGraph {
 
   pos(i: number): [number, number] { return [this.x[i], this.z[i]]; }
   /** A random drivable vertex between minR and maxR metres from (cx,cz), or -1. */
+  nodeXZ(i: number): [number, number] { return [this.x[i], this.z[i]]; }
   randomNode(cx: number, cz: number, minR: number, maxR: number): number {
     for (let t = 0; t < 14; t++) { const a = Math.random() * Math.PI * 2, r = minR + Math.random() * (maxR - minR); const i = this.nearest(cx + Math.cos(a) * r, cz + Math.sin(a) * r, 160); if (i >= 0) return i; }
     return -1;

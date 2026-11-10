@@ -98,7 +98,7 @@ export class SceneManager {
 
     this.particleSystem = new ParticleSystem(this.scene);
     this.weather = new Weather(this.scene);
-    this.worldBuilder.onReady(() => { this.signals = new TrafficSignals(this.scene, this.worldBuilder); this.roadTraffic = new RoadTraffic(this.scene, this.worldBuilder); this.roadTraffic.signals = this.signals; this.pedestrians = new Pedestrians(this.scene, this.worldBuilder); this.police = new Police(this.scene, this.worldBuilder, () => this.graphProvider?.()); this.police.setEnabled(this.copsWanted); this.pedestrians.setCount(this.pedFraction); });
+    this.worldBuilder.onReady(() => { this.signals = new TrafficSignals(this.scene, this.worldBuilder); this.roadTraffic = new RoadTraffic(this.scene, this.worldBuilder); this.roadTraffic.signals = this.signals; this.roadTraffic.graph = () => this.graphProvider?.(); this.pedestrians = new Pedestrians(this.scene, this.worldBuilder); this.police = new Police(this.scene, this.worldBuilder, () => this.graphProvider?.()); this.police.setEnabled(this.copsWanted); this.pedestrians.setCount(this.pedFraction); });
   }
 
   private detectSoftwareGl(): void {
@@ -267,6 +267,7 @@ export class SceneManager {
 
   public updateEnvironment(env: WorldEnvironmentState): void {
     this.windKmh = env.windSpeedKmh; this.weather.set(env.weather);
+    this.roadTraffic?.setHour(env.timeOfDayHours);
     const elev = Math.sin(((env.timeOfDayHours - 6) / 24) * 2 * Math.PI);   // true solar elevation, not clamped by the env service
     const sd = new THREE.Vector3(env.sunPosition[0], 0, env.sunPosition[2]).normalize(); sd.x *= Math.sqrt(Math.max(0.0001, 1 - elev * elev)); sd.z *= Math.sqrt(Math.max(0.0001, 1 - elev * elev)); sd.y = elev;
     this.sunDirSky.copy(sd);
