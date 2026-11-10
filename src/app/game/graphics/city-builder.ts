@@ -4,7 +4,7 @@ import { GeoBuf, slab } from './geo-buf';
 import type { WorldBuilder } from './world-builder';
 
 /** [use, heightDm, footprint dm..., signIndex, seed] */
-type Bld = [number, number, number[], number, number];
+type Bld = [number, number, number[], number, number, number?];
 
 const CH = 800;
 const rnd = (a: number): number => { const s = Math.sin(a * 12.9898) * 43758.5453; return s - Math.floor(s); };
@@ -343,6 +343,15 @@ export class CityBuilder {
     n = pts.length; const area = A / 2, r = seed / 1000, w = this.w;
     let maxH = -1e9; const hs = pts.map((p) => { const h = w.calculateRawTerrainHeight(p[0], p[1]); maxH = Math.max(maxH, h); return h; });
     const st = this.style(use, r, area, n);
+    const sat = b[5];
+    if (sat !== undefined && sat >= 0 && use !== 17) {
+      // real roof colour: bit 24 = from the 1 m aerial photo (trusted fully); otherwise a Sentinel-2 pixel shared with the yard (trusted less on small roofs)
+      const aerial = (sat >> 24) & 1;
+      let c = [(sat >> 16) & 255, (sat >> 8) & 255, sat & 255].map((v) => Math.pow(v / 255, 1.7) * 1.12);
+      const l = (c[0] + c[1] + c[2]) / 3; c = c.map((v) => Math.max(0.04, Math.min(1, l + (v - l) * (aerial ? 1.15 : 1.35))));
+      const k = aerial ? 1 : Math.max(0.5, Math.min(1, area / 320));
+      st.rtint = st.rtint.map((v, i) => v + (c[i] - v) * k);
+    }
     const boost = st.wall === 'plaster' ? 1.0 : st.wall === 'concrete' ? 0.98 : st.wall === 'brick' ? 1.05 : 1.15;
     st.tint = st.tint.map((v) => v * boost);
     const h = (hdm / 10) * this.neoHeight(cx, cz, area); const top = maxH + h;

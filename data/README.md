@@ -52,3 +52,10 @@ python3 -I scripts/build_world.py /tmp/osmm data/dem.json public/assets/world /t
 python3 -I scripts/apply_mapillary.py                                        # real poles / lamps / signs into meta.json
 ```
 Do NOT build from the bare `/tmp/osm` + `/tmp/osm2` extracts: that drops the merged buildings, land use and the third fetch.
+
+## Real imagery (run before build_world.py; both are picked up automatically when the files exist)
+```
+python3 -I scripts/fetch_s2.py      # Sentinel-2 10 m true colour -> data/s2_ground.png (whole map ground colour, roof colour fallback)
+python3 -I scripts/fetch_ortho.py   # 17 cm NDMA drone survey of Manzini (OpenAerialMap, CC-BY 4.0, 820 MB download) ->
+                                    # data/ortho_1m.jpg (+mask, meta) and public/assets/world/ortho.jpg (2 m ground layer, desktop only)
+```

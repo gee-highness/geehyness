@@ -59,6 +59,36 @@ def num(v, default):
 def poly(e): return [P(g["lat"], g["lon"]) for g in e.get("geometry", [])]
 dm = lambda v: int(round(v * 10))
 
+# ---------------- real colour: Sentinel-2 true colour on the game grid (scripts/fetch_s2.py); optional
+S2_PATH = os.environ.get("S2", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "s2_ground.png"))
+S2 = np.asarray(Image.open(S2_PATH).convert("RGB"), np.float32) if os.path.exists(S2_PATH) else None
+S2PX = 10
+_DD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
+Image.MAX_IMAGE_PIXELS = None
+if os.path.exists(f"{_DD}/ortho_1m.jpg"):
+    ORTHO = np.asarray(Image.open(f"{_DD}/ortho_1m.jpg").convert("RGB")); ORTHO_M = np.asarray(Image.open(f"{_DD}/ortho_1m_mask.png")) > 127
+    OB = json.load(open(f"{_DD}/ortho_meta.json"))["bounds"]
+else: ORTHO = None
+ROOF_SRC = {0: 0, 1: 0, 2: 0}
+def s2_roof(g, area):
+    """Real roof colour, packed sRGB (+ bit 24 when it comes from the 1 m aerial photo). Aerial: median of the pixels inside the
+    footprint shrunk 30 % toward its centre (tolerates a few metres of misregistration, ignores edge shadows). Else Sentinel-2. Else -1."""
+    cx = sum(q[0] for q in g) / len(g); cz = sum(q[1] for q in g) / len(g)
+    if ORTHO is not None and OB[0] + 2 < cx < OB[1] - 2 and OB[2] + 2 < cz < OB[3] - 2 and ORTHO_M[int(cz - OB[2]), int(cx - OB[0])]:
+        pts = [((cx + (x - cx) * 0.7) - OB[0], (cz + (z - cz) * 0.7) - OB[2]) for x, z in g]
+        x0_, x1_ = int(min(q[0] for q in pts)), int(max(q[0] for q in pts)) + 1; z0_, z1_ = int(min(q[1] for q in pts)), int(max(q[1] for q in pts)) + 1
+        x0_, z0_ = max(0, x0_), max(0, z0_); x1_, z1_ = min(ORTHO.shape[1], x1_), min(ORTHO.shape[0], z1_)
+        if x1_ > x0_ and z1_ > z0_:
+            m = Image.new("L", (x1_ - x0_, z1_ - z0_), 0); ImageDraw.Draw(m).polygon([(q[0] - x0_, q[1] - z0_) for q in pts], fill=1)
+            mk = np.asarray(m) > 0; px = ORTHO[z0_:z1_, x0_:x1_][mk] if mk.sum() >= 3 else ORTHO[int(cz - OB[2]), int(cx - OB[0])][None]
+            c = np.median(px, axis=0); ROOF_SRC[2] += 1
+            return (1 << 24) | (int(c[0]) << 16) | (int(c[1]) << 8) | int(c[2])
+    if S2 is None: ROOF_SRC[0] += 1; return -1
+    r = int(min(6, max(0, (math.sqrt(max(area, 1.0)) * 0.3) // S2PX)))
+    j, i = int((cz - Z0) // S2PX), int((cx - X0) // S2PX)
+    if not (0 <= j < S2.shape[0] and 0 <= i < S2.shape[1]): ROOF_SRC[0] += 1; return -1
+    c = np.clip(S2[max(0, j - r):j + r + 1, max(0, i - r):i + r + 1].reshape(-1, 3).mean(0) * 1.5, 0, 255); ROOF_SRC[1] += 1
+    return (int(c[0]) << 16) | (int(c[1]) << 8) | int(c[2])
 # ---------------- DEM -> Int16 decimetres
 dem = json.load(open(dem_path))
 open(f"{out}/height.bin", "wb").write(struct.pack(f"<{len(dem['h'])}h", *[int(round(h * 10)) for h in dem["h"]]))
@@ -512,7 +542,8 @@ for t, g, area, cx, cz in BR:
         else: sid = brand_for(name, pool, h_)
         if use == 6 and not (poi or t.get("office")) and d_cbd > 800: sid = -1
     use_count[use] += 1
-    bl.append([use, dm(hh), [dm(v) for pt in g for v in pt], sid, int(h_ * 1000)])
+    _ar = abs(sum(g[i][0] * g[(i + 1) % len(g)][1] - g[(i + 1) % len(g)][0] * g[i][1] for i in range(len(g)))) / 2
+    bl.append([use, dm(hh), [dm(v) for pt in g for v in pt], sid, int(h_ * 1000), s2_roof(g, _ar)])
     pts = [((x - X0) / PX, (z - Z0) / PX) for x, z in g]
     dbm.polygon(pts, fill=255)
 for e in poi_xy:
@@ -520,7 +551,7 @@ for e in poi_xy:
     if pt.get("amenity") in ("marketplace", "bus_station") or pt.get("shop") == "marketplace": stalls.append([round(x, 1), round(z, 1)])
 print("uses", dict(sorted(use_count.items())), "stalls", len(stalls))
 json.dump({"b": bl, "signs": SIGNS, "stalls": stalls}, open(f"{out}/buildings.json", "w"), separators=(",", ":"))
-print("buildings", len(bl))
+print("buildings", len(bl), "roof colour source none/sentinel/aerial", ROOF_SRC)
 
 
 # ---------------- extra OSM features (barriers, real trees, power, pitches, pools, parking, tanks, bumps)
@@ -591,10 +622,17 @@ dens = _box(_bm, max(2, int(40 / PX)))                              # building c
 ca, ka = np.array(col, np.float32), np.array(cls)
 soft = np.isin(ka, (1, 2, 4, 8))                                    # never repaint water, forest, rock, parking...
 yard = np.clip((dens - 0.05) / 0.10, 0, 1) * soft; core = np.clip((dens - 0.20) / 0.12, 0, 1) * soft
+if S2 is not None and S2.shape[:2] == ca.shape[:2] and S2PX == PX:
+    # the real thing: satellite colour, lifted to the game's exposure; OSM colour only survives as a 12 % hint and for water
+    g_ = np.clip(S2 * 1.62 + 6, 0, 255); lum = g_.mean(-1, keepdims=True); g_ = np.clip(lum + (g_ - lum) * 1.12, 0, 255)
+    wat = (ka == 12)[..., None]
+    ca = np.where(wat, ca * 0.6 + g_ * 0.4, ca * 0.12 + g_ * 0.88); yard *= 0; core *= 0
+    REAL_GROUND = True
+else: REAL_GROUND = False
 ca = ca * (1 - 0.75 * yard[..., None]) + np.array([150, 126, 98], np.float32) * 0.75 * yard[..., None]
 ca = ca * (1 - 0.85 * core[..., None]) + np.array([134, 132, 126], np.float32) * 0.85 * core[..., None]
-ka[(yard > 0.5) & (ka != 8)] = 8
-ca[_bm > 0.5] = ca[_bm > 0.5] * 0.8                                 # contact darkening under footprints
+ka[(np.clip((dens - 0.05) / 0.10, 0, 1) * soft > 0.5) & (ka != 8)] = 8
+if not REAL_GROUND: ca[_bm > 0.5] = ca[_bm > 0.5] * 0.8                                 # contact darkening under footprints
 col = Image.fromarray(ca.clip(0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(0.8)); cls = Image.fromarray(ka)
 col.save(f"{out}/groundcolor.png", optimize=True); cls.save(f"{out}/groundclass.png", optimize=True)
 # ---------------- trees from raster: density per m2 by ground class (5 forest, 8 gardens, 1 bushveld, 2 grass, 4 farmland)
@@ -651,7 +689,8 @@ spawn = {"x": best[1], "z": best[2], "yaw": math.atan2(best[3], best[4])}
 want = {"manzini": (-26.4966, 31.3826), "matsapha": (-26.4945, 31.3084), "fairview": (-26.478, 31.376), "ngwane_park": (-26.5228, 31.373),
         "kwaluseni": (-26.482, 31.297), "airport": (-26.529, 31.3075), "moneni": (-26.505, 31.41)}
 snaps = {k: snap(*P(*v)) for k, v in want.items()}
-meta = {"lat0": LAT0, "lon0": LON0, "bounds": [X0, X1, Z0, Z1], "px": PX, "gw": W, "gh": H,
+_ortho = {"ortho": {"bounds": OB}} if ORTHO is not None and os.path.exists(f"{out}/ortho.jpg") else {}
+meta = {**_ortho, "lat0": LAT0, "lon0": LON0, "bounds": [X0, X1, Z0, Z1], "px": PX, "gw": W, "gh": H,
         "dem": {"x0": dem["x0"], "z0": dem["z0"], "step": dem["step"], "nx": dem["nx"], "nz": dem["nz"]},
         "spawn": spawn, "places": places, "pois": pois, "signals": signals, "busstops": busstops, "lamps": lamps, "signs": signs, "addr": addr, "views": views + [v for v in extra_views if all(abs(v["p"][0] - q["p"][0]) + abs(v["p"][1] - q["p"][1]) > 60 for q in views)], "snaps": snaps}
 json.dump(meta, open(f"{out}/meta.json", "w"), separators=(",", ":"))

@@ -475,7 +475,21 @@ export class WorldBuilder {
   }
 
   // ------------------------------------------------------------------ terrain
+  private orthoUni = { uOrtho: { value: null as THREE.Texture | null }, uOrthoMask: { value: null as THREE.Texture | null }, uOrthoBox: { value: new THREE.Vector4(0, 1, 0, 1) }, uOrthoOn: { value: 0 } };
+  /** Aerial orthophoto ground layer (desktop only: a 4k texture is too much memory for phones). */
+  private loadOrtho(): void {
+    const ob = (this.meta as unknown as { ortho?: { bounds: number[] } }).ortho;
+    if (!ob || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)) return;
+    const L = new THREE.TextureLoader();
+    L.load('assets/world/ortho_mask.png', (m) => { m.minFilter = THREE.LinearFilter; m.generateMipmaps = false; this.orthoUni.uOrthoMask.value = m;
+      L.load('assets/world/ortho.jpg', (t) => {
+        t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; this.orthoUni.uOrtho.value = t;
+        this.orthoUni.uOrthoBox.value.set(ob.bounds[0], ob.bounds[1], ob.bounds[2], ob.bounds[3]); this.orthoUni.uOrthoOn.value = 1;
+      });
+    });
+  }
   private buildTerrain(scene: THREE.Scene, groundTex: THREE.Texture): void {
+    this.loadOrtho();
     const detail0 = 0; void detail0;
     const mat = new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95, metalness: 0 });
     const tPrevKey = 'terrain-style';
@@ -492,7 +506,18 @@ export class WorldBuilder {
           diffuseColor.rgb *= (0.45 + lum * 1.35) * (0.7 + l2 * 0.8);
           float lg = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
           diffuseColor.rgb = mix(vec3(lg), diffuseColor.rgb, 1.28) * mix(vec3(0.84, 0.92, 0.86), vec3(1.0), urban);
-          diffuseColor.rgb = clamp(diffuseColor.rgb, 0.0, 1.0);`);
+          diffuseColor.rgb = clamp(diffuseColor.rgb, 0.0, 1.0);
+          { // real aerial photo (2 m/px) over the surveyed city; fades to the satellite colour at its ragged edge
+            vec2 ouv = vec2((vW.x - uOrthoBox.x) / (uOrthoBox.y - uOrthoBox.x), 1.0 - (vW.z - uOrthoBox.z) / (uOrthoBox.w - uOrthoBox.z));
+            float ok = step(0.0, ouv.x) * step(ouv.x, 1.0) * step(0.0, ouv.y) * step(ouv.y, 1.0) * uOrthoOn;
+            if (ok > 0.5) {
+              float om = smoothstep(0.55, 0.95, texture2D(uOrthoMask, ouv).r);
+              vec3 oc = texture2D(uOrtho, ouv).rgb * (0.9 + 0.22 * sfbm(vW.xz * 1.9 + 11.0));   // sub-pixel grain so it never looks smeared up close
+              diffuseColor.rgb = mix(diffuseColor.rgb, oc, om);
+            }
+          }`);
+      sh.fragmentShader = sh.fragmentShader.replace('varying vec3 vW;', 'varying vec3 vW;\nuniform sampler2D uOrtho; uniform sampler2D uOrthoMask; uniform vec4 uOrthoBox; uniform float uOrthoOn;');
+      Object.assign(sh.uniforms, this.orthoUni);
     };
     mat.customProgramCacheKey = () => tPrevKey; addLampLight(mat);
     this.buildTerrainTiles(scene, mat);
