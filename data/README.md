@@ -64,3 +64,16 @@ python3 -I scripts/fetch_ortho.py   # 17 cm NDMA drone survey of Manzini (OpenAe
 `data/bld_ms.json.gz` = Microsoft ML building footprints (ODbL) not already in OSM, made by
 `python3 -I scripts/merge_ms_buildings.py /tmp/osmm /tmp/osmm/osm2 <quadkey 300301322 .csv.gz> /tmp/osmm/bld_ms.json`.
 Before building: `gunzip -c data/bld_ms.json.gz > /tmp/osmm/bld_ms.json` (build_world.py reads it as one more building file).
+
+## Everything needed to rebuild is in this folder (no re-download required)
+| File | What | Use |
+|---|---|---|
+| `build-inputs.zip` | merged OSM inputs: `osmm/` (roads, points, land use, all `bld_*.json` incl. `bld_ms.json`, `osm2/`) and `osm3/` | `unzip -q data/build-inputs.zip -d /tmp` -> `/tmp/osmm`, `/tmp/osm3` |
+| `glo30_S27_E031.tif` | Copernicus GLO-30 elevation tile | `fetch_dem_glo30.py 20 data/dem_glo30_raw.json data/glo30_S27_E031.tif` |
+| `ms_buildings_300301322.csv.gz` | Microsoft building footprints (source for `bld_ms.json.gz`) | `merge_ms_buildings.py` |
+| `ortho_50cm.jpg` | Manzini aerial survey resampled to 0.5 m on the game grid (bounds in `ortho_meta.json`); white = no data | future detail work (facades, lots, markings) |
+| `ortho_1m.jpg` + `ortho_1m_mask.png` | same at 1 m | read by `build_world.py` (roof colour + shape) |
+| `ortho_uneswa_7cm.tif` | University of Eswatini (Kwaluseni) campus, 7 cm GeoTIFF, UTM 36S, CC-BY 4.0 (OpenAerialMap, R. Brown / M. Dlamini, 2019) | not used yet |
+| `s2_ground.png` | Sentinel-2 true colour on the game grid | read by `build_world.py` |
+NOT in the repo: the original 17 cm Manzini GeoTIFF (822 MB, over GitHub's 100 MB file limit). `scripts/fetch_ortho.py` re-downloads it from OpenAerialMap.
+Dev helpers: `scripts/dev/shot.cjs` (screenshots: `Q='?hq' node scripts/dev/shot.cjs name:x:z [name:x:z:topHeight]`), `scripts/dev/cars.cjs`, `scripts/roadscan.cjs`.
