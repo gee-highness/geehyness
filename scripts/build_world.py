@@ -267,7 +267,7 @@ for i, ((x, z), t) in enumerate(poi_xy): PHASH[(int(x // 60), int(z // 60))].app
 cent = []  # building centroids for density
 BR = []
 seen = set()
-for n_, ldr in [("bld_manzini", load), ("bld_ezulwini", load), ("bld_extra", load0)] + [(n, load2) for n in ("bld_lobamba", "bld_malkerns", "bld_matsapha1", "bld_matsapha2", "bld_mbabane1", "bld_mbabane2")]:
+for n_, ldr in [("bld_manzini", load), ("bld_ezulwini", load), ("bld_extra", load0), ("bld_ms", load0)] + [(n, load2) for n in ("bld_lobamba", "bld_malkerns", "bld_matsapha1", "bld_matsapha2", "bld_mbabane1", "bld_mbabane2")]:
     for e in ldr(n_):
         if e["id"] in seen: continue
         seen.add(e["id"]); t = e.get("tags", {})

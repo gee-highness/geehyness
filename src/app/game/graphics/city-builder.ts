@@ -401,7 +401,7 @@ export class CityBuilder {
     }
 
     // collision footprint + tree rejection
-    if (use !== 17 && !w.overlapsRoad(pts, cx, cz)) w.collision.addPolygon(pts.flatMap((p) => [p[0], p[1]]), Math.min(...hs) - 1, top, roof === 'flat' && area > 30);
+    if (use !== 17 && !w.overlapsRoad(pts, cx, cz)) w.collision.addPolygon(pts.flatMap((p) => [p[0], p[1]]), Math.min(...hs) - 1, top, roof === 'flat' && area > 30, true);
 
     // walled compound + hedge for houses in town (detail only when close)
     if ((use === 0 || use === 1 || use === 13) && area > 70 && Math.hypot(cx + 750, cz + 210) < 3400 && r < 0.8) this.compound(cx, cz, ocx, ocz, ux, uz, vx, vz, halfU, halfV, r, hs);
@@ -567,6 +567,7 @@ export class CityBuilder {
   }
 
   private box(b: GeoBuf, x: number, y: number, z: number, sx: number, sy: number, sz: number, rot: number, col: number[]): void {
+    if (sy > 0.25 && this.w.inRoadVolume(x, z, 0, y, y + sy)) return;   // road clearance volume: nothing solid stands in a carriageway
     const c = Math.cos(rot), s = Math.sin(rot); const hx = sx / 2, hz = sz / 2;
     const corner = (lx: number, lz: number): [number, number] => [x + lx * c - lz * s, z + lx * s + lz * c];
     const q = [corner(-hx, -hz), corner(hx, -hz), corner(hx, hz), corner(-hx, hz)];

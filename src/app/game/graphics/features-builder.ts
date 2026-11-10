@@ -32,6 +32,7 @@ export class FeaturesBuilder {
     if (cx * n[0] + cy * n[1] + cz * n[2] >= 0) { b.tri(ids[0], ids[1], ids[2]); b.tri(ids[0], ids[2], ids[3]); } else { b.tri(ids[0], ids[2], ids[1]); b.tri(ids[0], ids[3], ids[2]); }
   }
   private box(b: GeoBuf, cx: number, y0: number, cz: number, along: number, across: number, hgt: number, tx: number, tz: number, col: number[]): void {
+    if (hgt > 0.25 && this.w.inRoadVolume(cx, cz, 0, y0, y0 + hgt)) return;   // road clearance volume: nothing solid stands in a carriageway
     const nx = -tz, nz = tx, ha = along / 2, hc = across / 2;
     const c = (a: number, s: number): [number, number] => [cx + tx * a + nx * s, cz + tz * a + nz * s];
     const q = [c(-ha, -hc), c(ha, -hc), c(ha, hc), c(-ha, hc)];
@@ -115,6 +116,7 @@ export class FeaturesBuilder {
           const yr = w.groundHeightAt(mx, mz);
           for (const sd of [-1, 1]) {
             const ex = mx + nx * sd * half, ez = mz + nz * sd * half;
+            if (w.inRoadVolume(ex - tx * len / 2, ez - tz * len / 2, 2.2, undefined, undefined, r) || w.inRoadVolume(ex + tx * len / 2, ez + tz * len / 2, 2.2, undefined, undefined, r) || w.inRoadVolume(ex, ez, 2.2, undefined, undefined, r)) continue;   // wide gap at every junction mouth and side road
             if (this.blocksRoad(ex, ez, tx, tz, len) || w.roadAt(mx + nx * sd * (half + 2.5), mz + nz * sd * (half + 2.5))) continue;
             const drop = yr - this.h(mx + nx * sd * (half + 3), mz + nz * sd * (half + 3));
             if (drop < 3.5) continue;

@@ -29,6 +29,7 @@ export class ExtrasBuilder {
   }
 
   private box(b: GeoBuf, cx: number, y0: number, cz: number, along: number, across: number, h: number, tx: number, tz: number, col: number[]): void {
+    if (h > 0.25 && this.w.inRoadVolume(cx, cz, 0, y0, y0 + h)) return;   // road clearance volume: nothing solid stands in a carriageway
     const nx = -tz, nz = tx, ha = along / 2, hc = across / 2;
     const c = (a: number, s: number): [number, number] => [cx + tx * a + nx * s, cz + tz * a + nz * s];
     const q = [c(-ha, -hc), c(ha, -hc), c(ha, hc), c(-ha, hc)];
@@ -189,7 +190,7 @@ export class ExtrasBuilder {
     for (const [x, z, kind] of w.meta.furn ?? []) {
       const rd = w.nearestRoadSegment(x, z, 7); const tx = rd?.tx ?? 1, tz = rd?.tz ?? 0, b = this.buf(x, z, 'props'), y = w.groundHeightAt(x, z), onRoad = !!w.roadAt(x, z);
       if (kind === 'manhole') { if (onRoad) this.box(b, x, y + 0.03, z, 0.8, 0.8, 0.012, tx, tz, [0.17, 0.17, 0.19]); }
-      else if (onRoad && kind !== 'barrier' && kind !== 'cone') continue;
+      else if (onRoad) continue;   // nothing (not even cones or temporary barriers) is left in a lane
       else if (kind === 'box') { this.box(b, x, y, z, 0.5, 1.0, 1.1, tx, tz, [0.5, 0.52, 0.55]); w.collision.addCircle(x, z, 0.5); }
       else if (kind === 'can') { this.box(b, x, y, z, 0.5, 0.5, 0.9, tx, tz, [0.16, 0.3, 0.2]); w.collision.addCircle(x, z, 0.3); }
       else if (kind === 'cone') { this.box(b, x, y, z, 0.32, 0.32, 0.6, tx, tz, [0.95, 0.4, 0.08]); this.box(b, x, y + 0.3, z, 0.34, 0.34, 0.08, tx, tz, [0.95, 0.95, 0.95]); }
@@ -335,7 +336,7 @@ export class ExtrasBuilder {
           this.box(b, x, y + 0.62 * sc, z, 1.9 * sc, 0.7 * sc, 0.7 * sc, fx, fz, c);                                  // body
           this.box(b, x + fx * 1.15 * sc, y + 0.85 * sc, z + fz * 1.15 * sc, 0.45 * sc, 0.34 * sc, 0.4 * sc, fx, fz, c); // head
           for (const [lu, lv] of [[0.7, 0.22], [0.7, -0.22], [-0.7, 0.22], [-0.7, -0.22]]) this.box(b, x + fx * lu * sc - fz * lv * sc, y, z + fz * lu * sc + fx * lv * sc, 0.13 * sc, 0.13 * sc, 0.65 * sc, fx, fz, c);
-          w.collision.addCircle(x, z, 0.55 * sc + 0.15); made++; w.animalSpots.push([Math.round(x), Math.round(z)]);
+          w.collision.addCircle(x, z, 0.55 * sc + 0.15, -1e9, 1e9, true); made++; w.animalSpots.push([Math.round(x), Math.round(z)]);
         }
       }
     }

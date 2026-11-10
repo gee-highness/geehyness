@@ -217,6 +217,7 @@ export class StreetBuilder {
   }
 
   private box(b: GeoBuf, x: number, y: number, z: number, sx: number, sy: number, sz: number, rot: number, col: number[]): void {
+    if (sy > 0.25 && this.w.inRoadVolume(x, z, 0, y, y + sy)) return;   // road clearance volume
     const c = Math.cos(rot), s = Math.sin(rot), hx = sx / 2, hz = sz / 2;
     const cr = (lx: number, lz: number): [number, number] => [x + lx * c - lz * s, z + lx * s + lz * c];
     const q = [cr(-hx, -hz), cr(hx, -hz), cr(hx, hz), cr(-hx, hz)];
@@ -321,7 +322,7 @@ export class StreetBuilder {
       const lk = `${Math.floor(c.x / 300)},${Math.floor(c.z / 300)}`; let la = lod.get(lk); if (!la) { la = []; lod.set(lk, la); }
       const col = StreetBuilder.PAL[Math.floor(rnd(c.x * 0.7 + c.z * 1.3) * StreetBuilder.PAL.length)];
       la.push(tint(this.bodyT.clone().applyMatrix4(M), col), tint(this.cabinT.clone().applyMatrix4(M), [col[0] * 0.5, col[1] * 0.55, col[2] * 0.6]));
-      const fx = Math.sin(c.rot), fz = Math.cos(c.rot); for (const o of [-1.3, 0, 1.3]) w.collision.addCircle(c.x + fx * o, c.z + fz * o, 0.95);
+      const fx = Math.sin(c.rot), fz = Math.cos(c.rot); for (const o of [-1.3, 0, 1.3]) w.collision.addCircle(c.x + fx * o, c.z + fz * o, 0.95, -1e9, 1e9, true);
     }
     lod.forEach((geos, key) => {
       const g = mergeGeometries(geos.map((q) => (q.index ? q.toNonIndexed() : q))); if (!g) return; g.computeBoundingSphere();

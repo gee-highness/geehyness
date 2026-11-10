@@ -22,7 +22,19 @@ export class CollisionWorld {
 
   private key(cx: number, cz: number): number { return cx * 100003 + cz; }
 
-  addPolygon(pts: number[], y0 = -1e9, y1 = 1e9, roof = false): void {
+  /** Road clearance test (set by the world): true when a solid at (x,z,r) spanning y0..y1 would sit inside a carriageway. */
+  public clear: ((x: number, z: number, r: number, y0: number, y1: number) => boolean) | null = null;
+  public cut = 0; // colliders refused because they were in a road
+
+  /** `keep` = never cut (building shells, bridge parapets: placed deliberately). Returns false when the road volume removed it. */
+  addPolygon(pts: number[], y0 = -1e9, y1 = 1e9, roof = false, keep = false): boolean {
+    if (this.clear && !keep && !roof) {
+      const n = pts.length / 2;
+      for (let a = 0; a < n; a++) {
+        const b = (a + 1) % n, ax = pts[a * 2], az = pts[a * 2 + 1], L = Math.hypot(pts[b * 2] - ax, pts[b * 2 + 1] - az), m = Math.max(1, Math.ceil(L / 0.8));
+        for (let k = 0; k < m; k++) if (this.clear(ax + ((pts[b * 2] - ax) * k) / m, az + ((pts[b * 2 + 1] - az) * k) / m, 0, y0, y1)) { this.cut++; return false; }
+      }
+    }
     const idx = this.polys.length; this.polys.push(Float32Array.from(pts)); this.polyY.push(y0, y1); this.polyRoof.push(roof);
     let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
     for (let i = 0; i < pts.length; i += 2) { x0 = Math.min(x0, pts[i]); x1 = Math.max(x1, pts[i]); z0 = Math.min(z0, pts[i + 1]); z1 = Math.max(z1, pts[i + 1]); }
@@ -30,11 +42,14 @@ export class CollisionWorld {
     for (let a = Math.floor(x0 / this.CELL); a <= Math.floor(x1 / this.CELL); a++) for (let b = Math.floor(z0 / this.CELL); b <= Math.floor(z1 / this.CELL); b++) {
       const k = this.key(a, b); let l = this.polyGrid.get(k); if (!l) { l = []; this.polyGrid.set(k, l); } l.push(idx);
     }
+    return true;
   }
 
-  addCircle(x: number, z: number, r: number, y0 = -1e9, y1 = 1e9): void {
+  addCircle(x: number, z: number, r: number, y0 = -1e9, y1 = 1e9, keep = false): boolean {
+    if (!keep && this.clear && this.clear(x, z, r, y0, y1)) { this.cut++; return false; }
     const idx = this.circles.length / 3; this.circles.push(x, z, r); this.circleY.push(y0, y1);
     const k = this.key(Math.floor(x / this.CELL), Math.floor(z / this.CELL)); let l = this.circleGrid.get(k); if (!l) { l = []; this.circleGrid.set(k, l); } l.push(idx);
+    return true;
   }
 
   /** Height of a flat roof under (x,z) that a car at height y can be standing on, or null. */

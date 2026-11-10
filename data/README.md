@@ -59,3 +59,8 @@ python3 -I scripts/fetch_s2.py      # Sentinel-2 10 m true colour -> data/s2_gro
 python3 -I scripts/fetch_ortho.py   # 17 cm NDMA drone survey of Manzini (OpenAerialMap, CC-BY 4.0, 820 MB download) ->
                                     # data/ortho_1m.jpg (+mask, meta) and public/assets/world/ortho.jpg (2 m ground layer, desktop only)
 ```
+
+## Buildings missing from OSM
+`data/bld_ms.json.gz` = Microsoft ML building footprints (ODbL) not already in OSM, made by
+`python3 -I scripts/merge_ms_buildings.py /tmp/osmm /tmp/osmm/osm2 <quadkey 300301322 .csv.gz> /tmp/osmm/bld_ms.json`.
+Before building: `gunzip -c data/bld_ms.json.gz > /tmp/osmm/bld_ms.json` (build_world.py reads it as one more building file).

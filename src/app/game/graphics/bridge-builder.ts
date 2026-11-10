@@ -1,3 +1,4 @@
+import type { RoadWay } from './world-builder';
 import * as THREE from 'three';
 import { GeoBuf } from './geo-buf';
 import type { WorldBuilder } from './world-builder';
@@ -37,7 +38,7 @@ export class BridgeBuilder {
     this.quad(b, q.map((p) => [p[0], y0 + h, p[1]] as V3), [0, 1, 0], col.map((v) => v * 1.1), q.map((p) => [p[0] / 3, p[1] / 3] as [number, number]));
   }
 
-  addWay(pts: [number, number][], L: [number, number][], R: [number, number][], yl: number[], yr: number[], yc: number[], hw: number, isRamp: boolean): void {
+  addWay(pts: [number, number][], L: [number, number][], R: [number, number][], yl: number[], yr: number[], yc: number[], hw: number, isRamp: boolean, own?: RoadWay): void {
     const w = this.w; const conc = [0.78, 0.78, 0.76], dark = [0.55, 0.55, 0.54], rail = [0.86, 0.86, 0.84];
     let cum = 0, pierAcc = 12;
     for (let i = 0; i + 1 < pts.length; i++) {
@@ -59,13 +60,19 @@ export class BridgeBuilder {
         const pc = Math.floor(cum / 3.5) % 2 ? conc.map((v) => v * 0.93) : conc; // panel joints like the real cast-concrete walls
         this.quad(b, [[sd.E0[0], b0, sd.E0[1]], [sd.E1[0], b1, sd.E1[1]], [sd.E1[0], sd.y1, sd.E1[1]], [sd.E0[0], sd.y0, sd.E0[1]]], [nx, 0, nz], pc, [[cum / 3, b0 / 3], [(cum + seg) / 3, b1 / 3], [(cum + seg) / 3, sd.y1 / 3], [cum / 3, sd.y0 / 3]]);
         // parapet: plain solid concrete wall along the deck edge (no rails/posts: town overpasses here have none)
+        // road clearance: where another carriageway meets this deck edge at the same level (ramp merges, side roads joining an
+        // embankment) the parapet is left out, so the junction mouth is open. Roads passing far below (underpasses) do not count.
+        const yq = Math.min(sd.y0, sd.y1);
+        const mouth = [0.15, 0.5, 0.85].some((t) => ([[0.9, 4.2, 0.92], [-0.2, 2.0, 1.42]] as number[][]).some(([o, ya, yb]) => w.inRoadVolume(sd.E0[0] + (sd.E1[0] - sd.E0[0]) * t + nx * o, sd.E0[1] + (sd.E1[1] - sd.E0[1]) * t + nz * o, 0, yq + ya, yq + yb, own)));   // just outside the edge: same level only; the parapet line itself: any other lane down to 3 m below
+        if (!mouth) {
         const ix0 = sd.E0[0] - nx * 0.4, iz0 = sd.E0[1] - nz * 0.4, ix1 = sd.E1[0] - nx * 0.4, iz1 = sd.E1[1] - nz * 0.4, ph = 0.95;
         this.quad(b, [[ix0, sd.y0, iz0], [ix1, sd.y1, iz1], [ix1, sd.y1 + ph, iz1], [ix0, sd.y0 + ph, iz0]], [-nx, 0, -nz], conc, [[cum / 3, 0], [(cum + seg) / 3, 0], [(cum + seg) / 3, 0.3], [cum / 3, 0.3]]);
         this.quad(b, [[ix0, sd.y0 + ph, iz0], [ix1, sd.y1 + ph, iz1], [sd.E1[0], sd.y1 + ph, sd.E1[1]], [sd.E0[0], sd.y0 + ph, sd.E0[1]]], [0, 1, 0], conc, [[ix0 / 3, iz0 / 3], [ix1 / 3, iz1 / 3], [sd.E1[0] / 3, sd.E1[1] / 3], [sd.E0[0] / 3, sd.E0[1] / 3]]);
         this.quad(b, [[sd.E0[0], sd.y0, sd.E0[1]], [sd.E1[0], sd.y1, sd.E1[1]], [sd.E1[0], sd.y1 + ph, sd.E1[1]], [sd.E0[0], sd.y0 + ph, sd.E0[1]]], [nx, 0, nz], conc, [[cum / 3, 0], [(cum + seg) / 3, 0], [(cum + seg) / 3, 0.3], [cum / 3, 0.3]]);
         // solid for the car at deck level only
         const yy = Math.min(sd.y0, sd.y1);
-        w.collision.addPolygon([ix0, iz0, ix1, iz1, sd.E1[0], sd.E1[1], sd.E0[0], sd.E0[1]], yy - 0.4, yy + 1.4);
+        w.collision.addPolygon([ix0, iz0, ix1, iz1, sd.E1[0], sd.E1[1], sd.E0[0], sd.E0[1]], yy - 0.4, yy + 1.4, false, true);
+        }
         void si;
       });
       if (viaduct) {
