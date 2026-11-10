@@ -89,6 +89,31 @@ def s2_roof(g, area):
     if not (0 <= j < S2.shape[0] and 0 <= i < S2.shape[1]): ROOF_SRC[0] += 1; return -1
     c = np.clip(S2[max(0, j - r):j + r + 1, max(0, i - r):i + r + 1].reshape(-1, 3).mean(0) * 1.5, 0, 255); ROOF_SRC[1] += 1
     return (int(c[0]) << 16) | (int(c[1]) << 8) | int(c[2])
+ROOF_SHAPE = {0: 0, 1: 0, 2: 0}
+def roof_shape(g, area):
+    """Roof form read off the aerial photo: 2 = pitched (the two sides of a ridge are lit differently by the sun), 1 = flat (one even
+    tone over a big roof), 0 = cannot tell / no imagery. The ridge is looked for along both axes of the footprint's longest edge."""
+    if ORTHO is None or area < 30: ROOF_SHAPE[0] += 1; return 0
+    cx = sum(q[0] for q in g) / len(g); cz = sum(q[1] for q in g) / len(g)
+    if not (OB[0] + 3 < cx < OB[1] - 3 and OB[2] + 3 < cz < OB[3] - 3 and ORTHO_M[int(cz - OB[2]), int(cx - OB[0])]): ROOF_SHAPE[0] += 1; return 0
+    pts = [((cx + (x - cx) * 0.82) - OB[0], (cz + (z - cz) * 0.82) - OB[2]) for x, z in g]
+    x0_, x1_ = max(0, int(min(q[0] for q in pts))), min(ORTHO.shape[1], int(max(q[0] for q in pts)) + 1); z0_, z1_ = max(0, int(min(q[1] for q in pts))), min(ORTHO.shape[0], int(max(q[1] for q in pts)) + 1)
+    if x1_ - x0_ < 4 or z1_ - z0_ < 4: ROOF_SHAPE[0] += 1; return 0
+    m = Image.new("L", (x1_ - x0_, z1_ - z0_), 0); ImageDraw.Draw(m).polygon([(q[0] - x0_, q[1] - z0_) for q in pts], fill=1)
+    mk = np.asarray(m) > 0
+    if mk.sum() < 16: ROOF_SHAPE[0] += 1; return 0
+    lum = ORTHO[z0_:z1_, x0_:x1_].astype(np.float32).mean(-1)
+    bi = max(range(len(g)), key=lambda i: math.hypot(g[(i + 1) % len(g)][0] - g[i][0], g[(i + 1) % len(g)][1] - g[i][1]))
+    ex, ez = g[(bi + 1) % len(g)][0] - g[bi][0], g[(bi + 1) % len(g)][1] - g[bi][1]; el = math.hypot(ex, ez) or 1; ex, ez = ex / el, ez / el
+    jj, ii = np.nonzero(mk); L = lum[jj, ii]; dx = ii + x0_ - (cx - OB[0]); dz = jj + z0_ - (cz - OB[2])
+    v = dx * (-ez) + dz * ex; u = dx * ex + dz * ez
+    def split(c):
+        a, b = L[c > 0.6], L[c < -0.6]
+        return abs(float(a.mean() - b.mean())) if len(a) > 5 and len(b) > 5 else 0.0
+    dv, du, sd = split(v), split(u), float(L.std())
+    if max(dv, du) > 14 and max(dv, du) > 0.55 * sd: ROOF_SHAPE[2] += 1; return 2
+    if area > 160 and sd < 13 and max(dv, du) < 6: ROOF_SHAPE[1] += 1; return 1
+    ROOF_SHAPE[0] += 1; return 0
 # ---------------- DEM -> Int16 decimetres
 dem = json.load(open(dem_path))
 open(f"{out}/height.bin", "wb").write(struct.pack(f"<{len(dem['h'])}h", *[int(round(h * 10)) for h in dem["h"]]))
@@ -543,7 +568,7 @@ for t, g, area, cx, cz in BR:
         if use == 6 and not (poi or t.get("office")) and d_cbd > 800: sid = -1
     use_count[use] += 1
     _ar = abs(sum(g[i][0] * g[(i + 1) % len(g)][1] - g[(i + 1) % len(g)][0] * g[i][1] for i in range(len(g)))) / 2
-    bl.append([use, dm(hh), [dm(v) for pt in g for v in pt], sid, int(h_ * 1000), s2_roof(g, _ar)])
+    bl.append([use, dm(hh), [dm(v) for pt in g for v in pt], sid, int(h_ * 1000), s2_roof(g, _ar), roof_shape(g, _ar)])
     pts = [((x - X0) / PX, (z - Z0) / PX) for x, z in g]
     dbm.polygon(pts, fill=255)
 for e in poi_xy:
@@ -551,7 +576,7 @@ for e in poi_xy:
     if pt.get("amenity") in ("marketplace", "bus_station") or pt.get("shop") == "marketplace": stalls.append([round(x, 1), round(z, 1)])
 print("uses", dict(sorted(use_count.items())), "stalls", len(stalls))
 json.dump({"b": bl, "signs": SIGNS, "stalls": stalls}, open(f"{out}/buildings.json", "w"), separators=(",", ":"))
-print("buildings", len(bl), "roof colour source none/sentinel/aerial", ROOF_SRC)
+print("buildings", len(bl), "roof colour source none/sentinel/aerial", ROOF_SRC, "roof shape unknown/flat/pitched", ROOF_SHAPE)
 
 
 # ---------------- extra OSM features (barriers, real trees, power, pitches, pools, parking, tanks, bumps)

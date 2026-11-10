@@ -279,13 +279,13 @@ export class SceneManager {
     this.sunLight.position.set(sd.x * 400, Math.max(40, sd.y * 400), sd.z * 400);
     this.sunLight.color.copy(pal.sun); this.sunLight.intensity = pal.sunI * (sd.y > -0.02 ? 1 : 0) * gloom * gloom * (this.neo ? 0.6 : 1);
     // ambient: sky colour above, warm bounce below; cool rim light opposite the sun for the stylised edge glow
-    this.hemiLight.color.copy(pal.zenith).lerp(new THREE.Color(1, 1, 1), 0.45); this.hemiLight.groundColor.copy(pal.horizon).multiplyScalar(0.42).lerp(new THREE.Color(0.35, 0.26, 0.2), 0.3);
+    this.hemiLight.color.copy(pal.zenith).lerp(new THREE.Color(1, 1, 1), 0.82);   // skylight is nearly white: walls must not turn blue this.hemiLight.groundColor.copy(pal.horizon).multiplyScalar(0.42).lerp(new THREE.Color(0.35, 0.26, 0.2), 0.3);
     const dark = Math.pow(day, 1.4); this.hemiLight.intensity = 0.045 + 0.85 * dark;                 // nights are properly dark: only faint moonlight
     this.moon.intensity = (1 - dark) * (sd.y < 0.05 ? 0.22 : 0) * gloom; this.moon.position.set(-sd.x * 300, 200, -sd.z * 300);
     this.rim.position.set(-sd.x * 300, 120, -sd.z * 300); this.rim.color.copy(pal.zenith).lerp(new THREE.Color(0.7, 0.8, 1), 0.5); this.rim.intensity = (0.03 + 0.4 * dark) * (this.neo ? 2 : 1);
     this.renderer.toneMappingExposure = 0.98 + 0.1 * (1 - day);
     const daylight = Math.max(0.06, day);
-    this.baseDaylight = daylight; this.scene.environmentIntensity = 0.04 + 0.96 * dark;
+    this.baseDaylight = daylight; this.scene.environmentIntensity = 0.04 + 0.5 * dark;   // sky reflections for paint and glass without tinting every matt wall blue
     if (this.worldBuilder.city) { this.worldBuilder.city.night.value = THREE.MathUtils.clamp(1 - (daylight - 0.06) / 0.3, 0, 1); this.worldBuilder.city.neo.value += ((this.neo ? 1 : 0) - this.worldBuilder.city.neo.value) * 0.5; }
     this.worldBuilder.setNightGlow?.(this.worldBuilder.city ? this.worldBuilder.city.night.value : 0);
     if (this.scene.fog) { const f = this.scene.fog as THREE.FogExp2; f.color.copy(pal.horizon).multiplyScalar(0.55 + 0.45 * daylight); f.density = Math.max(env.fogDensity * 0.4 * (this.neo ? 1.4 : 1), 0.00105); } // floor: hides the cut-off distance (~65% haze at 700 m)

@@ -4,17 +4,18 @@ import { GeoBuf, slab } from './geo-buf';
 import type { WorldBuilder } from './world-builder';
 
 /** [use, heightDm, footprint dm..., signIndex, seed] */
-type Bld = [number, number, number[], number, number, number?];
+type Bld = [number, number, number[], number, number, number?, number?];
 
 const CH = 800;
 const rnd = (a: number): number => { const s = Math.sin(a * 12.9898) * 43758.5453; return s - Math.floor(s); };
 const pick = <T>(arr: T[], r: number): T => arr[Math.floor(r * arr.length) % arr.length];
 
-const HOUSE: number[][] = [[0.9, 0.93, 0.97], [0.96, 0.86, 0.7], [0.97, 0.66, 0.56], [0.62, 0.82, 0.95], [0.6, 0.88, 0.78], [0.98, 0.84, 0.46], [0.9, 0.6, 0.5], [0.8, 0.84, 0.9], [0.92, 0.62, 0.72], [0.45, 0.78, 0.82]];
-const CIVIC: number[][] = [[0.98, 0.94, 0.78], [0.96, 0.96, 0.94], [0.92, 0.86, 0.7]];
-const CONCRETE: number[][] = [[0.86, 0.86, 0.86], [0.95, 0.93, 0.88], [0.76, 0.79, 0.82], [0.92, 0.84, 0.72], [0.7, 0.72, 0.74]];
-const BRICK: number[][] = [[1, 0.88, 0.8], [0.9, 0.7, 0.6], [1, 0.95, 0.9], [0.8, 0.65, 0.55]];
-const METAL: number[][] = [[0.7, 0.72, 0.75], [0.55, 0.65, 0.58], [0.6, 0.66, 0.78], [0.82, 0.82, 0.8], [0.78, 0.6, 0.52]];
+// Wall colours seen on Manzini streets: cream / off-white / beige render dominates, some peach, pale yellow, light grey and sage; no candy colours.
+const HOUSE: number[][] = [[0.93, 0.9, 0.82], [0.95, 0.94, 0.9], [0.9, 0.84, 0.72], [0.93, 0.8, 0.66], [0.94, 0.88, 0.66], [0.84, 0.84, 0.82], [0.88, 0.78, 0.68], [0.8, 0.84, 0.76], [0.96, 0.92, 0.84], [0.86, 0.72, 0.6]];
+const CIVIC: number[][] = [[0.96, 0.93, 0.8], [0.95, 0.95, 0.93], [0.9, 0.85, 0.72]];
+const CONCRETE: number[][] = [[0.86, 0.85, 0.83], [0.94, 0.92, 0.87], [0.78, 0.78, 0.77], [0.9, 0.84, 0.74], [0.72, 0.72, 0.71]];
+const BRICK: number[][] = [[0.82, 0.5, 0.38], [0.72, 0.42, 0.32], [0.88, 0.62, 0.46], [0.66, 0.4, 0.32]];
+const METAL: number[][] = [[0.74, 0.75, 0.76], [0.66, 0.7, 0.66], [0.7, 0.72, 0.76], [0.84, 0.84, 0.82], [0.76, 0.62, 0.54]];
 const ROOFS: number[][] = [[0.62, 0.66, 0.74], [0.86, 0.38, 0.24], [0.14, 0.58, 0.6], [0.7, 0.24, 0.2], [0.9, 0.92, 0.96], [0.3, 0.38, 0.78], [0.82, 0.56, 0.36], [0.26, 0.29, 0.38]];
 const AWNING: number[][] = [[0.8, 0.16, 0.16], [0.14, 0.32, 0.7], [0.1, 0.5, 0.25], [0.95, 0.7, 0.1], [0.9, 0.9, 0.88], [0.9, 0.4, 0.1]];
 
@@ -381,6 +382,9 @@ export class CityBuilder {
 
     // roof
     let roof = st.roof;
+    // roof form read from the aerial photo (build_world.roof_shape): 2 = a lit and a shaded side -> pitched; 1 = one even tone on a big roof -> flat
+    if (b[6] === 2 && (roof === 'flat' || roof === 'canopy') && use !== 17) roof = area < 420 && n <= 8 ? 'hip' : 'lowgable';
+    else if (b[6] === 1 && roof !== 'flat' && use !== 0 && use !== 1 && use !== 18) roof = 'flat';
     if ((roof === 'gable' || roof === 'lowgable') && (fill < 0.82 || n > 10 || halfV < 1.5)) roof = n <= 8 && area < 400 ? 'hip' : 'flat';
     if (roof === 'hip' && n > 9) roof = 'flat';
     if (roof === 'canopy') roof = 'flat';
