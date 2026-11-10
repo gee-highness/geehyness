@@ -17,6 +17,7 @@ import { AudioService } from '../../services/audio.service';
 import { EnvironmentService } from '../../services/environment.service';
 import type { WorldBuilder } from '../../game/graphics/world-builder';
 import { PoliceService } from '../../services/police.service';
+import { RaceService } from '../../services/race.service';
 import { NavigationService } from '../../services/navigation.service';
 import { DriveStateService } from '../../services/drive-state.service';
 import { SettingsService } from '../../services/settings.service';
@@ -114,6 +115,10 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
           <mat-icon class="!text-[22px] text-sky-300">{{ getWeatherIcon() }}</mat-icon>
           <span class="rail-tip">Weather <kbd>G</kbd></span>
         </button>
+        <button (click)="race.toggle()" class="rail-btn group" aria-label="Races">
+          <mat-icon class="!text-[22px]" [class.text-amber-300]="race.phase() === 'IDLE'" [class.text-red-400]="race.phase() !== 'IDLE'">sports_score</mat-icon>
+          <span class="rail-tip">{{ race.phase() === 'IDLE' ? 'Races' : 'Abandon race' }} <kbd>N</kbd></span>
+        </button>
         <button (click)="police.toggle()" class="rail-btn group" aria-label="Cops and robbers">
           <mat-icon class="!text-[22px]" [class.text-sky-300]="police.enabled()" [class.text-zinc-500]="!police.enabled()">local_police</mat-icon>
           <span class="rail-tip">Cops &amp; robbers {{ police.enabled() ? 'on' : 'off' }} <kbd>J</kbd></span>
@@ -179,6 +184,47 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
         <div class="absolute pointer-events-none left-1/2 -translate-x-1/2 top-[22%] px-6 py-3 rounded-2xl bg-black/70 border border-white/20 text-2xl font-black tracking-[0.2em]" [class.text-red-400]="pm.startsWith('BUSTED')" [class.text-emerald-300]="!pm.startsWith('BUSTED')">{{ pm }}</div>
       }
 
+      <!-- Street races -->
+      @if (race.menu() && race.phase() === 'IDLE') {
+        <div class="absolute pointer-events-auto left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 hud-card p-3 w-[min(92vw,380px)] max-h-[80vh] overflow-y-auto">
+          <div class="flex items-center justify-between mb-2"><span class="text-[11px] font-black tracking-[0.25em] text-amber-300">STREET RACES</span>
+            <button (click)="race.menu.set(false)" class="text-zinc-400 hover:text-white" aria-label="Close"><mat-icon class="!text-[18px] !w-[18px] !h-[18px]">close</mat-icon></button></div>
+          @for (e of race.events; track e.id; let i = $index) {
+            <button (click)="race.start(i)" class="w-full text-left px-3 py-2 mb-1 rounded-xl bg-white/5 hover:bg-white/15 flex items-center gap-3">
+              <kbd class="text-[10px] text-zinc-400">{{ i + 1 }}</kbd>
+              <span class="flex-1"><span class="block text-sm font-bold text-white">{{ e.name }}</span><span class="block text-[10px] text-zinc-400">{{ e.blurb }}</span></span>
+              @if (race.bests()[e.id]; as b) { <span class="text-[10px] text-emerald-300 font-mono">{{ race.fmt(b) }}</span> }
+            </button>
+          }
+          <div class="text-[9px] text-zinc-500 mt-1">4 rivals, open traffic. Drive through every gate. <kbd>N</kbd> abandons.</div>
+        </div>
+      }
+      @if (race.phase() !== 'IDLE') {
+        <div class="absolute pointer-events-none hud-card px-3 py-2 w-[170px]" [ngClass]="compact() ? 'top-[68px] right-3' : 'top-[84px] right-24'">
+          <div class="text-[9px] font-black tracking-widest text-amber-300 truncate">{{ race.name() }}</div>
+          <div class="flex items-end justify-between mt-0.5"><span class="text-3xl font-black text-white leading-none">{{ race.pos() }}<span class="text-sm text-zinc-400">/{{ race.total() }}</span></span>
+            <span class="text-lg font-mono text-white leading-none">{{ race.fmt(race.time()) }}</span></div>
+          <div class="mt-1.5 h-1.5 rounded-full bg-white/10 overflow-hidden"><div class="h-full rounded-full bg-amber-300" [style.width.%]="race.cps() ? race.cp() / race.cps() * 100 : 0"></div></div>
+          <div class="mt-1 text-[9px] text-zinc-400 flex justify-between"><span>gate {{ race.cp() }}/{{ race.cps() }}</span><span>{{ (race.remaining() / 1000).toFixed(1) }} km</span></div>
+          <div class="mt-1 text-[9px] leading-tight">@for (n of race.order(); track n; let i = $index) { <div [class.text-amber-300]="n === 'YOU'" [class.font-black]="n === 'YOU'" [class.text-zinc-400]="n !== 'YOU'">{{ i + 1 }}. {{ n }}</div> }</div>
+        </div>
+        @if (race.phase() === 'COUNTDOWN') {
+          <div class="absolute pointer-events-none left-1/2 -translate-x-1/2 top-[26%] text-8xl font-black text-amber-300 drop-shadow-[0_4px_12px_rgba(0,0,0,0.8)]">{{ race.count() }}</div>
+        } @else if (race.phase() === 'RACING' && race.time() < 1.2) {
+          <div class="absolute pointer-events-none left-1/2 -translate-x-1/2 top-[26%] text-8xl font-black text-emerald-300 drop-shadow-[0_4px_12px_rgba(0,0,0,0.8)]">GO</div>
+        } @else if (race.phase() === 'RACING' && race.offRoute()) {
+          <div class="absolute pointer-events-none left-1/2 -translate-x-1/2 top-[26%] px-5 py-2 rounded-2xl bg-black/70 border border-red-400/60 text-lg font-black tracking-[0.2em] text-red-400 animate-pulse">BACK TO THE ROUTE</div>
+        }
+        @if (race.phase() === 'FINISHED' && race.result(); as r) {
+          <div class="absolute pointer-events-none left-1/2 -translate-x-1/2 top-[22%] px-8 py-4 rounded-2xl bg-black/75 border border-amber-300/50 text-center">
+            <div class="text-[10px] font-black tracking-[0.3em] text-zinc-300">{{ r.name }}</div>
+            <div class="text-5xl font-black" [class.text-amber-300]="r.pos === 1" [class.text-white]="r.pos !== 1">{{ race.ord(r.pos) }}</div>
+            <div class="text-xl font-mono text-white">{{ race.fmt(r.time) }}</div>
+            @if (r.best) { <div class="text-[10px] font-black tracking-[0.25em] text-emerald-300 mt-1">NEW PERSONAL BEST</div> }
+          </div>
+        }
+      }
+
       <!-- Turn-by-turn guidance -->
       @if (nav.guidance(); as gd) {
         <div class="absolute pointer-events-none left-1/2 -translate-x-1/2 hud-card px-4 py-2 flex items-center gap-3" [ngClass]="compact() ? 'top-[96px]' : 'top-20'">
@@ -219,6 +265,7 @@ export class HudComponent {
   public settings = inject(SettingsService);
   public nav = inject(NavigationService);
   public police = inject(PoliceService);
+  public race = inject(RaceService);
   public drive = inject(DriveStateService);
   compact = input<boolean>(false);
 

@@ -20,6 +20,7 @@ import { HapticsService } from './services/haptics.service';
 import { SettingsService } from './services/settings.service';
 import { DriveStateService } from './services/drive-state.service';
 import { PoliceService } from './services/police.service';
+import { RaceService } from './services/race.service';
 import { HelpComponent } from './components/help/help.component';
 import { NavigationService } from './services/navigation.service';
 import { AudioService } from './services/audio.service';
@@ -74,6 +75,8 @@ export class App implements AfterViewInit, OnDestroy {
   public settings = inject(SettingsService);
   public drive = inject(DriveStateService);
   public policeSvc = inject(PoliceService);
+  public raceSvc = inject(RaceService);
+  private raceHooked = false; private raceAcc = 0;
   private crashNoise = 0; private copHooked = false; private polAcc = 0;
   public nav = inject(NavigationService);
   readonly showHelp = signal<boolean>(false);
@@ -175,7 +178,7 @@ export class App implements AfterViewInit, OnDestroy {
       // Drop the car on the real MR3 (Ngwane St, eastbound) once the world has streamed in
       (window as unknown as { __shesha: Record<string, unknown> }).__shesha = {
         ...((window as unknown as { __shesha?: Record<string, unknown> }).__shesha ?? {}),
-        roadCut: () => this.sceneManager.worldBuilder.collision.cut, roadFix: () => this.sceneManager.worldBuilder.roadFix, wb: this.sceneManager.worldBuilder, veh: this.vehicle, nav: this.nav, env: this.envService, drive: this.drive, police: () => this.sceneManager.police,
+        roadCut: () => this.sceneManager.worldBuilder.collision.cut, roadFix: () => this.sceneManager.worldBuilder.roadFix, wb: this.sceneManager.worldBuilder, veh: this.vehicle, nav: this.nav, env: this.envService, drive: this.drive, police: () => this.sceneManager.police, race: () => this.sceneManager.race, raceSvc: this.raceSvc,
         perf: () => Object.fromEntries(Object.entries(this.perf).map(([k, v]) => [k, Math.round(v * 100) / 100])),
         tpRoad: (x: number, z: number) => {
           const wb = this.sceneManager.worldBuilder; const r = wb.nearestRoadSegment(x, z, 5); if (!r) return null;
@@ -286,6 +289,7 @@ export class App implements AfterViewInit, OnDestroy {
       this.audioService.updateTireAudio(telem.wheels[0].slipAngleDeg, telem.wheels[0].isSkidding, telem.speedKmh);
       this.audioService.updateSurfaceAudio(telem.wheels[0].surfaceClass, telem.speedKmh);
 
+      this.raceTick(frameDelta);
       // ---- cops & robbers: how visible / audible the player is right now, then let the cops react
       {
         const sm = this.sceneManager; const h = this.envService.envState().timeOfDayHours, elev = Math.sin(((h - 6) / 24) * 2 * Math.PI);
@@ -459,6 +463,7 @@ export class App implements AfterViewInit, OnDestroy {
         steer = this.steerSm; throttle = this.thrSm; brake = this.brkSm;
       } else { this.steerSm = steer; this.thrSm = throttle; this.brkSm = brake; }
     }
+    if (this.sceneManager.race?.holding) { throttle = 0; brake = 0; handbrake = true; this.vehicle.reverse = false; this.thrSm = 0; }
     this.vehicle.steerInput = steer;
     this.vehicle.throttle = throttle;
     this.vehicle.brake = brake;
@@ -547,6 +552,8 @@ export class App implements AfterViewInit, OnDestroy {
     if (event.code === 'Period') { this.drive.toggleRight(); return; }
     if (event.code === 'KeyX') { this.drive.toggleHazards(); return; }
     if (event.code === 'KeyJ') { this.policeSvc.toggle(); return; }
+    if (event.code === 'KeyN') { this.raceSvc.toggle(); return; }
+    if (this.raceSvc.menu()) { const d = /^Digit([1-9])$/.exec(event.code); if (d && +d[1] <= this.raceSvc.events.length) { this.raceSvc.start(+d[1] - 1); return; } if (event.code === 'Escape') { this.raceSvc.menu.set(false); return; } }
     if (event.code === 'KeyL') { this.drive.cycleHeadlights(); return; }
     if (event.code === 'KeyB') { this.keyHorn = true; this.drive.setHorn(true); return; }
     if (event.code === 'KeyK') { this.sceneManager.cameraRig.recentreLook(); return; }
@@ -655,6 +662,31 @@ export class App implements AfterViewInit, OnDestroy {
     link.download = `SHESHA_Eswatini_${Date.now()}.png`;
     link.href = dataUrl;
     link.click();
+  }
+
+  /** Street races: wire the menu, run the AI field every frame, mirror the state to the HUD. */
+  private raceTick(dt: number): void {
+    const sm = this.sceneManager, race = sm.race, rs = this.raceSvc; if (!race) return;
+    if (!this.raceHooked) {
+      this.raceHooked = true;
+      rs.onStart = (i) => {
+        const st = race.start(i); if (!st) { this.policeSvc.flash('Route not ready'); return; }
+        const v = this.vehicle; v.position.set(st.x, sm.worldBuilder.groundHeightAt(st.x, st.z) + 0.9, st.z); v.velocity.set(0, 0, 0); v.angularVelocity.set(0, 0, 0); v.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), st.yaw);
+        const np = this.nav.pose; np.x = st.x; np.z = st.z; this.nav.follow(st.route, st.finish); sm.police?.reset(); rs.result.set(null);
+      };
+      rs.onAbandon = () => race.stop();
+      race.onEvent = (e) => {
+        if (e === 'count' || e === 'checkpoint') this.audioService.playCheckpointChime();
+        else if (e === 'go') { this.audioService.playSpeedTrapChirp(); this.hapticsService.triggerImpulse('speedTrap', 0.9, 0.9, 250); }
+        else if (e === 'finish') { this.audioService.playSpeedTrapChirp(); if (race.status.result) rs.finish(race.status.result); }
+        else if (e === 'end') this.nav.clear();
+      };
+    }
+    if (!race.active) { if (rs.phase() !== 'IDLE') rs.phase.set('IDLE'); return; }
+    const v = this.vehicle; sm.raceUpdate(dt, { x: v.position.x, z: v.position.z, vx: v.velocity.x, vz: v.velocity.z });
+    this.raceAcc += dt; if (this.raceAcc < 0.1 && rs.phase() === race.status.phase && rs.count() === race.status.count) return; this.raceAcc = 0;
+    const s = race.status; rs.phase.set(s.phase); rs.name.set(s.name); rs.count.set(s.count); rs.pos.set(s.pos); rs.total.set(s.total); rs.time.set(s.time); rs.cp.set(s.cp); rs.cps.set(s.cps); rs.remaining.set(s.remaining); rs.offRoute.set(s.offRoute);
+    if (rs.order().join() !== s.order.join()) rs.order.set(s.order.slice());
   }
 
   public teleportToDistrict(pos: [number, number]): void {

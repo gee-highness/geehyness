@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Weather } from './weather';
 import { SLOT, LAMP, setEmitter, clearEmitter } from './lamp-light';
 import { Police, Stealth, PlayerPose } from './police';
+import { Race, RacePose } from './race';
 import type { RoadGraph } from '../road-graph';
 import { Sky, skyPalette, SkyPalette } from './sky';
 import { Pedestrians } from './pedestrians';
@@ -59,6 +60,7 @@ export class SceneManager {
   private modelRadius = 0.33;
   private roadTraffic?: RoadTraffic;
   private pedestrians?: Pedestrians;
+  public race?: Race;
   public police?: Police; public graphProvider?: () => RoadGraph | undefined; private copsWanted = true;
   private signals?: TrafficSignals;
   private pedFraction = 1;
@@ -98,7 +100,7 @@ export class SceneManager {
 
     this.particleSystem = new ParticleSystem(this.scene);
     this.weather = new Weather(this.scene);
-    this.worldBuilder.onReady(() => { this.signals = new TrafficSignals(this.scene, this.worldBuilder); this.roadTraffic = new RoadTraffic(this.scene, this.worldBuilder); this.roadTraffic.signals = this.signals; this.roadTraffic.graph = () => this.graphProvider?.(); this.pedestrians = new Pedestrians(this.scene, this.worldBuilder); this.police = new Police(this.scene, this.worldBuilder, () => this.graphProvider?.()); this.police.setEnabled(this.copsWanted); this.pedestrians.setCount(this.pedFraction); });
+    this.worldBuilder.onReady(() => { this.signals = new TrafficSignals(this.scene, this.worldBuilder); this.roadTraffic = new RoadTraffic(this.scene, this.worldBuilder); this.roadTraffic.signals = this.signals; this.roadTraffic.graph = () => this.graphProvider?.(); this.race = new Race(this.scene, this.worldBuilder, () => this.graphProvider?.()); this.pedestrians = new Pedestrians(this.scene, this.worldBuilder); this.police = new Police(this.scene, this.worldBuilder, () => this.graphProvider?.()); this.police.setEnabled(this.copsWanted); this.pedestrians.setCount(this.pedFraction); });
   }
 
   private detectSoftwareGl(): void {
@@ -434,8 +436,10 @@ export class SceneManager {
     this.blob.scale.set(2.9, 1, 5.4); this.blob.renderOrder = 2; this.scene.add(this.blob);
   }
 
-  public trafficColliders() { return [...(this.roadTraffic?.colliders() ?? []), ...(this.police?.colliders() ?? [])]; }
-  public hitTraffic(id: number, impact: number): void { if (id >= 1000) this.police?.hit(id, impact); else this.roadTraffic?.hit(id, impact); }
+  private baseColliders() { return [...(this.roadTraffic?.colliders() ?? []), ...(this.police?.colliders() ?? [])]; }
+  public trafficColliders() { return [...this.baseColliders(), ...(this.race?.colliders() ?? [])]; }
+  public hitTraffic(id: number, impact: number): void { if (id >= 2000) this.race?.hit(id, impact); else if (id >= 1000) this.police?.hit(id, impact); else this.roadTraffic?.hit(id, impact); }
+  public raceUpdate(dt: number, p: RacePose): void { if (this.race?.active) this.race.update(dt, p, this.baseColliders()); }
   public setCops(on: boolean): void { this.copsWanted = on; this.police?.setEnabled(on); }
   public policeUpdate(dt: number, pl: PlayerPose, st: Stealth, night: number): void { this.police?.update(dt, pl, st, night); }
 
