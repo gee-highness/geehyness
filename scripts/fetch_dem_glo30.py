@@ -7,10 +7,10 @@ import numpy as np, tifffile
 from scipy.ndimage import map_coordinates, median_filter
 LAT0, LON0 = -26.4966, 31.3826
 KX, KZ = 111320 * math.cos(math.radians(LAT0)), 110574.0
-STEP = int(sys.argv[1]) if len(sys.argv) > 1 else 40
+STEP = int(sys.argv[1]) if len(sys.argv) > 1 else 20
 OUT = sys.argv[2] if len(sys.argv) > 2 else "data/dem.json"
 TIF = sys.argv[3] if len(sys.argv) > 3 else "/tmp/glo30_S27_E031.tif"
-X0, X1, Z0, Z1 = -28500, 7200, -24200, 5000
+X0, X1, Z0, Z1 = -10500, 6500, -6500, 5500   # Manzini + Matsapha + outskirts (17 x 12 km)
 if not os.path.exists(TIF):
     u = "https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_S27_00_E031_00_DEM/Copernicus_DSM_COG_10_S27_00_E031_00_DEM.tif"
     urllib.request.urlretrieve(u, TIF)

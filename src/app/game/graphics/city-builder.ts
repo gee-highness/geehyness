@@ -259,10 +259,10 @@ export class CityBuilder {
   }
 
   /** Build the area around the start synchronously so it is ready before the intro ends (after barriers/features exist). */
-  prime(): void { const sp = this.w.meta.spawn; this.stream(sp.x, sp.z, 900, 1e9); }
+  prime(): void { const sp = this.w.meta.spawn; this.stream(sp.x, sp.z, 1300, 1e9); }
 
   /** Called every frame: builds nearby chunks within a small time budget (keeps the frame rate smooth). */
-  update(px: number, pz: number): void { this.stream(px, pz, 900, 1.6); }
+  update(px: number, pz: number): void { this.stream(px, pz, 1300, 1.6); }
 
   private stream(px: number, pz: number, radius: number, budgetMs: number): void {
     const t0 = performance.now();
@@ -299,7 +299,7 @@ export class CityBuilder {
       const q = this.emitQ.shift()!; const card = q.mk === 'card', isProp = q.mk === 'props' || q.mk === 'sign' || card;
       const mesh = new THREE.Mesh(q.buf.toGeometry(q.mk !== 'sign', !isProp), card ? this.mats['props'] : this.mats[q.mk]);
       mesh.name = 'bld:' + q.mk; mesh.castShadow = false; mesh.receiveShadow = true;
-      this.w.registerChunk(mesh, q.cx, q.cz, q.sz * 0.75, card ? 820 : isProp ? 190 : 400); if (card) mesh.userData['near'] = 380; this.w.landmarksGroup.add(mesh);
+      this.w.registerChunk(mesh, q.cx, q.cz, q.sz * 0.75, card ? 1250 : isProp ? 230 : 520); if (card) mesh.userData['near'] = 500; this.w.landmarksGroup.add(mesh);
       if (performance.now() - t0 > budgetMs) return false;
     }
     return true;

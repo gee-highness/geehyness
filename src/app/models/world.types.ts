@@ -1,4 +1,4 @@
-export type DistrictId = 'MANZINI' | 'MATSAPHA' | 'MALKERNS' | 'LOBAMBA' | 'EZULWINI' | 'MBABANE';
+export type DistrictId = 'MANZINI' | 'MATSAPHA' | 'FAIRVIEW' | 'NGWANE_PARK' | 'KWALUSENI' | 'AIRPORT' | 'MONENI';
 
 export interface DistrictInfo {
   id: DistrictId;

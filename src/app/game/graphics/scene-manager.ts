@@ -11,18 +11,24 @@ import { CameraRig } from './camera-rig';
 import { WorldBuilder } from './world-builder';
 import { ParticleSystem } from './particle-system';
 
-/** Stylised "chunky low-poly" look: on by default (Y toggles + reloads). Low resolution is the aesthetic, not a compromise. */
-export const STYLE = (() => { try { return localStorage.getItem('shesha.style') !== '0'; } catch { return true; } })();
+/** Stylised "chunky low-poly" retro look: OFF by default (Y toggles + reloads); the default is the clean full-resolution render. */
+export const STYLE = (() => { try { return localStorage.getItem('shesha.style') === '1'; } catch { return false; } })();
 let graded = false;
 /** One global colour grade patched into three's output chunk: saturation + contrast, then posterise with ordered dither (flat, printed, retro bands). */
 function applyStyleGrade(): void {
-  if (graded || !STYLE) return; graded = true;
-  THREE.ShaderChunk.colorspace_fragment += `
+  if (graded) return; graded = true;
+  THREE.ShaderChunk.colorspace_fragment += STYLE ? `
   {
     vec3 sc = gl_FragColor.rgb; float sl = dot(sc, vec3(0.299, 0.587, 0.114));
     sc = mix(vec3(sl), sc, 1.24); sc = (sc - 0.5) * 1.08 + 0.5;
     float dth = fract(dot(floor(gl_FragCoord.xy), vec2(0.7548776662, 0.5698402910)));
     gl_FragColor.rgb = clamp(floor(sc * 13.0 + dth) / 13.0, 0.0, 1.0);
+  }` : `
+  { // clean look: gentle filmic grade (richer colour, deeper mid-tone contrast) + a whisper of dither against banding in sky gradients
+    vec3 sc = gl_FragColor.rgb; float sl = dot(sc, vec3(0.299, 0.587, 0.114));
+    sc = mix(vec3(sl), sc, 1.16); sc = mix(sc, sc * sc * (3.0 - 2.0 * sc), 0.32);
+    float dth = fract(dot(floor(gl_FragCoord.xy), vec2(0.7548776662, 0.5698402910))) - 0.5;
+    gl_FragColor.rgb = clamp(sc + dth / 255.0, 0.0, 1.0);
   }`;
 }
 import { AssetLibrary } from './asset-library';
@@ -117,9 +123,10 @@ export class SceneManager {
   private initRenderer(): void {
     const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints ?? 0) > 1;
     this.isMobile = mobile;
+    if (location.search.includes('hq')) this.isSoftwareGl = false; // force full quality on a software renderer (screenshots)
     applyStyleGrade();
     this.renderer = new THREE.WebGLRenderer({
-      antialias: !this.isSoftwareGl && !mobile, // MSAA off on phones (tile-GPU cost); resolution scaling carries the quality instead
+      antialias: (!this.isSoftwareGl && !mobile), // MSAA off on phones (tile-GPU cost); resolution scaling carries the quality instead
       powerPreference: 'high-performance',
       preserveDrawingBuffer: false, // photo mode renders then reads in the same task
     });
@@ -128,8 +135,8 @@ export class SceneManager {
     this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = STYLE ? THREE.NeutralToneMapping : THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = STYLE ? 1.0 : 0.92;
+    this.renderer.toneMapping = THREE.NeutralToneMapping;
+    this.renderer.toneMappingExposure = 1.0;
 
     this.renderer.shadowMap.enabled = !this.isSoftwareGl && !this.isMobile;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -158,16 +165,16 @@ export class SceneManager {
     this.sunLight = new THREE.DirectionalLight(0xfef08a, 2.8);
     this.sunLight.position.set(120, 320, 220);
     this.sunLight.castShadow = !this.isSoftwareGl && !this.isMobile;
-    this.sunLight.shadow.mapSize.width = 1024;
-    this.sunLight.shadow.mapSize.height = 1024;
+    this.sunLight.shadow.mapSize.width = 2048;
+    this.sunLight.shadow.mapSize.height = 2048;
     this.sunLight.shadow.camera.near = 10;
     this.sunLight.shadow.camera.far = 850;
-    const d = 55;
+    const d = 110; // covers the street ahead and the buildings beside it
     this.sunLight.shadow.camera.left = -d;
     this.sunLight.shadow.camera.right = d;
     this.sunLight.shadow.camera.top = d;
     this.sunLight.shadow.camera.bottom = -d;
-    this.sunLight.shadow.bias = -0.0006;
+    this.sunLight.shadow.bias = -0.0004; this.sunLight.shadow.normalBias = 0.35;
     this.scene.add(this.sunLight);
 
     // African distance fog blending mountains into the sky
@@ -276,12 +283,12 @@ export class SceneManager {
     const dark = Math.pow(day, 1.4); this.hemiLight.intensity = 0.045 + 0.85 * dark;                 // nights are properly dark: only faint moonlight
     this.moon.intensity = (1 - dark) * (sd.y < 0.05 ? 0.22 : 0) * gloom; this.moon.position.set(-sd.x * 300, 200, -sd.z * 300);
     this.rim.position.set(-sd.x * 300, 120, -sd.z * 300); this.rim.color.copy(pal.zenith).lerp(new THREE.Color(0.7, 0.8, 1), 0.5); this.rim.intensity = (0.03 + 0.4 * dark) * (this.neo ? 2 : 1);
-    this.renderer.toneMappingExposure = 0.88 + 0.12 * (1 - day);
+    this.renderer.toneMappingExposure = 0.98 + 0.1 * (1 - day);
     const daylight = Math.max(0.06, day);
     this.baseDaylight = daylight; this.scene.environmentIntensity = 0.04 + 0.96 * dark;
     if (this.worldBuilder.city) { this.worldBuilder.city.night.value = THREE.MathUtils.clamp(1 - (daylight - 0.06) / 0.3, 0, 1); this.worldBuilder.city.neo.value += ((this.neo ? 1 : 0) - this.worldBuilder.city.neo.value) * 0.5; }
     this.worldBuilder.setNightGlow?.(this.worldBuilder.city ? this.worldBuilder.city.night.value : 0);
-    if (this.scene.fog) { const f = this.scene.fog as THREE.FogExp2; f.color.copy(pal.horizon).multiplyScalar(0.55 + 0.45 * daylight); f.density = Math.max(env.fogDensity * 0.4 * (this.neo ? 1.4 : 1), 0.0014); } // floor: hides the cut-off distance (~65% haze at 700 m)
+    if (this.scene.fog) { const f = this.scene.fog as THREE.FogExp2; f.color.copy(pal.horizon).multiplyScalar(0.55 + 0.45 * daylight); f.density = Math.max(env.fogDensity * 0.4 * (this.neo ? 1.4 : 1), 0.00105); } // floor: hides the cut-off distance (~65% haze at 700 m)
     this.refreshEnvironmentMap();
 
     // Wet road puddles and mirror reflections
@@ -501,7 +508,7 @@ export class SceneManager {
       this.renderer.shadowMap.enabled = shadows; this.sunLight.castShadow = shadows; this.worldBuilder.shadowsOn = shadows;
       this.scene.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined; if (m) (Array.isArray(m) ? m : [m]).forEach((x) => (x.needsUpdate = true)); });
     }
-    this.sunLight.shadow.mapSize.set(q === 'HIGH' ? 2048 : 1024, q === 'HIGH' ? 2048 : 1024); this.sunLight.shadow.map?.dispose(); (this.sunLight.shadow as { map: unknown }).map = null;
+    this.sunLight.shadow.mapSize.set(q === 'HIGH' ? 4096 : 2048, q === 'HIGH' ? 4096 : 2048); this.sunLight.shadow.map?.dispose(); (this.sunLight.shadow as { map: unknown }).map = null;
     if (this.blob) this.blob.visible = !shadows; else if (!shadows) this.makeBlobShadow();
     this.pedFraction = q === 'LOW' ? 0.3 : q === 'MED' ? 0.65 : 1; this.pedestrians?.setCount(this.pedFraction);
     LAMP.uLampN.value = q === 'LOW' ? 14 : q === 'MED' || (q === 'AUTO' && this.isMobile) ? 22 : 24;

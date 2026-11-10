@@ -153,3 +153,12 @@ Plans: `docs/FIDELITY_PLAN.md` (brand-faithful stations/chains/landmarks, tiers 
 - Road tar recoloured warm grey, verge/gravel red-brown, yellow edge lines.
 - Release workflow (`release.yml`) builds Linux packages + APK on tag/dispatch; needs the workflow file on the default branch (merge the branch), tag pushes are blocked from the cloud session.
 - Still TODO: verify poles/billboards/colours visually, Galp canopy sizing, CBD verandahs, retail-modern, taxi/coach models, far-hill ring, vegetation zones, real-device perf (Phase 0 bench).
+
+## Eighth session - Manzini-only, higher fidelity (read this first)
+- **World reduced** to Manzini + Matsapha + outskirts (17 x 12 km, bounds in `build_world.py`); OSM inputs are clipped by `clip()`. Districts are now MANZINI, MATSAPHA, FAIRVIEW, NGWANE_PARK, KWALUSENI, AIRPORT, MONENI (`world-pipeline.service.ts`, snaps in `build_world.py`).
+- **Terrain**: 20 m grid from Copernicus GLO-30 (`fetch_dem_glo30.py`), refined by `refine_dem.py` (roof/canopy bias removed where OSM confirms it, roads flattened across their width with graded profiles). Mesh spacing follows `meta.dem.step`.
+- **Ground**: 10 m colour/class raster; dense building areas become packed earth / paving instead of lawn; ~90k trees by ground class.
+- **Look**: the clean full-resolution render is the default (retro pixel look is opt-in with Y). Neutral tone mapping + filmic grade, lighter fog, 2k/4k sun shadows over a 220 m box, roads receive shadows, buildings to 520 m, far cards to 1250 m.
+- **Car**: desktop loads the full `ferrari.glb` with clear-coat paint; phones keep `ferrari-lod.glb`.
+- `?hq` forces full quality on a software renderer (headless screenshots). Rebuild commands: bottom of `data/README.md`.
+- Not verified on a real GPU or phone: frame rate with the longer draw distances and bigger shadow map.

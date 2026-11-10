@@ -41,3 +41,14 @@ categories (`roads_all`, `buildings_all`, `landuse_all`, `pois_all`, `furniture_
 ## Height refinement (OSM-synced)
 `dem_glo30_raw.json` = raw GLO-30 grid. `dem.json` = that grid after `python3 -I scripts/refine_dem.py /tmp/osm /tmp/osm2 data/dem_glo30_raw.json data/dem.json data/height_report.json data/ndsm_debug.png`:
 roof/canopy bias removed where OSM confirms buildings/vegetation, terrain pulled onto smoothed grade-limited road profiles. `height_report.json` lists blobs taller than the ground that OSM does not explain (candidate unmapped buildings). Pavements/kerbs are far below GLO-30's 30 m resolution, so they stay derived from OSM road geometry.
+
+## Current pipeline (Manzini-only world, 17 x 12 km) - use THIS, the commands above are historical
+Bounds live at the top of `scripts/build_world.py` / `fetch_dem_glo30.py` (`X0, X1, Z0, Z1 = -10500, 6500, -6500, 5500`). `build_world.py` clips every OSM input to them.
+```
+# inputs: /tmp/osmm (merged extract from merge_osm_full.py), /tmp/osmm/osm2, /tmp/osm3
+python3 -I scripts/fetch_dem_glo30.py 20 data/dem_glo30_raw.json            # 20 m grid from Copernicus GLO-30
+python3 -I scripts/refine_dem.py /tmp/osmm /tmp/osmm/osm2 data/dem_glo30_raw.json data/dem.json data/height_report.json data/ndsm_debug.png
+python3 -I scripts/build_world.py /tmp/osmm data/dem.json public/assets/world /tmp/osmm/osm2 /tmp/osm3   # ~15 s
+python3 -I scripts/apply_mapillary.py                                        # real poles / lamps / signs into meta.json
+```
+Do NOT build from the bare `/tmp/osm` + `/tmp/osm2` extracts: that drops the merged buildings, land use and the third fetch.

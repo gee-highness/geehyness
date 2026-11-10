@@ -11,7 +11,7 @@ osm, full, out = sys.argv[1:4]; osm2 = os.environ.get("OSM2", "")
 os.makedirs(out, exist_ok=True)
 LAT0, LON0 = -26.4966, 31.3826
 KX, KZ = 111320 * math.cos(math.radians(LAT0)), 110574.0
-X0, X1, Z0, Z1 = -28500, 7200, -24200, 5000
+X0, X1, Z0, Z1 = -10500, 6500, -6500, 5500   # Manzini + Matsapha + outskirts (17 x 12 km)
 def ld(p): return json.load(open(p))["elements"]
 def ctr(e):
     if "lat" in e: pts = [(e["lat"], e["lon"])]

@@ -13,21 +13,46 @@ dir3 = sys.argv[5] if len(sys.argv) > 5 else None   # optional third fetch (fetc
 os.makedirs(out, exist_ok=True)
 LAT0, LON0 = -26.4966, 31.3826
 KX, KZ = 111320 * math.cos(math.radians(LAT0)), 110574.0
-X0, X1, Z0, Z1 = -28500, 7200, -24200, 5000
-PX = 25  # ground raster cell, metres
+X0, X1, Z0, Z1 = -10500, 6500, -6500, 5500   # Manzini + Matsapha + outskirts (17 x 12 km)
+PX = 10  # ground raster cell, metres
 random.seed(7)
 
 def P(lat, lon): return ((lon - LON0) * KX, -(lat - LAT0) * KZ)
-def load(n): return json.load(open(f"{osm_dir}/{n}.json"))["elements"]
-def load0(n):
-    f = f"{osm_dir}/{n}.json"
-    return json.load(open(f))["elements"] if os.path.exists(f) else []
-def load2(n):
-    f = f"{dir2}/{n}.json" if dir2 else None
-    return json.load(open(f))["elements"] if f and os.path.exists(f) else []
-def load3(n):
-    f = f"{dir3}/{n}.json" if dir3 else None
-    return json.load(open(f))["elements"] if f and os.path.exists(f) else []
+M_ = 60.0  # keep this much beyond the edge so roads run off-map instead of stopping short
+def _in(g): return X0 - M_ <= (g["lon"] - LON0) * KX <= X1 + M_ and Z0 - M_ <= -(g["lat"] - LAT0) * KZ <= Z1 + M_
+def clip(els):
+    """Clip OSM elements to the playable rectangle: nodes dropped, open ways cut into their inside runs, areas kept if they touch it."""
+    out_ = []
+    for e in els:
+        if "lat" in e:
+            if _in(e): out_.append(e)
+            continue
+        g = e.get("geometry")
+        if g is None:
+            if any(_in(q) for m in e.get("members", []) for q in m.get("geometry", [])): out_.append(e)
+            continue
+        ins = [_in(q) for q in g]
+        if all(ins): out_.append(e); continue
+        if not any(ins): continue
+        closed = len(g) > 3 and g[0] == g[-1]
+        if closed: out_.append(e); continue
+        nd = e.get("nodes", []); ok = len(nd) == len(g); i = 0
+        while i < len(g):
+            if not ins[i]: i += 1; continue
+            j = i
+            while j + 1 < len(g) and ins[j + 1]: j += 1
+            a, b = max(0, i - 1), min(len(g) - 1, j + 1)
+            if b > a:
+                c = dict(e); c["geometry"] = g[a:b + 1]
+                if ok: c["nodes"] = nd[a:b + 1]
+                out_.append(c)
+            i = j + 1
+    return out_
+def _ld(f): return clip(json.load(open(f))["elements"]) if f and os.path.exists(f) else []
+def load(n): return _ld(f"{osm_dir}/{n}.json")
+def load0(n): return _ld(f"{osm_dir}/{n}.json")
+def load2(n): return _ld(f"{dir2}/{n}.json" if dir2 else None)
+def load3(n): return _ld(f"{dir3}/{n}.json" if dir3 else None)
 def num(v, default):
     try: return float(str(v).replace(",", ".").split()[0]) or default
     except (ValueError, IndexError): return default
@@ -121,7 +146,7 @@ print("level crossings", len(level_x))
 
 # ---------------- ground colour + class rasters (25 m)
 W, H = (X1 - X0) // PX, (Z1 - Z0) // PX
-col = Image.new("RGB", (W, H), (112, 120, 72)); cls = Image.new("L", (W, H), 1)
+col = Image.new("RGB", (W, H), (112, 120, 72)); cls = Image.new("L", (W, H), 1); bmask = Image.new("L", (W, H), 0); dbm = ImageDraw.Draw(bmask)
 dc, dk = ImageDraw.Draw(col), ImageDraw.Draw(cls)
 # kind -> (rgb, class id)  ids follow the game's ground classes
 STYLE = {"residential": ((116, 124, 88), 8), "commercial": ((138, 138, 130), 8), "retail": ((138, 138, 130), 8),
@@ -151,7 +176,7 @@ for kind, g, t in ground_polys:
     rgb, cid = STYLE[kind]
     pts = [((x - X0) / PX, (z - Z0) / PX) for x, z in g]
     dc.polygon(pts, fill=rgb); dk.polygon(pts, fill=cid)
-# buildings darken the ground slightly (urban footprint) - drawn later with building list
+CLS_A = np.array(cls)
 bl = []
 # ---------------- building uses, inferred from the street map (OSM carries almost no use tags)
 # use codes: 0 house 1 villa 2 apartments 3 shop 4 supermarket/retail 5 mall 6 office/bank 7 industrial 8 shed/garage
@@ -420,7 +445,7 @@ for t, g, area, cx, cz in BR:
             for i in PHASH.get((int(cx // 60) + a, int(cz // 60) + b), ()):
                 (px, pz), pt = poi_xy[i]
                 if pip(g, px, pz): poi = pt
-    kind = int(np.array(cls)[min(H - 1, max(0, int((cz - Z0) // PX))), min(W - 1, max(0, int((cx - X0) // PX)))])
+    kind = int(CLS_A[min(H - 1, max(0, int((cz - Z0) // PX))), min(W - 1, max(0, int((cx - X0) // PX)))])
     dens = density(cx, cz); fr = road_dist(cx, cz, 3) < 55; fr4 = road_dist(cx, cz, 4) < 35
     bt = t.get("building", "yes"); use = TAGUSE.get(bt, -1); name = t.get("name") or (poi or {}).get("name")
     am = (poi or {}).get("amenity") or t.get("amenity"); sh = (poi or {}).get("shop") or t.get("shop")
@@ -489,14 +514,14 @@ for t, g, area, cx, cz in BR:
     use_count[use] += 1
     bl.append([use, dm(hh), [dm(v) for pt in g for v in pt], sid, int(h_ * 1000)])
     pts = [((x - X0) / PX, (z - Z0) / PX) for x, z in g]
-    dc.polygon(pts, fill=(104, 104, 96))
+    dbm.polygon(pts, fill=255)
 for e in poi_xy:
     (x, z), pt = e
     if pt.get("amenity") in ("marketplace", "bus_station") or pt.get("shop") == "marketplace": stalls.append([round(x, 1), round(z, 1)])
 print("uses", dict(sorted(use_count.items())), "stalls", len(stalls))
 json.dump({"b": bl, "signs": SIGNS, "stalls": stalls}, open(f"{out}/buildings.json", "w"), separators=(",", ":"))
 print("buildings", len(bl))
-col.save(f"{out}/groundcolor.png", optimize=True); cls.save(f"{out}/groundclass.png", optimize=True)
+
 
 # ---------------- extra OSM features (barriers, real trees, power, pitches, pools, parking, tanks, bumps)
 feat = {"cliffs": [], "barriers": [], "gates": [], "trees": [], "lines": [], "towers": [], "solar": [], "subst": [], "pitches": [], "pools": [], "parking": [], "tanks": [], "bumps": []}
@@ -556,9 +581,26 @@ for e in load2("misc"):
 json.dump(feat, open(f"{out}/features.json", "w"), separators=(",", ":"))
 print("features", {k: len(v) for k, v in feat.items()}, "views+", len(extra_views))
 
-# ---------------- trees from raster (forest + residential gardens)
+# ---------------- urban ground: where buildings are dense the ground is packed earth / paving, not lawn (yards in Manzini are swept red earth)
+from PIL import ImageFilter
+_bm = np.asarray(bmask, np.float32) / 255
+def _box(a, r):
+    c = np.cumsum(np.cumsum(np.pad(a, ((r + 1, r), (r + 1, r)), mode="edge"), 0), 1)
+    return (c[2 * r + 1:, 2 * r + 1:] - c[:-2 * r - 1, 2 * r + 1:] - c[2 * r + 1:, :-2 * r - 1] + c[:-2 * r - 1, :-2 * r - 1]) / (2 * r + 1) ** 2
+dens = _box(_bm, max(2, int(40 / PX)))                              # building coverage in an ~80 m window
+ca, ka = np.array(col, np.float32), np.array(cls)
+soft = np.isin(ka, (1, 2, 4, 8))                                    # never repaint water, forest, rock, parking...
+yard = np.clip((dens - 0.05) / 0.10, 0, 1) * soft; core = np.clip((dens - 0.20) / 0.12, 0, 1) * soft
+ca = ca * (1 - 0.75 * yard[..., None]) + np.array([150, 126, 98], np.float32) * 0.75 * yard[..., None]
+ca = ca * (1 - 0.85 * core[..., None]) + np.array([134, 132, 126], np.float32) * 0.85 * core[..., None]
+ka[(yard > 0.5) & (ka != 8)] = 8
+ca[_bm > 0.5] = ca[_bm > 0.5] * 0.8                                 # contact darkening under footprints
+col = Image.fromarray(ca.clip(0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(0.8)); cls = Image.fromarray(ka)
+col.save(f"{out}/groundcolor.png", optimize=True); cls.save(f"{out}/groundclass.png", optimize=True)
+# ---------------- trees from raster: density per m2 by ground class (5 forest, 8 gardens, 1 bushveld, 2 grass, 4 farmland)
 arr = np.array(cls); trees = []
-for cid, prob in ((5, 0.5), (8, 0.025), (2, 0.004), (4, 0.01)):
+for cid, per_m2 in ((5, 1 / 350), (8, 1 / 1100), (1, 1 / 3200), (2, 1 / 6000), (4, 1 / 12000)):
+    prob = per_m2 * PX * PX
     ys, xs = np.nonzero(arr == cid)
     keep = np.random.default_rng(cid).random(len(xs)) < prob
     for xi, yi in zip(xs[keep], ys[keep]):
@@ -593,7 +635,7 @@ signs = _dedupe([[round(v, 1) for v in P(e["lat"], e["lon"])] + [SIGNK.get(e["ta
                  for e in pts3 if e["tags"].get("highway") in ("stop", "give_way") or e["tags"].get("traffic_sign")], 4.0)
 addr = [[round(v, 1) for v in P(e["lat"], e["lon"])] + [str(e["tags"]["addr:housenumber"])[:6]] for e in pts3 if e["tags"].get("addr:housenumber")][:20000]
 views = [{"n": e["tags"].get("name", "Viewpoint"), "p": [round(v, 1) for v in P(e["lat"], e["lon"])]} for e in pts if e["tags"].get("tourism") == "viewpoint"]
-mx = np.array([[x, z] for x, z, r in nodes_major])
+mx = np.array([[r_['p'][i] / 10, r_['p'][i + 1] / 10] for r_ in roads if r_['c'] <= 5 for i in range(0, len(r_['p']), 2)])
 def snap(x, z):
     i = int(np.argmin((mx[:, 0] - x) ** 2 + (mx[:, 1] - z) ** 2)); return [round(float(mx[i, 0]), 1), round(float(mx[i, 1]), 1)]
 # spawn: eastbound MR3 carriageway node nearest the centre
@@ -606,8 +648,8 @@ for r in roads:
             d = math.hypot(p[i] / 10, p[i + 1] / 10)
             if dx > 0 and (best is None or d < best[0]) and math.hypot(dx, dz) > 4: best = (d, p[i] / 10, p[i + 1] / 10, dx, dz)
 spawn = {"x": best[1], "z": best[2], "yaw": math.atan2(best[3], best[4])}
-want = {"manzini": (-26.4966, 31.3826), "matsapha": (-26.4945, 31.3084), "lobamba": (-26.4463, 31.2084), "ezulwini": (-26.4018, 31.1783),
-        "malkerns": (-26.5319, 31.1890), "mbabane": (-26.3257, 31.1447)}
+want = {"manzini": (-26.4966, 31.3826), "matsapha": (-26.4945, 31.3084), "fairview": (-26.478, 31.376), "ngwane_park": (-26.5228, 31.373),
+        "kwaluseni": (-26.482, 31.297), "airport": (-26.529, 31.3075), "moneni": (-26.505, 31.41)}
 snaps = {k: snap(*P(*v)) for k, v in want.items()}
 meta = {"lat0": LAT0, "lon0": LON0, "bounds": [X0, X1, Z0, Z1], "px": PX, "gw": W, "gh": H,
         "dem": {"x0": dem["x0"], "z0": dem["z0"], "step": dem["step"], "nx": dem["nx"], "nz": dem["nz"]},

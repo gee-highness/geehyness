@@ -196,9 +196,10 @@ export class WorldBuilder {
     return WorldBuilder.cr(row(j - 1), row(j), row(j + 1), row(j + 2), fv) - 610;
   }
 
-  private readonly TS = 40; // terrain mesh spacing, metres (matches the 40 m DEM)
+  private TS = 40; // terrain mesh spacing, metres (= the DEM step in meta.json)
   private tnx = 0; private tnz = 0; private tH!: Float32Array;
   private bakeHeightGrid(): void {
+    this.TS = this.meta.dem.step || 40;
     const [x0, x1, z0, z1] = this.meta.bounds, S = this.TS;
     this.tnx = Math.ceil((x1 - x0) / S) + 1; this.tnz = Math.ceil((z1 - z0) / S) + 1;
     this.tH = new Float32Array(this.tnx * this.tnz);
@@ -355,14 +356,14 @@ export class WorldBuilder {
     this.visDirty = false; this.visX = px; this.visZ = pz; this.visT = now;
     for (const t of this.terrainTiles) {
       const dx = Math.max(Math.abs(t.cx - px) - 640, 0), dz = Math.max(Math.abs(t.cz - pz) - 640, 0), d = Math.hypot(dx, dz);
-      t.lod0.visible = d < 950 * this.detailScale; t.lod1.visible = d >= 950 * this.detailScale && d < 4200;
+      t.lod0.visible = d < 950 * this.detailScale; t.lod1.visible = d >= 950 * this.detailScale && d < 20000;
     }
     const doShadow = this.shadowsOn && now - this.shadowT > 600; if (doShadow) this.shadowT = now;
     for (const c of this.chunks) {
       const dx = Math.max(Math.abs(c.cx - px) - c.half, 0), dz = Math.max(Math.abs(c.cz - pz) - c.half, 0); // exact distance to the chunk's box
       const d = Math.hypot(dx, dz);
       const ud = c.obj.userData; c.obj.visible = d < (ud['far'] ?? 3000) * this.detailScale && d >= (ud['near'] ?? 0) * this.detailScale;
-      if (doShadow && c.obj.visible) c.obj.castShadow = d < 230; // only nearby geometry casts into the shadow map
+      if (doShadow && c.obj.visible && !c.obj.name.startsWith('road:')) c.obj.castShadow = d < 230; // only nearby geometry casts into the shadow map
     }
   }
 
@@ -411,12 +412,11 @@ export class WorldBuilder {
   /** Re-anchor districts, speed traps, drift zones and jumps onto real MR3 locations. */
   private applyLandmarks(): void {
     const sn = this.meta.snaps;
-    const dist: Record<string, string> = { MANZINI: 'manzini', MATSAPHA: 'matsapha', MALKERNS: 'malkerns', LOBAMBA: 'lobamba', EZULWINI: 'ezulwini', MBABANE: 'mbabane' };
-    for (const d of DISTRICTS) if (sn[dist[d.id]]) d.centerPos = sn[dist[d.id]];
-    const trapAt = ['manzini', 'matsapha', 'ezulwini', 'mbabane'];
+    for (const d of DISTRICTS) { const k = d.id.toLowerCase(); if (sn[k]) d.centerPos = sn[k]; }
+    const trapAt = ['manzini', 'matsapha', 'moneni', 'airport'];
     SPEED_TRAPS.forEach((t, i) => { if (sn[trapAt[i]]) t.position = sn[trapAt[i]]; });
-    if (DRIFT_ZONES[0]) { DRIFT_ZONES[0].startPos = sn['ezulwini']; DRIFT_ZONES[0].endPos = sn['lobamba']; }
-    if (DRIFT_ZONES[1]) { DRIFT_ZONES[1].startPos = sn['malkerns']; DRIFT_ZONES[1].endPos = sn['matsapha']; }
+    if (DRIFT_ZONES[0] && sn['fairview']) { DRIFT_ZONES[0].startPos = sn['fairview']; DRIFT_ZONES[0].endPos = sn['manzini']; }
+    if (DRIFT_ZONES[1] && sn['kwaluseni']) { DRIFT_ZONES[1].startPos = sn['kwaluseni']; DRIFT_ZONES[1].endPos = sn['matsapha']; }
     if (DANGER_SIGNS[0]) DANGER_SIGNS[0].rampPos = sn['matsapha'];
   }
 
@@ -502,7 +502,7 @@ export class WorldBuilder {
 
   /** 1280 m tiles, each with a fine (40 m) and a coarse (320 m) mesh; skirts hide LOD seams. */
   private buildTerrainTiles(scene: THREE.Scene, mat: THREE.Material): void {
-    const [x0, , z0] = this.meta.bounds, S = this.TS, nx = this.tnx, nz = this.tnz, TC = 32;
+    const [x0, , z0] = this.meta.bounds, S = this.TS, nx = this.tnx, nz = this.tnz, TC = Math.round(1280 / S), CS = Math.round(320 / S);
     const W = this.meta.gw * this.meta.px, Hh = this.meta.gh * this.meta.px;
     const H = (i: number, j: number) => this.tH[Math.max(0, Math.min(nz - 1, j)) * nx + Math.max(0, Math.min(nx - 1, i))];
     const make = (i0: number, j0: number, step: number): THREE.Mesh => {
@@ -545,7 +545,7 @@ export class WorldBuilder {
       const m = new THREE.Mesh(g, mat); m.name = 'terrain'; m.receiveShadow = true; m.visible = false; scene.add(m); return m;
     };
     for (let j0 = 0; j0 < nz - 1; j0 += TC) for (let i0 = 0; i0 < nx - 1; i0 += TC) {
-      this.terrainTiles.push({ lod0: make(i0, j0, 1), lod1: make(i0, j0, 8), cx: x0 + (i0 + TC / 2) * S, cz: z0 + (j0 + TC / 2) * S });
+      this.terrainTiles.push({ lod0: make(i0, j0, 1), lod1: make(i0, j0, CS), cx: x0 + (i0 + TC / 2) * S, cz: z0 + (j0 + TC / 2) * S });
     }
     this.terrainMesh = this.terrainTiles[0].lod0;
   }
@@ -564,7 +564,7 @@ export class WorldBuilder {
       m.forEach((buf, mk) => {
         if (buf.empty) return;
         const mesh = new THREE.Mesh(buf.toGeometry(withColor, withWin), mats[mk]);
-        mesh.name = 'road:' + mk; mesh.receiveShadow = shadow; mesh.castShadow = shadow; mesh.userData['far'] = far;
+        mesh.name = 'road:' + mk; mesh.receiveShadow = true; mesh.castShadow = shadow; mesh.userData['far'] = far;
         onMesh?.(mesh);
         mesh.visible = false; this.visDirty = true; this.chunks.push({ obj: mesh, cx, cz, r: size * 0.75, half: size / 2 });
         this.landmarksGroup.add(mesh);
