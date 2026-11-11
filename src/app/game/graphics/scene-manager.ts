@@ -60,7 +60,7 @@ export class SceneManager {
   private modelRadius = 0.33;
   private roadTraffic?: RoadTraffic;
   private pedestrians?: Pedestrians;
-  public race?: Race;
+  private fwdS = new THREE.Vector3(); public race?: Race;
   public police?: Police; public graphProvider?: () => RoadGraph | undefined; private copsWanted = true;
   private signals?: TrafficSignals;
   private pedFraction = 1;
@@ -353,7 +353,7 @@ export class SceneManager {
       }
 
       // Wheel rolling rotation
-      const speedMs = vehicle.velocity.dot(new THREE.Vector3(0, 0, 1).applyQuaternion(vehicle.quaternion));
+      const speedMs = vehicle.velocity.dot(this.fwdS.set(0, 0, 1).applyQuaternion(vehicle.quaternion));
       wheelMesh.children[0].rotation.x += (speedMs / 0.33) * dt;
 
       // Brake rotor thermal glow (>450°C glowing red-orange)
@@ -387,7 +387,7 @@ export class SceneManager {
 
     // 2b. Real Ferrari wheels: steer (front) + roll
     if (this.modelWheels.length === 4) {
-      const fwd = vehicle.velocity.dot(new THREE.Vector3(0, 0, 1).applyQuaternion(vehicle.quaternion));
+      const fwd = vehicle.velocity.dot(this.fwdS.set(0, 0, 1).applyQuaternion(vehicle.quaternion));
       this.modelSpin += this.modelSpinSign * (fwd / this.modelRadius) * dt;
       this.modelWheels.forEach((w, i) => {
         w.rotation.x = this.modelSpin;

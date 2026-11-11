@@ -358,7 +358,7 @@ export class App implements AfterViewInit, OnDestroy {
       this.telemetryService.pushSnapshot(telem);
       if (this.hudComponent) {
         this.hudComponent.world = this.sceneManager.worldBuilder;
-        const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(this.vehicle.quaternion);
+        const fwd = this.fwdS.set(0, 0, 1).applyQuaternion(this.vehicle.quaternion);
         const np = this.nav.pose; np.x = this.vehicle.position.x; np.z = this.vehicle.position.z; np.yaw = Math.atan2(fwd.x, fwd.z); np.speedKmh = telem.speedKmh;
         this.hudComponent.updateDistrictAndGps(this.vehicle.position.x, this.vehicle.position.z, Math.atan2(fwd.x, fwd.z));
       }
@@ -385,8 +385,11 @@ export class App implements AfterViewInit, OnDestroy {
 
   private nightFactor = 1;
   /** One-shot controller actions (edge triggers), handled once per rendered frame. */
-  private handlePad(pad: ReturnType<GamepadService['pollControls']>): void {
-    if (!pad.connected || !this.started()) return;
+  private handlePad(pad0: ReturnType<GamepadService['pollControls']>): void {
+    let pad = pad0; if (!pad.connected || !this.started()) return;
+    if (pad.toggleRaces) this.raceSvc.toggle();
+    const rm = this.raceSvc.menu() && this.raceSvc.phase() === 'IDLE', n = this.raceSvc.events.length;
+    if (rm) { if (pad.padUp) this.raceSvc.sel.update((i) => (i + n - 1) % n); if (pad.padDown) this.raceSvc.sel.update((i) => (i + 1) % n); if (pad.padConfirm) this.raceSvc.start(this.raceSvc.sel()); pad = { ...pad, headlights: false, hazards: false, resetCar: false }; }
     if (pad.cycleCamera) this.onCycleCamera();
     if (pad.toggleTelemetry) this.telemetryService.toggleTelemetry();
     if (pad.toggleMap) this.showMap.update((m) => !m);
@@ -410,7 +413,7 @@ export class App implements AfterViewInit, OnDestroy {
     if (pad.worldTools) this.showPipeline.update((v) => !v);
     if (pad.toggleHelp) this.showHelp.update((v) => !v);
   }
-  private keyHorn = false;
+  private keyHorn = false; private fwdS = new THREE.Vector3();
 
   private stepPhysics(dt: number): void {
     // 1. Poll Controller inputs (DS4 priority > Touch > Keyboard)

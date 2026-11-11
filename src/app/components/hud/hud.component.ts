@@ -190,7 +190,7 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
           <div class="flex items-center justify-between mb-2"><span class="text-[11px] font-black tracking-[0.25em] text-amber-300">STREET RACES</span>
             <button (click)="race.menu.set(false)" class="text-zinc-400 hover:text-white" aria-label="Close"><mat-icon class="!text-[18px] !w-[18px] !h-[18px]">close</mat-icon></button></div>
           @for (e of race.events; track e.id; let i = $index) {
-            <button (click)="race.start(i)" class="w-full text-left px-3 py-2 mb-1 rounded-xl bg-white/5 hover:bg-white/15 flex items-center gap-3">
+            <button (click)="race.start(i)" class="w-full text-left px-3 py-2 mb-1 rounded-xl hover:bg-white/15 flex items-center gap-3" [ngClass]="race.sel() === i ? 'bg-amber-300/25 ring-1 ring-amber-300/60' : 'bg-white/5'">
               <kbd class="text-[10px] text-zinc-400">{{ i + 1 }}</kbd>
               <span class="flex-1"><span class="block text-sm font-bold text-white">{{ e.name }}</span><span class="block text-[10px] text-zinc-400">{{ e.blurb }}</span></span>
               @if (race.bests()[e.id]; as b) { <span class="text-[10px] text-emerald-300 font-mono">{{ race.fmt(b) }}</span> }

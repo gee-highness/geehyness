@@ -10,6 +10,7 @@ export interface CollisionResult { impactSpeed: number; hitKind: 'none' | 'stati
  * that treats the car as a chain of circles (works on non-convex building outlines, no tunnelling at 60 Hz+ with sub-steps).
  */
 export class CollisionWorld {
+  private static _fwd = new THREE.Vector3();
   private readonly CELL = 32;
   private polys: Float32Array[] = [];
   private polyBox: number[] = [];
@@ -110,7 +111,7 @@ export class CollisionWorld {
     const res: CollisionResult = { impactSpeed: 0, hitKind: 'none', hitId: -1 };
     const L = v.config.wheelBaseM + 1.45, rad = Math.max(0.9, v.config.trackWidthM * 0.52);
     const count = Math.max(3, Math.round(L / (rad * 1.2)));
-    const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(v.quaternion);
+    const fwd = CollisionWorld._fwd.set(0, 0, 1).applyQuaternion(v.quaternion);
     const m = v.config.massKg, Iy = (m * (L * L + (rad * 2) ** 2)) / 12;
     const c = { nx: 0, nz: 0, pen: 0 }; const py = v.position.y;
 

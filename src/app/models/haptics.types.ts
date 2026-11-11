@@ -59,4 +59,6 @@ export interface GamepadControlsSnapshot {
   toggleHelp: boolean;      // Share + Options
   worldTools: boolean;      // Share + Triangle
   garage: boolean;          // Share + Square
+  toggleRaces: boolean;     // Share + R1 (race menu); while it is open D-Pad Up/Down pick, Cross starts
+  padUp: boolean; padDown: boolean; padConfirm: boolean;
 }
