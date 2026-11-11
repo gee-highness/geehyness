@@ -181,3 +181,10 @@ Done and pushed on `ccr-cac88f1d-gkebu8` (see bullets above plus):
 - Keys: **N** opens the race menu / abandons; **1-7** pick an event; Esc closes. Debug: `__shesha.race()`, `__shesha.raceSvc`.
 - Some snaps (moneni) sit on a disconnected road scrap: `Race.snap()` nudges them onto the main network.
 - Verified by simulated-time runs in headless Chromium (all 7 events finish, AI averages 86-151 km/h, no stalls or height pops, player gate/finish logic, grid screenshot). NOT verified: feel/difficulty on a real device with each player car; gamepad binding for the race menu (touch uses the flag rail button).
+
+### Ninth session, optimisation pass
+- Far terrain is one indexed mesh (`terrain-far`, tile index ranges rewritten on visibility change): ~140 -> ~4 terrain draw calls. Far traffic silhouettes are one `InstancedMesh` (`traffic-far`). Removed dead `TrafficSimulator` (12 never-updated box cars, ~77 draw calls). Phone profile (Pixel 7 emulation, Auto): CBD ~158 calls / 227k tris, MR3 ~99 calls / 144k tris (was ~340 / 450k+ on desktop High).
+- Per-frame allocations removed from camera rig, collision step, scene sync, traffic update.
+- Gamepad: Share+R1 opens race menu, D-pad up/down select, Cross starts.
+- APK rebuilt (Java + `/opt/android-sdk` were present; `bash` the steps in this file). Still no real-device numbers: ask for key F readout.
+- Remaining ideas: worker-thread chunk generation, baked chunks (docs/MASTER_PLAN.md 3.1), KTX2 textures, facade detail, Galp canopy sizing, release workflow (needs merge to default branch).
