@@ -188,3 +188,7 @@ Done and pushed on `ccr-cac88f1d-gkebu8` (see bullets above plus):
 - Gamepad: Share+R1 opens race menu, D-pad up/down select, Cross starts.
 - APK rebuilt (Java + `/opt/android-sdk` were present; `bash` the steps in this file). Still no real-device numbers: ask for key F readout.
 - Remaining ideas: worker-thread chunk generation, baked chunks (docs/MASTER_PLAN.md 3.1), KTX2 textures, facade detail, Galp canopy sizing, release workflow (needs merge to default branch).
+
+### Cops removed, first-person fixed
+- AI cops are gone (`police.ts`, `police.service.ts`, HUD meters, J key, siren hook). Cops return only as real players in a future multiplayer cops-and-robbers mode: `AudioService.setSiren`, the `police` player car (`cars.ts`), `lamp-light` COP emitter slots and `RoadGraph` are kept for that.
+- First person (COCKPIT/BUMPER): camera is rigidly attached to the car (no world-space lag) and the car's own meshes are hidden so roof/pillars/bonnet never block the view (`SceneManager.syncVehicleVisuals`, `CameraRig.update`).

@@ -19,7 +19,6 @@ import { GamepadService } from './services/gamepad.service';
 import { HapticsService } from './services/haptics.service';
 import { SettingsService } from './services/settings.service';
 import { DriveStateService } from './services/drive-state.service';
-import { PoliceService } from './services/police.service';
 import { RaceService } from './services/race.service';
 import { HelpComponent } from './components/help/help.component';
 import { NavigationService } from './services/navigation.service';
@@ -73,10 +72,9 @@ export class App implements AfterViewInit, OnDestroy {
   public hapticsService = inject(HapticsService);
   public settings = inject(SettingsService);
   public drive = inject(DriveStateService);
-  public policeSvc = inject(PoliceService);
   public raceSvc = inject(RaceService);
   private raceHooked = false; private raceAcc = 0;
-  private crashNoise = 0; private copHooked = false; private polAcc = 0;
+  private crashNoise = 0; 
   public nav = inject(NavigationService);
   readonly showHelp = signal<boolean>(false);
   private pad = this.gamepadService.pollControls();
@@ -120,7 +118,6 @@ export class App implements AfterViewInit, OnDestroy {
   // Core Game Loop & Physics
   private sceneManager!: SceneManager;
   private themeFx = effect(() => { const t = this.settings.theme(); this.sceneManager?.setTheme(t); });
-  private copsFx = effect(() => { const on = this.policeSvc.enabled(); this.sceneManager?.setCops(on); });
   private qualityFx = effect(() => { const q = this.settings.quality(); this.sceneManager?.setQuality(q); });
   private vehicle!: RaycastVehicle;
 
@@ -175,7 +172,7 @@ export class App implements AfterViewInit, OnDestroy {
       // Drop the car on the real MR3 (Ngwane St, eastbound) once the world has streamed in
       (window as unknown as { __shesha: Record<string, unknown> }).__shesha = {
         ...((window as unknown as { __shesha?: Record<string, unknown> }).__shesha ?? {}),
-        roadCut: () => this.sceneManager.worldBuilder.collision.cut, roadFix: () => this.sceneManager.worldBuilder.roadFix, wb: this.sceneManager.worldBuilder, veh: this.vehicle, nav: this.nav, env: this.envService, drive: this.drive, police: () => this.sceneManager.police, race: () => this.sceneManager.race, raceSvc: this.raceSvc,
+        roadCut: () => this.sceneManager.worldBuilder.collision.cut, roadFix: () => this.sceneManager.worldBuilder.roadFix, wb: this.sceneManager.worldBuilder, veh: this.vehicle, nav: this.nav, env: this.envService, drive: this.drive, race: () => this.sceneManager.race, raceSvc: this.raceSvc,
         perf: () => Object.fromEntries(Object.entries(this.perf).map(([k, v]) => [k, Math.round(v * 100) / 100])),
         tpRoad: (x: number, z: number) => {
           const wb = this.sceneManager.worldBuilder; const r = wb.nearestRoadSegment(x, z, 5); if (!r) return null;
@@ -204,7 +201,7 @@ export class App implements AfterViewInit, OnDestroy {
           this.vehicle.velocity.set(0, 0, 0); this.vehicle.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
         },
       };
-      this.sceneManager.setQuality(this.settings.quality()); this.sceneManager.setTheme(this.settings.theme()); this.sceneManager.graphProvider = () => this.nav.getGraph(); this.sceneManager.setCops(this.policeSvc.enabled());
+      this.sceneManager.setQuality(this.settings.quality()); this.sceneManager.setTheme(this.settings.theme()); this.sceneManager.graphProvider = () => this.nav.getGraph(); 
       this.nav.attach(this.sceneManager.worldBuilder);
       this.sceneManager.worldBuilder.onReady(() => {
         const sp = this.sceneManager.worldBuilder.meta.spawn;
@@ -287,24 +284,6 @@ export class App implements AfterViewInit, OnDestroy {
       this.audioService.updateSurfaceAudio(telem.wheels[0].surfaceClass, telem.speedKmh);
 
       this.raceTick(frameDelta);
-      // ---- cops & robbers: how visible / audible the player is right now, then let the cops react
-      {
-        const sm = this.sceneManager; const h = this.envService.envState().timeOfDayHours, elev = Math.sin(((h - 6) / 24) * 2 * Math.PI);
-        const dark = 1 - THREE.MathUtils.smoothstep(elev, -0.12, 0.25) * (this.envService.weather() === 'TROPICAL_RAIN' ? 0.75 : 1);
-        const hl = this.drive.headlights(); this.crashNoise = Math.max(0, this.crashNoise - frameDelta / 2);
-        const lightNight = 20 + (hl === 2 ? 230 : hl === 1 ? 105 : 0) + (this.vehicle.brake > 0.15 ? 22 : 0) + (this.drive.leftOn || this.drive.rightOn ? 10 : 0);
-        const vis = THREE.MathUtils.lerp(170, lightNight, dark);
-        const skid = telem.wheels[0].isSkidding || (this.vehicle.handbrake && telem.speedKmh > 20);
-        const noise = 12 + telem.speedKmh * 0.85 + telem.throttle * 26 + (skid ? 70 : 0) + (this.drive.horn() ? 260 : 0) + this.crashNoise * 130;
-        sm.policeUpdate(frameDelta, { x: this.vehicle.position.x, z: this.vehicle.position.z, vx: this.vehicle.velocity.x, vz: this.vehicle.velocity.z, speedKmh: telem.speedKmh }, { visRadius: vis, noiseRadius: noise }, dark);
-        if (sm.police && !this.copHooked) {
-          this.copHooked = true;
-          sm.police.onBusted = () => { this.policeSvc.busted.update((n) => n + 1); this.policeSvc.flash('BUSTED! Back to the start'); const sp = sm.worldBuilder.meta.spawn; this.vehicle.position.set(sp.x, sm.worldBuilder.groundHeightAt(sp.x, sp.z) + 0.9, sp.z); this.vehicle.velocity.set(0, 0, 0); this.vehicle.angularVelocity.set(0, 0, 0); this.vehicle.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), sp.yaw); sm.police?.reset(); };
-          sm.police.onEscaped = () => { this.policeSvc.escaped.update((n) => n + 1); this.policeSvc.flash('YOU LOST THEM'); };
-        }
-        const st = sm.police?.status; this.audioService.setSiren(st && st.nearestChaser < 380 ? Math.pow(1 - st.nearestChaser / 380, 1.2) : 0);
-        this.polAcc += frameDelta; if (st && this.polAcc > 0.1) { this.polAcc = 0; const ps = this.policeSvc; ps.state.set(st.state); ps.suspicion.set(st.suspicion); ps.vis.set(Math.min(1, vis / 260)); ps.noise.set(Math.min(1, noise / 260)); ps.chasers.set(st.chasers); ps.nearest.set(st.nearest); }
-      }
 
       if (telem.backfirePop) {
         this.audioService.playBackfirePop();
@@ -551,7 +530,6 @@ export class App implements AfterViewInit, OnDestroy {
     if (event.code === 'Comma') { this.drive.toggleLeft(); return; }
     if (event.code === 'Period') { this.drive.toggleRight(); return; }
     if (event.code === 'KeyX') { this.drive.toggleHazards(); return; }
-    if (event.code === 'KeyJ') { this.policeSvc.toggle(); return; }
     if (event.code === 'KeyN') { this.raceSvc.toggle(); return; }
     if (this.raceSvc.menu()) { const d = /^Digit([1-9])$/.exec(event.code); if (d && +d[1] <= this.raceSvc.events.length) { this.raceSvc.start(+d[1] - 1); return; } if (event.code === 'Escape') { this.raceSvc.menu.set(false); return; } }
     if (event.code === 'KeyL') { this.drive.cycleHeadlights(); return; }
@@ -670,9 +648,9 @@ export class App implements AfterViewInit, OnDestroy {
     if (!this.raceHooked) {
       this.raceHooked = true;
       rs.onStart = (i) => {
-        const st = race.start(i); if (!st) { this.policeSvc.flash('Route not ready'); return; }
+        const st = race.start(i); if (!st) { rs.flash('Route not ready'); return; }
         const v = this.vehicle; v.position.set(st.x, sm.worldBuilder.groundHeightAt(st.x, st.z) + 0.9, st.z); v.velocity.set(0, 0, 0); v.angularVelocity.set(0, 0, 0); v.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), st.yaw);
-        const np = this.nav.pose; np.x = st.x; np.z = st.z; this.nav.follow(st.route, st.finish); sm.police?.reset(); rs.result.set(null);
+        const np = this.nav.pose; np.x = st.x; np.z = st.z; this.nav.follow(st.route, st.finish); rs.result.set(null);
       };
       rs.onAbandon = () => race.stop();
       race.onEvent = (e) => {

@@ -16,7 +16,6 @@ import { FestivalService } from '../../services/festival.service';
 import { AudioService } from '../../services/audio.service';
 import { EnvironmentService } from '../../services/environment.service';
 import type { WorldBuilder } from '../../game/graphics/world-builder';
-import { PoliceService } from '../../services/police.service';
 import { RaceService } from '../../services/race.service';
 import { NavigationService } from '../../services/navigation.service';
 import { DriveStateService } from '../../services/drive-state.service';
@@ -119,10 +118,6 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
           <mat-icon class="!text-[22px]" [class.text-amber-300]="race.phase() === 'IDLE'" [class.text-red-400]="race.phase() !== 'IDLE'">sports_score</mat-icon>
           <span class="rail-tip">{{ race.phase() === 'IDLE' ? 'Races' : 'Abandon race' }} <kbd>N</kbd></span>
         </button>
-        <button (click)="police.toggle()" class="rail-btn group" aria-label="Cops and robbers">
-          <mat-icon class="!text-[22px]" [class.text-sky-300]="police.enabled()" [class.text-zinc-500]="!police.enabled()">local_police</mat-icon>
-          <span class="rail-tip">Cops &amp; robbers {{ police.enabled() ? 'on' : 'off' }} <kbd>J</kbd></span>
-        </button>
         <button (click)="settings.toggleTheme()" class="rail-btn group" aria-label="Neo-Eswatini theme">
           <mat-icon class="!text-[22px]" [class.text-fuchsia-300]="settings.theme() === 'NEO'" [class.text-zinc-400]="settings.theme() !== 'NEO'">auto_awesome</mat-icon>
           <span class="rail-tip">Neo-Eswatini {{ settings.theme() === 'NEO' ? 'on' : 'off' }} <kbd>Y</kbd></span>
@@ -167,20 +162,7 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
         </div>
       }
 
-      <!-- Cops & robbers: stealth meters -->
-      @if (police.enabled()) {
-        <div class="absolute pointer-events-none hud-card px-3 py-2 w-[170px]" [ngClass]="compact() ? 'top-[68px] left-3' : 'top-[84px] left-4'">
-          <div class="flex items-center justify-between text-[10px] font-black tracking-widest">
-            <span class="text-zinc-300">COPS</span>
-            <span [class.text-emerald-300]="police.state() === 'PATROL'" [class.text-amber-300]="police.state() === 'ALERT' || police.state() === 'SEARCH'" [class.text-red-400]="police.state() === 'CHASE'" [class.animate-pulse]="police.state() === 'CHASE'">{{ police.state() }}</span>
-          </div>
-          <div class="mt-1.5 h-1.5 rounded-full bg-white/10 overflow-hidden"><div class="h-full rounded-full bg-gradient-to-r from-amber-300 to-red-500" [style.width.%]="police.suspicion() * 100"></div></div>
-          <div class="mt-2 flex items-center gap-1.5 text-[9px] text-zinc-400"><mat-icon class="!text-[13px] !w-[13px] !h-[13px]">visibility</mat-icon><div class="flex-1 h-1 rounded-full bg-white/10 overflow-hidden"><div class="h-full bg-sky-300" [style.width.%]="police.vis() * 100"></div></div></div>
-          <div class="mt-1 flex items-center gap-1.5 text-[9px] text-zinc-400"><mat-icon class="!text-[13px] !w-[13px] !h-[13px]">hearing</mat-icon><div class="flex-1 h-1 rounded-full bg-white/10 overflow-hidden"><div class="h-full bg-fuchsia-300" [style.width.%]="police.noise() * 100"></div></div></div>
-          <div class="mt-1.5 text-[9px] text-zinc-500 flex justify-between"><span>busted {{ police.busted() }}</span><span>escaped {{ police.escaped() }}</span></div>
-        </div>
-      }
-      @if (police.message(); as pm) {
+      @if (race.message(); as pm) {
         <div class="absolute pointer-events-none left-1/2 -translate-x-1/2 top-[22%] px-6 py-3 rounded-2xl bg-black/70 border border-white/20 text-2xl font-black tracking-[0.2em]" [class.text-red-400]="pm.startsWith('BUSTED')" [class.text-emerald-300]="!pm.startsWith('BUSTED')">{{ pm }}</div>
       }
 
@@ -264,7 +246,6 @@ export class HudComponent {
   public hapticsService = inject(HapticsService);
   public settings = inject(SettingsService);
   public nav = inject(NavigationService);
-  public police = inject(PoliceService);
   public race = inject(RaceService);
   public drive = inject(DriveStateService);
   compact = input<boolean>(false);

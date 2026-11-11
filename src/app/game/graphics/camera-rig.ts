@@ -114,8 +114,15 @@ export class CameraRig {
       }
     }
 
+    if (this.mode === 'COCKPIT' || this.mode === 'BUMPER') { // first person is rigidly attached to the car: a world-space lag puts the eye behind the driver's seat at speed
+      this.currentPos.copy(targetPos);
+      this.currentTarget.x = THREE.MathUtils.damp(this.currentTarget.x, lookTarget.x, 60, dt); this.currentTarget.y = THREE.MathUtils.damp(this.currentTarget.y, lookTarget.y, 60, dt); this.currentTarget.z = THREE.MathUtils.damp(this.currentTarget.z, lookTarget.z, 60, dt);
+      this.currentFov = THREE.MathUtils.damp(this.currentFov, desiredFov, 6, dt);
+      this.camera.position.copy(this.currentPos); this.camera.lookAt(this.currentTarget); this.camera.fov = this.currentFov; this.camera.updateProjectionMatrix();
+      return;
+    }
     // Silky-smooth exponential damping
-    const posDampSpeed = this.mode === 'COCKPIT' ? 30 : 12;
+    const posDampSpeed = 12;
     this.currentPos.x = THREE.MathUtils.damp(this.currentPos.x, targetPos.x, posDampSpeed, dt);
     this.currentPos.y = THREE.MathUtils.damp(this.currentPos.y, targetPos.y, posDampSpeed, dt);
     this.currentPos.z = THREE.MathUtils.damp(this.currentPos.z, targetPos.z, posDampSpeed, dt);

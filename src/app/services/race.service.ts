@@ -7,6 +7,8 @@ export class RaceService {
   readonly events = RACES;
   readonly menu = signal(false);
   readonly sel = signal(0);
+  readonly message = signal('');
+  flash(msg: string, ms = 3200): void { this.message.set(msg); setTimeout(() => { if (this.message() === msg) this.message.set(''); }, ms); }
   readonly phase = signal<RacePhase>('IDLE');
   readonly name = signal('');
   readonly count = signal(0);

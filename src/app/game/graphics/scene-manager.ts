@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { Weather } from './weather';
 import { SLOT, LAMP, setEmitter, clearEmitter } from './lamp-light';
-import { Police, Stealth, PlayerPose } from './police';
 import { Race, RacePose } from './race';
 import type { RoadGraph } from '../road-graph';
 import { Sky, skyPalette, SkyPalette } from './sky';
@@ -60,8 +59,8 @@ export class SceneManager {
   private modelRadius = 0.33;
   private roadTraffic?: RoadTraffic;
   private pedestrians?: Pedestrians;
-  private fwdS = new THREE.Vector3(); public race?: Race;
-  public police?: Police; public graphProvider?: () => RoadGraph | undefined; private copsWanted = true;
+  private fwdS = new THREE.Vector3(); private fpHidden = false; private fpT = 0; public race?: Race;
+  public graphProvider?: () => RoadGraph | undefined;
   private signals?: TrafficSignals;
   private pedFraction = 1;
   private vehicleParts!: ReturnType<typeof CarFactory.createVehicleMesh>;
@@ -100,7 +99,7 @@ export class SceneManager {
 
     this.particleSystem = new ParticleSystem(this.scene);
     this.weather = new Weather(this.scene);
-    this.worldBuilder.onReady(() => { this.signals = new TrafficSignals(this.scene, this.worldBuilder); this.roadTraffic = new RoadTraffic(this.scene, this.worldBuilder); this.roadTraffic.signals = this.signals; this.roadTraffic.graph = () => this.graphProvider?.(); this.race = new Race(this.scene, this.worldBuilder, () => this.graphProvider?.()); this.pedestrians = new Pedestrians(this.scene, this.worldBuilder); this.police = new Police(this.scene, this.worldBuilder, () => this.graphProvider?.()); this.police.setEnabled(this.copsWanted); this.pedestrians.setCount(this.pedFraction); });
+    this.worldBuilder.onReady(() => { this.signals = new TrafficSignals(this.scene, this.worldBuilder); this.roadTraffic = new RoadTraffic(this.scene, this.worldBuilder); this.roadTraffic.signals = this.signals; this.roadTraffic.graph = () => this.graphProvider?.(); this.race = new Race(this.scene, this.worldBuilder, () => this.graphProvider?.()); this.pedestrians = new Pedestrians(this.scene, this.worldBuilder); this.pedestrians.setCount(this.pedFraction); });
   }
 
   private detectSoftwareGl(): void {
@@ -253,8 +252,7 @@ export class SceneManager {
     for (let k = 0; k < SLOT.SIGNALS; k++) { const h = sg[k]; if (h) setEmitter(SLOT.SIGNAL + k, h.x, h.y, h.z, 14, h.col[0], h.col[1], h.col[2], 1.1); else clearEmitter(SLOT.SIGNAL + k); }
     const cars = this.roadTraffic?.nearestCars(px, pz, SLOT.CARS) ?? [];
     for (let k = 0; k < SLOT.CARS; k++) { const c = cars[k]; if (c) setEmitter(SLOT.CAR + k, c.x, c.y, c.z, 17, 1, 0.94, 0.78, 1.5); else clearEmitter(SLOT.CAR + k); }
-    const st = this.police?.strobe(px, pz);
-    if (st) { setEmitter(SLOT.COP, st.x, st.y, st.z, 34, 1, 0.08, 0.08, st.red ? 2.4 : 0.15); setEmitter(SLOT.COP + 1, st.x, st.y, st.z, 34, 0.15, 0.3, 1, st.red ? 0.15 : 2.4); } else { clearEmitter(SLOT.COP); clearEmitter(SLOT.COP + 1); }
+    clearEmitter(SLOT.COP); clearEmitter(SLOT.COP + 1);
     if (vehicle.brake > 0.15) setEmitter(SLOT.PLAYER, px, gy + 0.8, pz, 8, 1, 0.08, 0.05, 0.9); else clearEmitter(SLOT.PLAYER);
   }
 
@@ -330,6 +328,10 @@ export class SceneManager {
     }
 
     // 1. Position and orientation of vehicle body
+    { // first person: hide the car's own body so roof, pillars and bonnet never block the view (lights and wheels' physics stay)
+      const fp = this.cameraRig.mode === 'COCKPIT' || this.cameraRig.mode === 'BUMPER', now = performance.now();
+      if (fp !== this.fpHidden || (fp && now - this.fpT > 700)) { this.fpHidden = fp; this.fpT = now; this.vehicleMeshGroup.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.visible = !fp; }); }
+    }
     this.vehicleMeshGroup.position.copy(vehicle.position);
     this.vehicleMeshGroup.quaternion.copy(vehicle.quaternion);
 
@@ -436,12 +438,10 @@ export class SceneManager {
     this.blob.scale.set(2.9, 1, 5.4); this.blob.renderOrder = 2; this.scene.add(this.blob);
   }
 
-  private baseColliders() { return [...(this.roadTraffic?.colliders() ?? []), ...(this.police?.colliders() ?? [])]; }
+  private baseColliders() { return [...(this.roadTraffic?.colliders() ?? [])]; }
   public trafficColliders() { return [...this.baseColliders(), ...(this.race?.colliders() ?? [])]; }
-  public hitTraffic(id: number, impact: number): void { if (id >= 2000) this.race?.hit(id, impact); else if (id >= 1000) this.police?.hit(id, impact); else this.roadTraffic?.hit(id, impact); }
+  public hitTraffic(id: number, impact: number): void { if (id >= 2000) this.race?.hit(id, impact); else this.roadTraffic?.hit(id, impact); }
   public raceUpdate(dt: number, p: RacePose): void { if (this.race?.active) this.race.update(dt, p, this.baseColliders()); }
-  public setCops(on: boolean): void { this.copsWanted = on; this.police?.setEnabled(on); }
-  public policeUpdate(dt: number, pl: PlayerPose, st: Stealth, night: number): void { this.police?.update(dt, pl, st, night); }
 
   /** Chunky-pixel mode: fixed internal height per tier, nearest-neighbour upscaled. Cheap on the GPU and part of the look. */
   private applyStyleRes(): void {

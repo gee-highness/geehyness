@@ -16,7 +16,7 @@ export class NavigationService {
   private world?: WorldBuilder; private graph?: RoadGraph; private idx = 0; private lastRoute = 0;
 
   attach(w: WorldBuilder): void { this.world = w; }
-  /** Shared lazily-built road graph (also used by the police AI). */
+  /** Shared lazily-built road graph. */
   getGraph(): RoadGraph | undefined { if (!this.graph && this.world?.ready) this.graph = new RoadGraph(this.world.roadWays); return this.graph; }
   set(x: number, z: number): void { this.locked = false; this.waypoint.set([x, z]); this.compute(); }
   /** Follow a fixed route (a race course): guidance without re-routing. */
