@@ -436,7 +436,12 @@ export class WorldBuilder {
     this.visDirty = false; this.visX = px; this.visZ = pz; this.visT = now;
     for (const t of this.terrainTiles) {
       const dx = Math.max(Math.abs(t.cx - px) - 640, 0), dz = Math.max(Math.abs(t.cz - pz) - 640, 0), d = Math.hypot(dx, dz);
-      t.lod0.visible = d < 950 * this.detailScale; t.lod1.visible = d >= 950 * this.detailScale && d < 20000;
+      t.lod0.visible = d < 950 * this.detailScale;
+    }
+    if (this.farTerrain) { // every coarse tile lives in one mesh: rewrite its index buffer with the tiles that are not shown in detail (1 draw call instead of ~140)
+      const ix = this.farTerrain.geometry.index!, arr = ix.array as Uint32Array; let n = 0;
+      for (const t of this.terrainTiles) if (!t.lod0.visible) { arr.set(this.farIdx.subarray(t.far[0], t.far[0] + t.far[1]), n); n += t.far[1]; }
+      this.farTerrain.geometry.setDrawRange(0, n); ix.needsUpdate = true;
     }
     const doShadow = this.shadowsOn && now - this.shadowT > 600; if (doShadow) this.shadowT = now;
     for (const c of this.chunks) {
@@ -605,13 +610,15 @@ export class WorldBuilder {
     this.buildTerrainTiles(scene, mat);
   }
 
-  public terrainTiles: { lod0: THREE.Mesh; lod1: THREE.Mesh; cx: number; cz: number }[] = [];
+  public terrainTiles: { lod0: THREE.Mesh; far: [number, number]; cx: number; cz: number }[] = [];
+  private farTerrain?: THREE.Mesh; private farIdx = new Uint32Array(0);
 
   /** 1280 m tiles, each with a fine (40 m) and a coarse (320 m) mesh; skirts hide LOD seams. */
   private buildTerrainTiles(scene: THREE.Scene, mat: THREE.Material): void {
     const [x0, , z0] = this.meta.bounds, S = this.TS, nx = this.tnx, nz = this.tnz, TC = Math.round(1280 / S), CS = Math.round(320 / S);
     const W = this.meta.gw * this.meta.px, Hh = this.meta.gh * this.meta.px;
     const H = (i: number, j: number) => this.tH[Math.max(0, Math.min(nz - 1, j)) * nx + Math.max(0, Math.min(nx - 1, i))];
+    const fp: number[] = [], fn: number[] = [], fu: number[] = [], fi: number[] = []; let lastFar: [number, number] = [0, 0];
     const make = (i0: number, j0: number, step: number): THREE.Mesh => {
       const iMax = Math.min(i0 + TC, nx - 1), jMax = Math.min(j0 + TC, nz - 1);
       const cols: number[] = [], rows: number[] = [];
@@ -646,13 +653,23 @@ export class WorldBuilder {
       edge(cols.map((i, c) => [i, rows[rw - 1], (rw - 1) * cw + c] as [number, number, number]), true);
       edge(rows.map((j, r) => [cols[0], j, r * cw] as [number, number, number]), true);
       edge(rows.map((j, r) => [cols[cw - 1], j, r * cw + cw - 1] as [number, number, number]), false);
+      if (step !== 1) { // coarse tile: append to the shared far mesh
+        const base = fp.length / 3; for (let q = 0; q < pos.length; q++) { fp.push(pos[q]); fn.push(nor[q]); } for (let q = 0; q < uv.length; q++) fu.push(uv[q]);
+        lastFar = [fi.length, idx.length]; for (const v of idx) fi.push(v + base); return null as unknown as THREE.Mesh;
+      }
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
       g.setIndex(new THREE.BufferAttribute(new Uint32Array(idx), 1)); g.computeBoundingSphere();
       const m = new THREE.Mesh(g, mat); m.name = 'terrain'; m.receiveShadow = true; m.visible = false; scene.add(m); return m;
     };
     for (let j0 = 0; j0 < nz - 1; j0 += TC) for (let i0 = 0; i0 < nx - 1; i0 += TC) {
-      this.terrainTiles.push({ lod0: make(i0, j0, 1), lod1: make(i0, j0, CS), cx: x0 + (i0 + TC / 2) * S, cz: z0 + (j0 + TC / 2) * S });
+      make(i0, j0, CS); this.terrainTiles.push({ lod0: make(i0, j0, 1), far: lastFar, cx: x0 + (i0 + TC / 2) * S, cz: z0 + (j0 + TC / 2) * S });
+    }
+    {
+      const g = new THREE.BufferGeometry(); this.farIdx = new Uint32Array(fi);
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(fp), 3)); g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(fn), 3)); g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(fu), 2));
+      const ib = new THREE.BufferAttribute(new Uint32Array(fi), 1); ib.setUsage(THREE.DynamicDrawUsage); g.setIndex(ib);
+      const m = new THREE.Mesh(g, mat); m.name = 'terrain-far'; m.receiveShadow = false; m.frustumCulled = false; scene.add(m); this.farTerrain = m;
     }
     this.terrainMesh = this.terrainTiles[0].lod0;
   }

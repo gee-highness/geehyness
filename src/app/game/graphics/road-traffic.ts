@@ -12,7 +12,7 @@ interface Agent { routed?: boolean; turn?: Float32Array; wT?: number; lift?: num
 
 /** Ambient traffic that drives the real OSM road geometry, on the left (Eswatini). */
 export class RoadTraffic {
-  private agents: Agent[] = [];
+  private agents: Agent[] = []; private upV = new THREE.Vector3(0, 1, 0); private xV = new THREE.Vector3(1, 0, 0); private qT = new THREE.Quaternion();
   private candidates: number[] = [];
   private timer = 0;
   private readonly N = 44;
@@ -31,8 +31,15 @@ export class RoadTraffic {
   /** How many agents are on the road right now (minibus taxis come first in the list, so they dominate quiet hours as in real life). */
   private get active(): number { return Math.max(4, Math.round(this.agents.length * this.density)); }
   public signals?: TrafficSignals;
-  private static boxA = new THREE.BoxGeometry(1.8, 0.7, 4.3); private static boxB = new THREE.BoxGeometry(1.5, 0.5, 2.1);
-  private static glassMat = new THREE.MeshStandardMaterial({ color: 0x1b2128, roughness: 0.2, metalness: 0.5 });
+  /** Every far-away vehicle is one instance of a two-box silhouette (body + cabin, vertex-coloured): one draw call for the lot. */
+  private prox!: THREE.InstancedMesh; private proxM = new THREE.Matrix4(); private proxS = new THREE.Vector3(); private proxN = 0;
+  private static silhouette(): THREE.BufferGeometry {
+    const a = new THREE.BoxGeometry(1.8, 0.7, 4.3).translate(0, 0.62, 0).toNonIndexed(), b = new THREE.BoxGeometry(1.5, 0.5, 2.1).translate(0, 1.2, -0.15).toNonIndexed();
+    const na = a.attributes['position'].count, nb = b.attributes['position'].count, pos = new Float32Array((na + nb) * 3), nor = new Float32Array((na + nb) * 3), col = new Float32Array((na + nb) * 3);
+    pos.set(a.attributes['position'].array); pos.set(b.attributes['position'].array, na * 3); nor.set(a.attributes['normal'].array); nor.set(b.attributes['normal'].array, na * 3);
+    col.fill(1, 0, na * 3); for (let i = na; i < na + nb; i++) { col[i * 3] = 0.12; col[i * 3 + 1] = 0.14; col[i * 3 + 2] = 0.17; }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); return g;
+  }
 
   constructor(private scene: THREE.Scene, private world: WorldBuilder) {
     world.roadWays.forEach((w, i) => { if (w.c <= 4 && w.p.length >= 6) this.candidates.push(i); });
@@ -44,6 +51,7 @@ export class RoadTraffic {
     const stripes = [0x1e5bb8, 0x0e8a4a, 0xd7261e, 0xf2a900, 0x6a2c91];
     for (let i = 0; i < 9; i++) {
       const coach = i >= 7, g = coach ? makeCoach(stripes[i % 5]) : makeQuantum(stripes[i % 5]);
+      { const old = g.userData['proxy'] as THREE.Object3D | undefined; if (old) { old.removeFromParent(); g.userData['proxy'] = undefined; } g.userData['pc'] = new THREE.Color(0xe8e8e8); g.userData['ps'] = coach ? [1.4, 2.4, 2.8] : [1.08, 1.5, 1.2]; }
       this.scene.add(g); g.visible = false;
       this.agents.push({ dzs: [], cruise: coach ? 17 : 13, obj: g, pts: [], seg: 0, s: 0, speed: 0, w: 6, cum: [], len: 0 });
     }
@@ -51,16 +59,13 @@ export class RoadTraffic {
 
   private async populate(): Promise<void> {
     this.addPublicTransport();
+    this.prox = new THREE.InstancedMesh(RoadTraffic.silhouette(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.3 }), this.N + 9); this.prox.name = 'traffic-far'; this.prox.frustumCulled = false; this.prox.count = 0; this.scene.add(this.prox);
     // the real street mix: white/silver sedans, hatches, bakkies and SUVs (generated bodies, ~1.5k triangles, one material)
     const MIX: CarKind[] = ['sedan', 'bakkie', 'hatch', 'suv', 'sedan', 'hatch', 'bakkie', 'sedan', 'suv', 'hatch'];
     for (let i = 0; i < this.N; i++) {
       const kind = MIX[i % MIX.length], col = PAINTS[(i * 7 + 3) % PAINTS.length];
       const g = makeCar(kind, col); g.visible = false;
-      { // distance LOD: a two-box silhouette in the car's own colour stands in beyond ~75 m
-        const px = new THREE.Group(), bm = new THREE.MeshStandardMaterial({ color: new THREE.Color(col[0], col[1], col[2]), roughness: 0.5, metalness: 0.3 }), gm = RoadTraffic.glassMat;
-        const b1 = new THREE.Mesh(RoadTraffic.boxA, bm); b1.position.set(0, 0.62, 0); const b2 = new THREE.Mesh(RoadTraffic.boxB, gm); b2.position.set(0, 1.2, -0.15);
-        px.add(b1, b2); px.visible = false; g.add(px); g.userData['proxy'] = px;
-      }
+      g.userData['pc'] = new THREE.Color(col[0], col[1], col[2]); g.userData['ps'] = [1, 1, 1];
       this.scene.add(g);
       this.agents.push({ dzs: [], cruise: 12, obj: g, pts: [], seg: 0, s: 0, speed: 0, w: 6, cum: [], len: 0 });
     }
@@ -125,8 +130,8 @@ export class RoadTraffic {
   hit(id: number, impact: number): void { const a = this.agents[id]; if (a) a.speed = Math.max(0, a.speed - impact * 0.6); }
 
   update(dt: number, px: number, pz: number): void {
-    this.timer += dt;
-    const up = new THREE.Vector3(0, 1, 0);
+    this.timer += dt; this.proxN = 0;
+    const up = this.upV;
     const act = this.active;
     for (let ai = 0; ai < this.agents.length; ai++) {
       const a = this.agents[ai];
@@ -170,10 +175,12 @@ export class RoadTraffic {
       const sl = a.routed ? 0 : (a.dzs[i + 1] - a.dzs[i]) / L * 1.6;
       const hf = tg(x + dx * 1.6, z + dz * 1.6) + (a.lift ?? 0.1) + dzI + sl, hb = tg(x - dx * 1.6, z - dz * 1.6) + (a.lift ?? 0.1) + dzI - sl;
       a.obj.position.set(x, h, z); a.obj.userData['hd'] = [dx, dz];
-      a.obj.quaternion.setFromAxisAngle(up, Math.atan2(dx, dz)).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.atan2(hf - hb, 3.2)));
+      a.obj.quaternion.setFromAxisAngle(up, Math.atan2(dx, dz)).multiply(this.qT.setFromAxisAngle(this.xV, -Math.atan2(hf - hb, 3.2)));
       const dp = Math.hypot(x - px, z - pz), near = dp < 75, car = a.obj.userData['car'] as THREE.Object3D | undefined, proxy = a.obj.userData['proxy'] as THREE.Object3D | undefined;
-      if (car) car.visible = near; if (proxy) proxy.visible = !near && dp < 330;          // full model only up close, silhouette to 330 m, then nothing
+      if (car) car.visible = near; if (proxy) proxy.visible = false;
+      if (!near && dp < 330 && this.prox && this.proxN < this.prox.instanceMatrix.count) { const ps = a.obj.userData['ps'] as number[]; this.prox.setMatrixAt(this.proxN, this.proxM.compose(a.obj.position, a.obj.quaternion, this.proxS.set(ps[0], ps[1], ps[2]))); this.prox.setColorAt(this.proxN++, a.obj.userData['pc'] as THREE.Color); }          // full model only up close, silhouette to 330 m, then nothing
       if (near) { const sp = ((a.obj.userData['spin'] as number) || 0) + (a.speed / 0.33) * dt; a.obj.userData['spin'] = sp; for (const w of (a.obj.userData['wheels'] as THREE.Object3D[]) ?? []) w.rotation.x = sp; }
     }
+    if (this.prox) { this.prox.count = this.proxN; this.prox.instanceMatrix.needsUpdate = true; if (this.prox.instanceColor) this.prox.instanceColor.needsUpdate = true; }
   }
 }

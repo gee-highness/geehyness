@@ -33,7 +33,6 @@ import { WorldPipelineService } from './services/world-pipeline.service';
 // Graphics & Physics
 import { SceneManager } from './game/graphics/scene-manager';
 import { RaycastVehicle } from './game/physics/raycast-vehicle';
-import { TrafficSimulator } from './services/traffic.service';
 
 // Components
 import { CarSelectComponent } from './components/car-select/car-select.component';
@@ -124,7 +123,6 @@ export class App implements AfterViewInit, OnDestroy {
   private copsFx = effect(() => { const on = this.policeSvc.enabled(); this.sceneManager?.setCops(on); });
   private qualityFx = effect(() => { const q = this.settings.quality(); this.sceneManager?.setQuality(q); });
   private vehicle!: RaycastVehicle;
-  private trafficSimulator!: TrafficSimulator;
 
   private animFrameId = 0;
   private lastTime = 0;
@@ -173,7 +171,6 @@ export class App implements AfterViewInit, OnDestroy {
       this.sceneManager.spawnVehicle(config, this.tuningService.visuals(), this.currentCar());
 
       // Create Traffic Simulator (paused until it follows the real OSM road graph)
-      this.trafficSimulator = new TrafficSimulator(this.sceneManager.scene);
 
       // Drop the car on the real MR3 (Ngwane St, eastbound) once the world has streamed in
       (window as unknown as { __shesha: Record<string, unknown> }).__shesha = {
