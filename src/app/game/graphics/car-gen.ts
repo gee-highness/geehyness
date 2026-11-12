@@ -28,8 +28,8 @@ const SPECS: Record<CarKind, Spec> = {
 };
 /** Paint colours weighted like a real Southern African car park: mostly white, silver and grey. */
 export const PAINTS: number[][] = [[0.93, 0.93, 0.92], [0.93, 0.93, 0.92], [0.93, 0.93, 0.92], [0.93, 0.93, 0.92], [0.66, 0.68, 0.7], [0.66, 0.68, 0.7], [0.36, 0.38, 0.4], [0.36, 0.38, 0.4],
-  [0.05, 0.05, 0.06], [0.55, 0.06, 0.07], [0.09, 0.2, 0.48], [0.62, 0.56, 0.42], [0.35, 0.05, 0.08], [0.08, 0.25, 0.16], [0.82, 0.82, 0.8]];
-const GLASS = [0.045, 0.07, 0.1], DARK = [0.035, 0.035, 0.04], TYRE = [0.03, 0.03, 0.035], HUB = [0.62, 0.64, 0.66], LAMP = [1.0, 0.96, 0.82], TAIL = [0.75, 0.04, 0.04], PLATE = [0.92, 0.8, 0.2];
+  [0.05, 0.05, 0.06], [0.55, 0.06, 0.07], [0.09, 0.2, 0.48], [0.62, 0.56, 0.42], [0.35, 0.05, 0.08], [0.08, 0.25, 0.16], [0.82, 0.82, 0.8], [0.72, 0.3, 0.08], [0.1, 0.33, 0.36], [0.75, 0.62, 0.1]];
+const GLASS = [0.045, 0.07, 0.1], DARK = [0.035, 0.035, 0.04], TYRE = [0.03, 0.03, 0.035], HUB = [0.62, 0.64, 0.66], LAMP = [2.4, 2.3, 1.9], TAIL = [1.7, 0.07, 0.07], CHROME = [0.8, 0.82, 0.85], RAIL = [0.1, 0.1, 0.11], PLATE = [0.92, 0.8, 0.2];
 
 const profY = (s: Spec, z: number): number => {
   const p = s.prof; if (z <= p[0][0]) return p[0][1];
@@ -104,7 +104,11 @@ export function carBody(kind: CarKind, col: number[], stripe?: number[]): THREE.
   const g = g0.toNonIndexed(); g0.dispose();
   const nTri = g.attributes['position'].count / 3, colA = new Float32Array(nTri * 9);
   const nQuadTri = quadCol.length * 2;
-  for (let t = 0; t < nTri; t++) { const q = t < nQuadTri ? quadCol[t >> 1] : col; for (let v = 0; v < 3; v++) colA.set(q, t * 9 + v * 3); }
+  const pa = g.attributes['position'];
+  for (let t = 0; t < nTri; t++) {
+    const q = t < nQuadTri ? quadCol[t >> 1] : col;
+    for (let v = 0; v < 3; v++) { const ao = 0.76 + 0.24 * Math.min(1, Math.max(0, (pa.getY(t * 3 + v) - s.sill) / (s.belt - s.sill))); colA[t * 9 + v * 3] = q[0] * ao; colA[t * 9 + v * 3 + 1] = q[1] * ao; colA[t * 9 + v * 3 + 2] = q[2] * ao; }
+  }
   g.setAttribute('color', new THREE.BufferAttribute(colA, 3));
   // details: lamps, grille, bumpers, plates, mirrors, wheel-arch shadows
   const f = s.L / 2, hw = s.W / 2, ny = profY(s, f - 0.06), ry = profY(s, -f + 0.04), big = s.H > 2;
@@ -117,6 +121,23 @@ export function carBody(kind: CarKind, col: number[], stripe?: number[]): THREE.
   ];
   const mz = s.prof.find((p, i) => i > 0 && p[1] < s.prof[i - 1][1] - 0.2 && p[0] > 0)?.[0] ?? f * 0.4;                // base of the windscreen
   for (const sd of [-1, 1]) parts.push(box(0.16, 0.11, 0.07, sd * (hw + 0.07), s.belt + 0.07, mz - 0.12, DARK));
+  const plan = (z: number): number => 1 - 0.13 * Math.pow(Math.abs((2 * z) / s.L), 3.6), side = (z: number): number => hw * plan(z) + 0.004;
+  for (let i = 0; i + 1 < s.glass.length; i++) { const z = (s.glass[i][1] + s.glass[i + 1][0]) / 2; for (const sd of [-1, 1]) parts.push(box(0.012, s.belt - s.sill - 0.14, 0.012, sd * side(z), (s.sill + 0.12 + s.belt) / 2, z, DARK)); }   // door shut lines
+  if (kind !== 'coach') for (const gl of s.glass) for (const sd of [-1, 1]) parts.push(box(0.03, 0.03, 0.14, sd * (side(gl[0]) + 0.012), s.belt - 0.1, gl[0] + 0.16, CHROME));   // door handles
+  parts.push(box(s.W * 0.4, 0.03, 0.04, 0, Math.min(ny, s.belt) - (big ? 0.12 : 0.1), f + 0.005, CHROME));                                                      // grille bar
+  for (const sd of [-1, 1]) { parts.push(box(0.12, 0.07, 0.05, sd * hw * 0.72, s.sill + 0.12, f + 0.01, LAMP));                                                     // fog lamps
+    parts.push(box(0.5, 0.012, 0.02, sd * 0.3, profY(s, mz) + 0.012, mz - 0.04, RAIL)); }                                                                              // wipers
+  if (kind === 'sedan' || kind === 'hatch' || kind === 'coupe') { parts.push(box(0.012, 0.28, 0.012, hw * 0.55, s.H + 0.14, -0.4, RAIL)); for (const sd of [-1, 1]) parts.push(box(0.06, 0.06, 0.12, sd * hw * 0.55, s.sill + 0.08, -f - 0.04, CHROME)); }   // aerial, exhaust tips
+  if (kind === 'coupe') parts.push(box(s.W * 0.8, 0.03, 0.2, 0, ry + 0.03, -f + 0.28, DARK));                                                                           // ducktail lip
+  if (kind === 'suv' || kind === 'cruiser' || kind === 'bakkie' || kind === 'bakkie1') {
+    parts.push(box(0.1, 0.1, 0.18, 0, s.sill + 0.02, -f - 0.06, RAIL));                                                                                                   // tow bar
+    for (const sd of [-1, 1]) parts.push(box(0.14, 0.04, s.L * 0.34, sd * (hw + 0.03), s.sill + 0.02, 0, RAIL));                                                        // side steps
+  }
+  if (kind === 'suv' || kind === 'cruiser') { const z0 = kind === 'suv' ? -0.7 : -0.78, ln = kind === 'suv' ? 2.0 : 2.4; for (const sd of [-1, 1]) parts.push(box(0.04, 0.045, ln, sd * s.W * 0.36, s.H + 0.03, z0, RAIL)); parts.push(box(s.W * 0.72, 0.03, 0.04, 0, s.H + 0.05, z0 - ln * 0.3, RAIL), box(s.W * 0.72, 0.03, 0.04, 0, s.H + 0.05, z0 + ln * 0.3, RAIL)); }   // roof rails
+  if (kind === 'cruiser' || kind === 'bakkie') { parts.push(box(s.W * 0.7, 0.07, 0.06, 0, s.sill + 0.34, f + 0.08, CHROME)); for (const sd of [-1, 1]) parts.push(box(0.06, 0.34, 0.06, sd * s.W * 0.3, s.sill + 0.2, f + 0.08, CHROME)); }   // bull bar
+  if (s.bed) { const [b0, b1] = s.bed, by = profY(s, (b0 + b1) / 2) + 0.03; for (const sd of [-1, 1]) parts.push(box(0.05, 0.05, b1 - b0, sd * hw * 0.93, by, (b0 + b1) / 2, RAIL)); parts.push(box(s.W * 0.9, 0.05, 0.05, 0, by, b1, RAIL), box(s.W * 0.86, 0.3, 0.03, 0, by - 0.16, b0 + 0.02, DARK), box(s.W * 0.86, 0.05, 0.05, 0, by + 0.34, b1 + 0.02, CHROME)); }   // load-bed rails, tailgate, sports bar
+  if (kind === 'minibus') parts.push(box(0.55, 0.07, 0.8, 0, s.H + 0.03, 0.4, [0.8, 0.8, 0.78]), box(0.3, 0.025, 0.04, 0, s.sill + 0.5, f + 0.02, CHROME));              // roof vent, badge bar
+  if (kind === 'coach') parts.push(box(1.3, 0.16, 2.6, 0, s.H + 0.07, -2.0, [0.85, 0.85, 0.84]), box(1.1, 0.5, 0.05, 0, 1.1, -f - 0.02, DARK));                          // roof A/C, engine grille
   const arch = new THREE.CircleGeometry(s.wr * 1.2, 14).toNonIndexed(); arch.deleteAttribute('uv');
   for (const az of s.ax) for (const sd of [-1, 1]) { const a = arch.clone(); a.rotateY((sd * Math.PI) / 2); a.translate(sd * (hw * (1 - 0.13 * Math.pow(Math.abs((2 * az) / s.L), 3.6)) + 0.004), s.wr * 0.98, az); parts.push(paint(a, DARK)); }
   for (const p of parts) for (const k of Object.keys(p.attributes)) if (!['position', 'normal', 'color'].includes(k)) p.deleteAttribute(k);
@@ -128,11 +149,13 @@ const wheelCache = new Map<number, THREE.BufferGeometry>();
 /** One wheel (tyre + rim face both sides), axle along x, centred on the origin. */
 export function wheelGeo(r: number): THREE.BufferGeometry {
   let g = wheelCache.get(r); if (g) return g;
-  const w = r * 0.62, tyre = new THREE.CylinderGeometry(r, r, w, 16).toNonIndexed(); tyre.rotateZ(Math.PI / 2);
+  const w = r * 0.62, tyre = new THREE.CylinderGeometry(r, r, w, 20).toNonIndexed(); tyre.rotateZ(Math.PI / 2);
   const parts = [paint(tyre, TYRE)];
   for (const sd of [-1, 1]) {
-    const rim = new THREE.CircleGeometry(r * 0.62, 12).toNonIndexed(); rim.rotateY((sd * Math.PI) / 2); rim.translate(sd * (w / 2 + 0.003), 0, 0); parts.push(paint(rim, HUB));
-    for (let k = 0; k < 5; k++) { const sp = new THREE.BoxGeometry(0.012, r * 0.56, r * 0.13).toNonIndexed(); sp.translate(sd * (w / 2 + 0.008), r * 0.3, 0); sp.rotateX((k * Math.PI * 2) / 5); parts.push(paint(sp, DARK)); }
+    const disc = new THREE.CircleGeometry(r * 0.62, 14).toNonIndexed(); disc.rotateY((sd * Math.PI) / 2); disc.translate(sd * (w / 2 + 0.003), 0, 0); parts.push(paint(disc, DARK));
+    const lip = new THREE.RingGeometry(r * 0.54, r * 0.64, 14).toNonIndexed(); lip.rotateY((sd * Math.PI) / 2); lip.translate(sd * (w / 2 + 0.006), 0, 0); parts.push(paint(lip, HUB));
+    const hubc = new THREE.CircleGeometry(r * 0.15, 8).toNonIndexed(); hubc.rotateY((sd * Math.PI) / 2); hubc.translate(sd * (w / 2 + 0.012), 0, 0); parts.push(paint(hubc, HUB));
+    for (let k = 0; k < 6; k++) { const sp = new THREE.BoxGeometry(0.014, r * 0.42, r * 0.1).toNonIndexed(); sp.translate(sd * (w / 2 + 0.009), r * 0.3, 0); sp.rotateX((k * Math.PI * 2) / 6); parts.push(paint(sp, HUB)); }
   }
   for (const p of parts) p.deleteAttribute('uv');
   g = mergeGeometries(parts)!; for (const p of parts) p.dispose(); wheelCache.set(r, g); return g;
@@ -147,7 +170,7 @@ export function wheelSpots(kind: CarKind): [number, number, number][] {
 export const carSize = (kind: CarKind): { L: number; W: number; H: number; wr: number } => SPECS[kind];
 
 /** Glossy two-layer look without a physical material: metallic base, sky reflections from the scene environment. */
-export const carPaintMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.45, envMapIntensity: 1.15 });
+export const carPaintMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.26, metalness: 0.5, envMapIntensity: 1.3 });
 /** Player's own car: same vertex-coloured shell under a clear coat. */
 export const playerPaintMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.34, metalness: 0.5, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 1.25 });
 const wheelMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.2 });

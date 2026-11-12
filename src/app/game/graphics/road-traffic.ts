@@ -61,7 +61,7 @@ export class RoadTraffic {
     this.addPublicTransport();
     this.prox = new THREE.InstancedMesh(RoadTraffic.silhouette(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.3 }), this.N + 9); this.prox.name = 'traffic-far'; this.prox.frustumCulled = false; this.prox.count = 0; this.scene.add(this.prox);
     // the real street mix: white/silver sedans, hatches, bakkies and SUVs (generated bodies, ~1.5k triangles, one material)
-    const MIX: CarKind[] = ['sedan', 'bakkie', 'hatch', 'suv', 'sedan', 'hatch', 'bakkie', 'sedan', 'suv', 'hatch'];
+    const MIX: CarKind[] = ['sedan', 'bakkie', 'hatch', 'suv', 'sedan', 'hatch', 'bakkie1', 'sedan', 'suv', 'hatch', 'coupe', 'cruiser', 'bakkie', 'hatch', 'sedan'];
     for (let i = 0; i < this.N; i++) {
       const kind = MIX[i % MIX.length], col = PAINTS[(i * 7 + 3) % PAINTS.length];
       const g = makeCar(kind, col); g.visible = false;
@@ -179,7 +179,7 @@ export class RoadTraffic {
       const dp = Math.hypot(x - px, z - pz), near = dp < 75, car = a.obj.userData['car'] as THREE.Object3D | undefined, proxy = a.obj.userData['proxy'] as THREE.Object3D | undefined;
       if (car) car.visible = near; if (proxy) proxy.visible = false;
       if (!near && dp < 330 && this.prox && this.proxN < this.prox.instanceMatrix.count) { const ps = a.obj.userData['ps'] as number[]; this.prox.setMatrixAt(this.proxN, this.proxM.compose(a.obj.position, a.obj.quaternion, this.proxS.set(ps[0], ps[1], ps[2]))); this.prox.setColorAt(this.proxN++, a.obj.userData['pc'] as THREE.Color); }          // full model only up close, silhouette to 330 m, then nothing
-      if (near) { const sp = ((a.obj.userData['spin'] as number) || 0) + (a.speed / 0.33) * dt; a.obj.userData['spin'] = sp; for (const w of (a.obj.userData['wheels'] as THREE.Object3D[]) ?? []) w.rotation.x = sp; }
+      if (near) { const sp = ((a.obj.userData['spin'] as number) || 0) + (a.speed / (((a.obj.userData['size'] as { wr: number } | undefined)?.wr) ?? 0.33)) * dt; a.obj.userData['spin'] = sp; for (const w of (a.obj.userData['wheels'] as THREE.Object3D[]) ?? []) w.rotation.x = sp; }
     }
     if (this.prox) { this.prox.count = this.proxN; this.prox.instanceMatrix.needsUpdate = true; if (this.prox.instanceColor) this.prox.instanceColor.needsUpdate = true; }
   }

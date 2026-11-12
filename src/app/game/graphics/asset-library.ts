@@ -79,6 +79,11 @@ export class AssetLibrary {
       let tail: THREE.MeshStandardMaterial | null = null;
       car.traverse((o) => {
         const m = o as THREE.Mesh;
+        // kit models: glossier paint that mirrors the sky (own clones, the cached source stays untouched)
+        if (m.isMesh && !def.paintable && m.material && !Array.isArray(m.material)) {
+          const k = (m.material as THREE.MeshStandardMaterial).clone();
+          if (k.isMeshStandardMaterial) { k.envMapIntensity = 1.25; k.roughness = Math.min(k.roughness, 0.5); k.metalness = Math.max(k.metalness, 0.25); m.material = k; }
+        }
         if (m.isMesh && m.material && def.paintable) {
           const mat = m.material as THREE.MeshStandardMaterial;
           if (mat.name === 'Body_Color' || (hi && o.name === 'body')) {
