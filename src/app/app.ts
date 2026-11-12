@@ -35,7 +35,7 @@ import { RaycastVehicle } from './game/physics/raycast-vehicle';
 
 // Components
 import { CarSelectComponent } from './components/car-select/car-select.component';
-import { CAR_CATALOG, CarDef } from './game/cars';
+import { CAR_CATALOG, CarDef, carConfig } from './game/cars';
 import { IntroComponent } from './components/intro/intro.component';
 import { HudComponent } from './components/hud/hud.component';
 import { TelemetryComponent } from './components/telemetry/telemetry.component';
@@ -102,7 +102,7 @@ export class App implements AfterViewInit, OnDestroy {
 
   public onChooseCar(def: CarDef): void {
     this.currentCar.set(def);
-    this.tuningService.setArchetype(def.archetype);
+    this.tuningService.setCar(carConfig(def));
     const config = this.tuningService.getActiveConfig();
     const old = this.vehicle;
     this.vehicle = new RaycastVehicle(config, this.tuningService.tuning());
@@ -160,6 +160,7 @@ export class App implements AfterViewInit, OnDestroy {
       this.sceneManager = new SceneManager(container);
 
       // Create Raycast Vehicle
+      this.tuningService.setCar(carConfig(this.currentCar()));
       const config = this.tuningService.getActiveConfig();
       const tuning = this.tuningService.tuning();
       this.vehicle = new RaycastVehicle(config, tuning);

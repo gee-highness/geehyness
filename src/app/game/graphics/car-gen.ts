@@ -7,7 +7,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
  * plan and tumblehome. One smooth-shaded, vertex-coloured mesh per body (~1.2-1.9k triangles, no textures) + shared wheel geometry,
  * so a street full of them costs less than the toy-kit models they replace. Forward = +z, ground = y 0.
  */
-export type CarKind = 'sedan' | 'hatch' | 'bakkie' | 'suv' | 'minibus' | 'coach';
+export type CarKind = 'sedan' | 'hatch' | 'bakkie' | 'suv' | 'minibus' | 'coach' | 'coupe' | 'bakkie1' | 'cruiser';
 interface Spec {
   L: number; W: number; H: number; wr: number; ax: [number, number]; belt: number; sill: number;
   prof: [number, number][];            // roof line: z (rear -> front), y
@@ -20,6 +20,10 @@ const SPECS: Record<CarKind, Spec> = {
   suv: { L: 4.8, W: 1.86, H: 1.82, wr: 0.38, ax: [-1.35, 1.4], belt: 1.16, sill: 0.42, prof: [[-2.4, 0.7], [-2.38, 1.2], [-2.2, 1.76], [-1.7, 1.82], [0.3, 1.82], [1.05, 1.2], [2.15, 1.08], [2.37, 0.95], [2.4, 0.66]], glass: [[-2.0, -1.15], [-1.05, -0.15], [-0.05, 0.85]] },
   bakkie: { L: 5.3, W: 1.85, H: 1.8, wr: 0.38, ax: [-1.55, 1.55], belt: 1.16, sill: 0.42, prof: [[-2.65, 0.7], [-2.63, 1.14], [-0.95, 1.14], [-0.8, 1.76], [-0.3, 1.8], [0.55, 1.8], [1.3, 1.2], [2.4, 1.08], [2.62, 0.95], [2.65, 0.66]], glass: [[-0.7, 0.02], [0.1, 1.05]], bed: [-2.55, -1.0] },
   minibus: { L: 5.3, W: 1.9, H: 2.25, wr: 0.36, ax: [-1.6, 1.6], belt: 1.28, sill: 0.42, prof: [[-2.65, 0.6], [-2.63, 2.12], [-2.35, 2.25], [1.6, 2.25], [1.85, 2.18], [2.3, 1.32], [2.6, 1.08], [2.65, 0.6]], glass: [[-2.4, -1.2], [-1.1, 0.1], [0.2, 1.75]] },
+  // player-garage bodies: boxy rear-drive two-door, single-cab half-tonner, upright bush 4x4
+  coupe: { L: 4.35, W: 1.68, H: 1.38, wr: 0.3, ax: [-1.25, 1.3], belt: 0.92, sill: 0.28, prof: [[-2.175, 0.55], [-2.15, 0.98], [-1.35, 1.0], [-0.95, 1.36], [0.1, 1.38], [0.85, 0.98], [1.95, 0.88], [2.15, 0.76], [2.175, 0.5]], glass: [[-0.9, -0.2], [-0.1, 0.7]] },
+  bakkie1: { L: 5.2, W: 1.8, H: 1.74, wr: 0.37, ax: [-1.5, 1.6], belt: 1.14, sill: 0.42, prof: [[-2.6, 0.7], [-2.58, 1.12], [-0.25, 1.12], [-0.12, 1.7], [0.25, 1.74], [0.75, 1.74], [1.4, 1.18], [2.38, 1.06], [2.57, 0.94], [2.6, 0.66]], glass: [[-0.05, 1.1]], bed: [-2.5, -0.3] },
+  cruiser: { L: 4.9, W: 1.87, H: 1.95, wr: 0.4, ax: [-1.4, 1.45], belt: 1.22, sill: 0.48, prof: [[-2.45, 0.75], [-2.43, 1.3], [-2.38, 1.9], [-2.0, 1.95], [0.45, 1.95], [0.95, 1.28], [2.2, 1.18], [2.42, 1.02], [2.45, 0.7]], glass: [[-2.1, -1.2], [-1.1, -0.2], [-0.1, 0.85]] },
   coach: { L: 12, W: 2.5, H: 3.4, wr: 0.5, ax: [-3.4, 3.9], belt: 1.9, sill: 0.5, prof: [[-6, 0.7], [-5.98, 3.25], [-5.6, 3.4], [5.2, 3.4], [5.55, 3.3], [5.92, 1.7], [6, 0.7]], glass: [[-5.6, 5.3]] },
 };
 /** Paint colours weighted like a real Southern African car park: mostly white, silver and grey. */
@@ -144,6 +148,8 @@ export const carSize = (kind: CarKind): { L: number; W: number; H: number; wr: n
 
 /** Glossy two-layer look without a physical material: metallic base, sky reflections from the scene environment. */
 export const carPaintMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.45, envMapIntensity: 1.15 });
+/** Player's own car: same vertex-coloured shell under a clear coat. */
+export const playerPaintMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.34, metalness: 0.5, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 1.25 });
 const wheelMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.2 });
 
 /** Whole static vehicle (body + wheels) as one geometry: parked cars, far LOD. */
@@ -155,9 +161,9 @@ export function carStatic(kind: CarKind, col: number[], stripe?: number[]): THRE
 }
 
 /** Drivable traffic vehicle: body mesh + four spinning wheels. userData: car (detail group), wheels (rotate .x to spin). */
-export function makeCar(kind: CarKind, col: number[], stripe?: number[]): THREE.Group {
+export function makeCar(kind: CarKind, col: number[], stripe?: number[], mat: THREE.Material = carPaintMat): THREE.Group {
   const g = new THREE.Group(), detail = new THREE.Group(); const s = SPECS[kind];
-  const body = new THREE.Mesh(carBody(kind, col, stripe), carPaintMat); body.castShadow = true; detail.add(body);
+  const body = new THREE.Mesh(carBody(kind, col, stripe), mat); body.castShadow = true; detail.add(body);
   const wheels: THREE.Object3D[] = [];
   for (const [x, y, z] of wheelSpots(kind)) { const w = new THREE.Mesh(wheelGeo(s.wr), wheelMat); w.position.set(x, y, z); w.castShadow = false; detail.add(w); wheels.push(w); }
   g.add(detail); g.userData['car'] = detail; g.userData['wheels'] = wheels; g.userData['paint'] = col; g.userData['size'] = s;
