@@ -7,7 +7,7 @@ KX, KZ = 111320 * math.cos(math.radians(LAT0)), 110574.0
 STEP = int(sys.argv[1]) if len(sys.argv) > 1 else 250   # grid spacing, metres (40 recommended)
 Z = int(sys.argv[2]) if len(sys.argv) > 2 else 11        # terrarium zoom: 11 ~76 m/px, 12 ~38 m, 13 ~19 m
 OUT = sys.argv[3] if len(sys.argv) > 3 else "/tmp/dem.json"
-X0, X1, Z0, Z1 = -28500, 7200, -24200, 5000
+X0, X1, Z0, Z1 = -10500, 6500, -6500, 5500   # Manzini + Matsapha + outskirts (17 x 12 km)
 n = 2 ** Z
 def tile_xy(lat, lon):
     return (lon + 180) / 360 * n, (1 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2 * n

@@ -11,8 +11,11 @@
       (cycleCamera)="onCycleCamera()"
       (openPipeline)="showPipeline.set(true)"
       (openCars)="showCars.set(true)"
+      (openOnline)="mp.menu.set(true)"
     ></app-hud>
   }
+
+  <app-multiplayer></app-multiplayer>
 
   <!-- Mobile On-Screen Virtual Controls -->
   @if (showTouchControls() && !gamepadService.isConnected() && !isPhotoMode()) {

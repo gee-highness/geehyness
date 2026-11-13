@@ -129,15 +129,34 @@ export class TuningService {
     this.recalculateDyno();
   }
 
+  /** The chosen catalogue car's own config (see carConfig in game/cars.ts); null = plain archetype. */
+  private carOverride: VehicleArchetypeConfig | null = null;
+
   public setArchetype(id: VehicleArchetypeId): void {
+    this.carOverride = null;
     this.activeArchetypeId.set(id);
-    const arch = ARCHETYPES[id];
+    this.applyConfig(ARCHETYPES[id]);
+  }
+
+  /** Switch to a specific car: gearing, springs, dampers, roll bars and aero follow its mass and figures. */
+  public setCar(cfg: VehicleArchetypeConfig): void {
+    this.carOverride = cfg;
+    this.activeArchetypeId.set(cfg.id);
+    this.applyConfig(cfg);
+  }
+
+  private applyConfig(arch: VehicleArchetypeConfig): void {
+    const k = arch.suspensionStiffness / 42000, d = arch.suspensionDamping / 3400, m = Math.min(1.5, arch.massKg / 1380) * (arch.downforceCoefficient / 1.8);
     this.tuning.update(t => ({
       ...t,
       finalDriveRatio: arch.finalDrive,
       gearRatios: arch.gearRatios as [number, number, number, number, number, number],
       springRateFront: arch.suspensionStiffness,
       springRateRear: arch.suspensionStiffness * 0.9,
+      bumpDampingFront: DEFAULT_TUNING.bumpDampingFront * d, bumpDampingRear: DEFAULT_TUNING.bumpDampingRear * d,
+      reboundDampingFront: DEFAULT_TUNING.reboundDampingFront * d, reboundDampingRear: DEFAULT_TUNING.reboundDampingRear * d,
+      antiRollBarFront: DEFAULT_TUNING.antiRollBarFront * k, antiRollBarRear: DEFAULT_TUNING.antiRollBarRear * k,
+      aeroDownforceFrontKg: Math.round(DEFAULT_TUNING.aeroDownforceFrontKg * m), aeroDownforceRearKg: Math.round(DEFAULT_TUNING.aeroDownforceRearKg * m),
     }));
     this.recalculateDyno();
   }
@@ -152,7 +171,7 @@ export class TuningService {
   }
 
   public getActiveConfig(): VehicleArchetypeConfig {
-    return ARCHETYPES[this.activeArchetypeId()];
+    return this.carOverride ?? ARCHETYPES[this.activeArchetypeId()];
   }
 
   private recalculateDyno(): void {

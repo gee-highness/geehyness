@@ -24,7 +24,7 @@ interface WorldMeta {
   snaps: Record<string, [number, number]>;
 }
 interface Surf { way: RoadWay; h: number; elev: boolean; px: number; pz: number; d: number }
-interface RoadWay { c: number; w: number; u: number; o: number; n: string; p: number[]; sw?: number; bay?: number; dz?: number[]; br?: number; bk?: number; ms?: number; rg?: number; rb?: number }
+export interface RoadWay { c: number; w: number; u: number; o: number; n: string; p: number[]; sw?: number; bay?: number; dz?: number[]; br?: number; bk?: number; ms?: number; rg?: number; rb?: number }
 
 import { GeoBuf } from './geo-buf';
 import { styledMaterial, StyleKind, STYLE_FUNCS, noiseTex } from './stylized';
@@ -196,9 +196,10 @@ export class WorldBuilder {
     return WorldBuilder.cr(row(j - 1), row(j), row(j + 1), row(j + 2), fv) - 610;
   }
 
-  private readonly TS = 40; // terrain mesh spacing, metres (matches the 40 m DEM)
+  private TS = 40; // terrain mesh spacing, metres (= the DEM step in meta.json)
   private tnx = 0; private tnz = 0; private tH!: Float32Array;
   private bakeHeightGrid(): void {
+    this.TS = this.meta.dem.step || 40;
     const [x0, x1, z0, z1] = this.meta.bounds, S = this.TS;
     this.tnx = Math.ceil((x1 - x0) / S) + 1; this.tnz = Math.ceil((z1 - z0) / S) + 1;
     this.tH = new Float32Array(this.tnx * this.tnz);
@@ -265,6 +266,86 @@ export class WorldBuilder {
     void lowest; // under a deck with no road beneath: the ground is the terrain, never the deck above
     const r = best;
     return r ? { way: r.way, h: r.h, elev: r.elev, px: r.px, pz: r.pz } : null;
+  }
+
+  /** Tally of what the road clearance did to mapped point objects (see relocateProps). */
+  public roadFix = { moved: 0, dropped: 0, kept: 0, byKind: {} as Record<string, [number, number]> };
+
+  /**
+   * Nearest spot on the verge for an object of radius r that was mapped inside a carriageway: it is pushed straight out across
+   * the nearest kerb line (repeated when that lands in another road, e.g. at a junction). null = boxed in by roads, nowhere to stand.
+   */
+  public vergeSpot(x: number, z: number, r = 0.3): [number, number] | null {
+    for (let it = 0; it < 9; it++) {
+      const cx = Math.floor(x / 50), cz = Math.floor(z / 50); let hit: { qx: number; qz: number; lim: number; tx: number; tz: number } | null = null, bd = 1e9;
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+        const list = this.cellRoads.get((cx + a) * 100003 + (cz + b)); if (!list) continue;
+        for (let k = 0; k < list.length; k += 2) {
+          const w = this.roadWays[list[k]]; if (w.c >= 8) continue;
+          const p = w.p, s = list[k + 1], ax = p[s] / 10, az = p[s + 1] / 10, dx = p[s + 2] / 10 - ax, dz2 = p[s + 3] / 10 - az, l2 = dx * dx + dz2 * dz2 || 1;
+          const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz2) / l2)), qx = ax + t * dx, qz = az + t * dz2, lim = w.w / 2 + 0.25 + r;
+          const d = Math.hypot(x - qx, z - qz); if (d >= lim || this.dzAt(w, s, t) > 2.5) continue;
+          if (lim - d < bd) { bd = lim - d; const l = Math.sqrt(l2); hit = { qx, qz, lim, tx: dx / l, tz: dz2 / l }; }   // the kerb that is closest to cross
+        }
+      }
+      if (!hit) return [x, z];
+      let nx = x - hit.qx, nz = z - hit.qz; const nl = Math.hypot(nx, nz);
+      if (nl < 0.05) { nx = -hit.tz; nz = hit.tx; } else { nx /= nl; nz /= nl; }
+      x = hit.qx + nx * (hit.lim + 0.45); z = hit.qz + nz * (hit.lim + 0.45);
+    }
+    return this.inRoadVolume(x, z, r) ? null : [x, z];
+  }
+
+  /**
+   * Assess every mapped point object that the road clearance volume would cut. Real things that exist beside the road (poles, lamps,
+   * signs, signals, billboards, trees, masts, tanks, bus stops) were only placed in the lane by GPS / photo-detection error, so they
+   * are MOVED to the nearest verge; they are dropped only when no clear ground exists. Things that belong on the road surface
+   * (manholes, crossings, humps, gates) stay. Things with no business there (cones, temporary barriers) are removed by their builders.
+   */
+  private relocateProps(feats: { trees?: number[][]; towers?: number[][]; tanks?: number[][] } | null): void {
+    const m = this.meta as unknown as Record<string, unknown>;
+    const fix = (kind: string, list: unknown, r: number, get: (o: never) => number[], keepIf?: (o: never) => boolean): void => {
+      if (!Array.isArray(list)) return; const tally = (this.roadFix.byKind[kind] = [0, 0]);
+      for (let i = list.length - 1; i >= 0; i--) {
+        const o = list[i] as never, p = get(o);
+        if (!this.inRoadVolume(p[0], p[1], r)) continue;
+        if (keepIf?.(o)) { this.roadFix.kept++; continue; }
+        const q = this.vergeSpot(p[0], p[1], r);
+        if (q) { p[0] = Math.round(q[0] * 10) / 10; p[1] = Math.round(q[1] * 10) / 10; this.roadFix.moved++; tally[0]++; } else { list.splice(i, 1); this.roadFix.dropped++; tally[1]++; }
+      }
+    };
+    const xy = (o: never): number[] => o as unknown as number[], pp = (o: never): number[] => (o as unknown as { p: number[] }).p;
+    // traffic signals are mapped ON the junction node by design; StreetBuilder already stands their poles at the kerb, so they are not touched
+    fix('lamp', m['lamps'], 0.35, xy); fix('sign', m['signs'], 0.25, xy); fix('sign', m['msigns'], 0.25, xy);
+    fix('pole', m['upoles'], 0.3, xy); fix('billboard', m['bills'], 1.2, xy); fix('busstop', m['busstops'], 1.6, pp);
+    fix('furniture', m['furn'], 0.4, xy, (o) => (o as unknown as [number, number, string])[2] === 'manhole');
+    if (feats) { fix('tree', feats.trees, 0.5, xy); fix('mast', feats.towers, 1.0, xy); fix('tank', feats.tanks, 3.2, xy); }
+  }
+
+  /**
+   * ROAD CLEARANCE VOLUME: every drivable carriageway extruded 5 m upward (plus a small shoulder margin). Anything solid whose
+   * footprint (x,z, radius r) and height span [y0,y1] intersects it is cut away - used as a boolean by the collision world and
+   * by every prop builder, so no fence, rail, pole, sign, wall or kerb-side clutter can ever block a lane or a junction mouth.
+   * Without a height span the object is assumed to stand on the ground. `ignore` excludes one way (a rail belongs beside its own road).
+   */
+  public inRoadVolume(x: number, z: number, r = 0, y0?: number, y1?: number, ignore?: RoadWay): boolean {
+    const cx = Math.floor(x / 50), cz = Math.floor(z / 50), span = y0 !== undefined && y1 !== undefined && y0 > -1e8;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+      const list = this.cellRoads.get((cx + a) * 100003 + (cz + b));
+      if (!list) continue;
+      for (let k = 0; k < list.length; k += 2) {
+        const w = this.roadWays[list[k]]; if (w.c >= 8 || w === ignore) continue;
+        const p = w.p, s = list[k + 1];
+        const ax = p[s] / 10, az = p[s + 1] / 10, dx = p[s + 2] / 10 - ax, dz2 = p[s + 3] / 10 - az, l2 = dx * dx + dz2 * dz2 || 1;
+        const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz2) / l2));
+        const qx = ax + t * dx, qz = az + t * dz2, lim = w.w / 2 + 0.25 + r;
+        if ((x - qx) * (x - qx) + (z - qz) * (z - qz) >= lim * lim) continue;
+        if (!span) { if (this.dzAt(w, s, t) > 2.5) continue; return true; }   // a ground object under a high deck is not on that deck
+        const h = this.calculateRawTerrainHeight(qx, qz) + WorldBuilder.ROAD_LIFT[w.c] + this.dzAt(w, s, t);
+        if (y1! > h + 0.12 && y0! < h + 5) return true;
+      }
+    }
+    return false;
   }
 
   /** Nearest drivable road under (x,z) within its half-width (highest if stacked). */
@@ -355,14 +436,19 @@ export class WorldBuilder {
     this.visDirty = false; this.visX = px; this.visZ = pz; this.visT = now;
     for (const t of this.terrainTiles) {
       const dx = Math.max(Math.abs(t.cx - px) - 640, 0), dz = Math.max(Math.abs(t.cz - pz) - 640, 0), d = Math.hypot(dx, dz);
-      t.lod0.visible = d < 950 * this.detailScale; t.lod1.visible = d >= 950 * this.detailScale && d < 4200;
+      t.lod0.visible = d < 950 * this.detailScale;
+    }
+    if (this.farTerrain) { // every coarse tile lives in one mesh: rewrite its index buffer with the tiles that are not shown in detail (1 draw call instead of ~140)
+      const ix = this.farTerrain.geometry.index!, arr = ix.array as Uint32Array; let n = 0;
+      for (const t of this.terrainTiles) if (!t.lod0.visible) { arr.set(this.farIdx.subarray(t.far[0], t.far[0] + t.far[1]), n); n += t.far[1]; }
+      this.farTerrain.geometry.setDrawRange(0, n); ix.needsUpdate = true;
     }
     const doShadow = this.shadowsOn && now - this.shadowT > 600; if (doShadow) this.shadowT = now;
     for (const c of this.chunks) {
       const dx = Math.max(Math.abs(c.cx - px) - c.half, 0), dz = Math.max(Math.abs(c.cz - pz) - c.half, 0); // exact distance to the chunk's box
       const d = Math.hypot(dx, dz);
       const ud = c.obj.userData; c.obj.visible = d < (ud['far'] ?? 3000) * this.detailScale && d >= (ud['near'] ?? 0) * this.detailScale;
-      if (doShadow && c.obj.visible) c.obj.castShadow = d < 230; // only nearby geometry casts into the shadow map
+      if (doShadow && c.obj.visible && !c.obj.name.startsWith('road:')) c.obj.castShadow = d < 230; // only nearby geometry casts into the shadow map
     }
   }
 
@@ -384,6 +470,7 @@ export class WorldBuilder {
     this.roadWays = roads.roads;
     this.bakeHeightGrid();
     this.indexRoads();
+    this.relocateProps(feats as { trees?: number[][]; towers?: number[][]; tanks?: number[][] } | null);
     this.buildTerrain(scene, groundTex);
     this.buildRoads(scene);
     this.waterPolys = (roads.water as { p: number[] }[]).map((q) => q.p);
@@ -411,12 +498,11 @@ export class WorldBuilder {
   /** Re-anchor districts, speed traps, drift zones and jumps onto real MR3 locations. */
   private applyLandmarks(): void {
     const sn = this.meta.snaps;
-    const dist: Record<string, string> = { MANZINI: 'manzini', MATSAPHA: 'matsapha', MALKERNS: 'malkerns', LOBAMBA: 'lobamba', EZULWINI: 'ezulwini', MBABANE: 'mbabane' };
-    for (const d of DISTRICTS) if (sn[dist[d.id]]) d.centerPos = sn[dist[d.id]];
-    const trapAt = ['manzini', 'matsapha', 'ezulwini', 'mbabane'];
+    for (const d of DISTRICTS) { const k = d.id.toLowerCase(); if (sn[k]) d.centerPos = sn[k]; }
+    const trapAt = ['manzini', 'matsapha', 'moneni', 'airport'];
     SPEED_TRAPS.forEach((t, i) => { if (sn[trapAt[i]]) t.position = sn[trapAt[i]]; });
-    if (DRIFT_ZONES[0]) { DRIFT_ZONES[0].startPos = sn['ezulwini']; DRIFT_ZONES[0].endPos = sn['lobamba']; }
-    if (DRIFT_ZONES[1]) { DRIFT_ZONES[1].startPos = sn['malkerns']; DRIFT_ZONES[1].endPos = sn['matsapha']; }
+    if (DRIFT_ZONES[0] && sn['fairview']) { DRIFT_ZONES[0].startPos = sn['fairview']; DRIFT_ZONES[0].endPos = sn['manzini']; }
+    if (DRIFT_ZONES[1] && sn['kwaluseni']) { DRIFT_ZONES[1].startPos = sn['kwaluseni']; DRIFT_ZONES[1].endPos = sn['matsapha']; }
     if (DANGER_SIGNS[0]) DANGER_SIGNS[0].rampPos = sn['matsapha'];
   }
 
@@ -450,6 +536,7 @@ export class WorldBuilder {
         }
       }
     });
+    this.collision.clear = (x, z, r, y0, y1) => this.inRoadVolume(x, z, r, y0, y1);   // the road clearance volume cuts every collider added from here on
   }
 
   public static loadTiled(url: string, rx: number, ry: number, srgb: boolean): THREE.Texture {
@@ -475,7 +562,21 @@ export class WorldBuilder {
   }
 
   // ------------------------------------------------------------------ terrain
+  private orthoUni = { uOrtho: { value: null as THREE.Texture | null }, uOrthoMask: { value: null as THREE.Texture | null }, uOrthoBox: { value: new THREE.Vector4(0, 1, 0, 1) }, uOrthoOn: { value: 0 } };
+  /** Aerial orthophoto ground layer (desktop only: a 4k texture is too much memory for phones). */
+  private loadOrtho(): void {
+    const ob = (this.meta as unknown as { ortho?: { bounds: number[] } }).ortho;
+    if (!ob || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)) return;
+    const L = new THREE.TextureLoader();
+    L.load('assets/world/ortho_mask.png', (m) => { m.minFilter = THREE.LinearFilter; m.generateMipmaps = false; this.orthoUni.uOrthoMask.value = m;
+      L.load('assets/world/ortho.jpg', (t) => {
+        t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; this.orthoUni.uOrtho.value = t;
+        this.orthoUni.uOrthoBox.value.set(ob.bounds[0], ob.bounds[1], ob.bounds[2], ob.bounds[3]); this.orthoUni.uOrthoOn.value = 1;
+      });
+    });
+  }
   private buildTerrain(scene: THREE.Scene, groundTex: THREE.Texture): void {
+    this.loadOrtho();
     const detail0 = 0; void detail0;
     const mat = new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95, metalness: 0 });
     const tPrevKey = 'terrain-style';
@@ -492,19 +593,32 @@ export class WorldBuilder {
           diffuseColor.rgb *= (0.45 + lum * 1.35) * (0.7 + l2 * 0.8);
           float lg = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
           diffuseColor.rgb = mix(vec3(lg), diffuseColor.rgb, 1.28) * mix(vec3(0.84, 0.92, 0.86), vec3(1.0), urban);
-          diffuseColor.rgb = clamp(diffuseColor.rgb, 0.0, 1.0);`);
+          diffuseColor.rgb = clamp(diffuseColor.rgb, 0.0, 1.0);
+          { // real aerial photo (2 m/px) over the surveyed city; fades to the satellite colour at its ragged edge
+            vec2 ouv = vec2((vW.x - uOrthoBox.x) / (uOrthoBox.y - uOrthoBox.x), 1.0 - (vW.z - uOrthoBox.z) / (uOrthoBox.w - uOrthoBox.z));
+            float ok = step(0.0, ouv.x) * step(ouv.x, 1.0) * step(0.0, ouv.y) * step(ouv.y, 1.0) * uOrthoOn;
+            if (ok > 0.5) {
+              float om = smoothstep(0.55, 0.95, texture2D(uOrthoMask, ouv).r);
+              vec3 oc = texture2D(uOrtho, ouv).rgb * (0.9 + 0.22 * sfbm(vW.xz * 1.9 + 11.0));   // sub-pixel grain so it never looks smeared up close
+              diffuseColor.rgb = mix(diffuseColor.rgb, oc, om);
+            }
+          }`);
+      sh.fragmentShader = sh.fragmentShader.replace('varying vec3 vW;', 'varying vec3 vW;\nuniform sampler2D uOrtho; uniform sampler2D uOrthoMask; uniform vec4 uOrthoBox; uniform float uOrthoOn;');
+      Object.assign(sh.uniforms, this.orthoUni);
     };
     mat.customProgramCacheKey = () => tPrevKey; addLampLight(mat);
     this.buildTerrainTiles(scene, mat);
   }
 
-  public terrainTiles: { lod0: THREE.Mesh; lod1: THREE.Mesh; cx: number; cz: number }[] = [];
+  public terrainTiles: { lod0: THREE.Mesh; far: [number, number]; cx: number; cz: number }[] = [];
+  private farTerrain?: THREE.Mesh; private farIdx = new Uint32Array(0);
 
   /** 1280 m tiles, each with a fine (40 m) and a coarse (320 m) mesh; skirts hide LOD seams. */
   private buildTerrainTiles(scene: THREE.Scene, mat: THREE.Material): void {
-    const [x0, , z0] = this.meta.bounds, S = this.TS, nx = this.tnx, nz = this.tnz, TC = 32;
+    const [x0, , z0] = this.meta.bounds, S = this.TS, nx = this.tnx, nz = this.tnz, TC = Math.round(1280 / S), CS = Math.round(320 / S);
     const W = this.meta.gw * this.meta.px, Hh = this.meta.gh * this.meta.px;
     const H = (i: number, j: number) => this.tH[Math.max(0, Math.min(nz - 1, j)) * nx + Math.max(0, Math.min(nx - 1, i))];
+    const fp: number[] = [], fn: number[] = [], fu: number[] = [], fi: number[] = []; let lastFar: [number, number] = [0, 0];
     const make = (i0: number, j0: number, step: number): THREE.Mesh => {
       const iMax = Math.min(i0 + TC, nx - 1), jMax = Math.min(j0 + TC, nz - 1);
       const cols: number[] = [], rows: number[] = [];
@@ -539,13 +653,23 @@ export class WorldBuilder {
       edge(cols.map((i, c) => [i, rows[rw - 1], (rw - 1) * cw + c] as [number, number, number]), true);
       edge(rows.map((j, r) => [cols[0], j, r * cw] as [number, number, number]), true);
       edge(rows.map((j, r) => [cols[cw - 1], j, r * cw + cw - 1] as [number, number, number]), false);
+      if (step !== 1) { // coarse tile: append to the shared far mesh
+        const base = fp.length / 3; for (let q = 0; q < pos.length; q++) { fp.push(pos[q]); fn.push(nor[q]); } for (let q = 0; q < uv.length; q++) fu.push(uv[q]);
+        lastFar = [fi.length, idx.length]; for (const v of idx) fi.push(v + base); return null as unknown as THREE.Mesh;
+      }
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
       g.setIndex(new THREE.BufferAttribute(new Uint32Array(idx), 1)); g.computeBoundingSphere();
       const m = new THREE.Mesh(g, mat); m.name = 'terrain'; m.receiveShadow = true; m.visible = false; scene.add(m); return m;
     };
     for (let j0 = 0; j0 < nz - 1; j0 += TC) for (let i0 = 0; i0 < nx - 1; i0 += TC) {
-      this.terrainTiles.push({ lod0: make(i0, j0, 1), lod1: make(i0, j0, 8), cx: x0 + (i0 + TC / 2) * S, cz: z0 + (j0 + TC / 2) * S });
+      make(i0, j0, CS); this.terrainTiles.push({ lod0: make(i0, j0, 1), far: lastFar, cx: x0 + (i0 + TC / 2) * S, cz: z0 + (j0 + TC / 2) * S });
+    }
+    {
+      const g = new THREE.BufferGeometry(); this.farIdx = new Uint32Array(fi);
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(fp), 3)); g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(fn), 3)); g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(fu), 2));
+      const ib = new THREE.BufferAttribute(new Uint32Array(fi), 1); ib.setUsage(THREE.DynamicDrawUsage); g.setIndex(ib);
+      const m = new THREE.Mesh(g, mat); m.name = 'terrain-far'; m.receiveShadow = false; m.frustumCulled = false; scene.add(m); this.farTerrain = m;
     }
     this.terrainMesh = this.terrainTiles[0].lod0;
   }
@@ -564,7 +688,7 @@ export class WorldBuilder {
       m.forEach((buf, mk) => {
         if (buf.empty) return;
         const mesh = new THREE.Mesh(buf.toGeometry(withColor, withWin), mats[mk]);
-        mesh.name = 'road:' + mk; mesh.receiveShadow = shadow; mesh.castShadow = shadow; mesh.userData['far'] = far;
+        mesh.name = 'road:' + mk; mesh.receiveShadow = true; mesh.castShadow = shadow; mesh.userData['far'] = far;
         onMesh?.(mesh);
         mesh.visible = false; this.visDirty = true; this.chunks.push({ obj: mesh, cx, cz, r: size * 0.75, half: size / 2 });
         this.landmarksGroup.add(mesh);
@@ -615,7 +739,7 @@ export class WorldBuilder {
       const yc = pts.map((p, i) => this.calculateRawTerrainHeight(p[0], p[1]) + y0 + dzs[i]);
       const yl = L.map((p, i) => (dzs[i] > 0.25 ? yc[i] : this.calculateRawTerrainHeight(p[0], p[1]) + y0));
       const yr = R.map((p, i) => (dzs[i] > 0.25 ? yc[i] : this.calculateRawTerrainHeight(p[0], p[1]) + y0));
-      if (w.br && w.c <= 6) { const maxDz = Math.max(...dzs); this.bridges.addWay(pts, L, R, yl, yr, yc, hw, !w.bk && maxDz > 0.25); }
+      if (w.br && w.c <= 6) { const maxDz = Math.max(...dzs); this.bridges.addWay(pts, L, R, yl, yr, yc, hw, !w.bk && maxDz > 0.25, w); }
       let cum = 0;
       for (let i = 0; i + 1 < pts.length; i++) {
         const mx = (pts[i][0] + pts[i + 1][0]) / 2, mz = (pts[i][1] + pts[i + 1][1]) / 2;

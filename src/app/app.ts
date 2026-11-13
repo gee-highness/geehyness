@@ -19,7 +19,7 @@ import { GamepadService } from './services/gamepad.service';
 import { HapticsService } from './services/haptics.service';
 import { SettingsService } from './services/settings.service';
 import { DriveStateService } from './services/drive-state.service';
-import { PoliceService } from './services/police.service';
+import { RaceService } from './services/race.service';
 import { HelpComponent } from './components/help/help.component';
 import { NavigationService } from './services/navigation.service';
 import { AudioService } from './services/audio.service';
@@ -32,11 +32,12 @@ import { WorldPipelineService } from './services/world-pipeline.service';
 // Graphics & Physics
 import { SceneManager } from './game/graphics/scene-manager';
 import { RaycastVehicle } from './game/physics/raycast-vehicle';
-import { TrafficSimulator } from './services/traffic.service';
 
 // Components
 import { CarSelectComponent } from './components/car-select/car-select.component';
-import { CAR_CATALOG, CarDef } from './game/cars';
+import { CAR_CATALOG, CarDef, carConfig } from './game/cars';
+import { MultiplayerComponent } from './components/multiplayer/multiplayer.component';
+import { MultiplayerService, FLAG } from './services/multiplayer.service';
 import { IntroComponent } from './components/intro/intro.component';
 import { HudComponent } from './components/hud/hud.component';
 import { TelemetryComponent } from './components/telemetry/telemetry.component';
@@ -48,7 +49,7 @@ import { TouchControlsComponent } from './components/touch-controls/touch-contro
 
 @Component({
   selector: 'app-root',
-  imports: [HelpComponent, 
+  imports: [MultiplayerComponent, HelpComponent, 
     CommonModule,
     MatIconModule,
     HudComponent,
@@ -73,8 +74,10 @@ export class App implements AfterViewInit, OnDestroy {
   public hapticsService = inject(HapticsService);
   public settings = inject(SettingsService);
   public drive = inject(DriveStateService);
-  public policeSvc = inject(PoliceService);
-  private crashNoise = 0; private copHooked = false; private polAcc = 0;
+  public mp = inject(MultiplayerService);
+  public raceSvc = inject(RaceService);
+  private raceHooked = false; private raceAcc = 0;
+  private crashNoise = 0; 
   public nav = inject(NavigationService);
   readonly showHelp = signal<boolean>(false);
   private pad = this.gamepadService.pollControls();
@@ -102,7 +105,8 @@ export class App implements AfterViewInit, OnDestroy {
 
   public onChooseCar(def: CarDef): void {
     this.currentCar.set(def);
-    this.tuningService.setArchetype(def.archetype);
+    this.tuningService.setCar(carConfig(def));
+    queueMicrotask(() => this.mp.announceCar());
     const config = this.tuningService.getActiveConfig();
     const old = this.vehicle;
     this.vehicle = new RaycastVehicle(config, this.tuningService.tuning());
@@ -118,10 +122,8 @@ export class App implements AfterViewInit, OnDestroy {
   // Core Game Loop & Physics
   private sceneManager!: SceneManager;
   private themeFx = effect(() => { const t = this.settings.theme(); this.sceneManager?.setTheme(t); });
-  private copsFx = effect(() => { const on = this.policeSvc.enabled(); this.sceneManager?.setCops(on); });
   private qualityFx = effect(() => { const q = this.settings.quality(); this.sceneManager?.setQuality(q); });
   private vehicle!: RaycastVehicle;
-  private trafficSimulator!: TrafficSimulator;
 
   private animFrameId = 0;
   private lastTime = 0;
@@ -155,6 +157,8 @@ export class App implements AfterViewInit, OnDestroy {
   }
 
   private initGame(): void {
+    this.mp.getLoadout = () => ({ car: this.currentCar().id, color: this.tuningService.visuals().bodyColor });
+    this.mp.onEvent = (m) => this.raceSvc.flash(m);
     const container = this.canvasContainerRef.nativeElement;
 
     // Run high-frequency graphics & physics outside Angular Zone for 60 FPS
@@ -162,6 +166,7 @@ export class App implements AfterViewInit, OnDestroy {
       this.sceneManager = new SceneManager(container);
 
       // Create Raycast Vehicle
+      this.tuningService.setCar(carConfig(this.currentCar()));
       const config = this.tuningService.getActiveConfig();
       const tuning = this.tuningService.tuning();
       this.vehicle = new RaycastVehicle(config, tuning);
@@ -170,12 +175,11 @@ export class App implements AfterViewInit, OnDestroy {
       this.sceneManager.spawnVehicle(config, this.tuningService.visuals(), this.currentCar());
 
       // Create Traffic Simulator (paused until it follows the real OSM road graph)
-      this.trafficSimulator = new TrafficSimulator(this.sceneManager.scene);
 
       // Drop the car on the real MR3 (Ngwane St, eastbound) once the world has streamed in
       (window as unknown as { __shesha: Record<string, unknown> }).__shesha = {
         ...((window as unknown as { __shesha?: Record<string, unknown> }).__shesha ?? {}),
-        wb: this.sceneManager.worldBuilder, veh: this.vehicle, nav: this.nav, env: this.envService, drive: this.drive, police: () => this.sceneManager.police,
+        roadCut: () => this.sceneManager.worldBuilder.collision.cut, roadFix: () => this.sceneManager.worldBuilder.roadFix, wb: this.sceneManager.worldBuilder, veh: this.vehicle, nav: this.nav, env: this.envService, drive: this.drive, race: () => this.sceneManager.race, raceSvc: this.raceSvc,
         perf: () => Object.fromEntries(Object.entries(this.perf).map(([k, v]) => [k, Math.round(v * 100) / 100])),
         tpRoad: (x: number, z: number) => {
           const wb = this.sceneManager.worldBuilder; const r = wb.nearestRoadSegment(x, z, 5); if (!r) return null;
@@ -204,7 +208,7 @@ export class App implements AfterViewInit, OnDestroy {
           this.vehicle.velocity.set(0, 0, 0); this.vehicle.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
         },
       };
-      this.sceneManager.setQuality(this.settings.quality()); this.sceneManager.setTheme(this.settings.theme()); this.sceneManager.graphProvider = () => this.nav.getGraph(); this.sceneManager.setCops(this.policeSvc.enabled());
+      this.sceneManager.setQuality(this.settings.quality()); this.sceneManager.setTheme(this.settings.theme()); this.sceneManager.graphProvider = () => this.nav.getGraph(); 
       this.nav.attach(this.sceneManager.worldBuilder);
       this.sceneManager.worldBuilder.onReady(() => {
         const sp = this.sceneManager.worldBuilder.meta.spawn;
@@ -286,24 +290,7 @@ export class App implements AfterViewInit, OnDestroy {
       this.audioService.updateTireAudio(telem.wheels[0].slipAngleDeg, telem.wheels[0].isSkidding, telem.speedKmh);
       this.audioService.updateSurfaceAudio(telem.wheels[0].surfaceClass, telem.speedKmh);
 
-      // ---- cops & robbers: how visible / audible the player is right now, then let the cops react
-      {
-        const sm = this.sceneManager; const h = this.envService.envState().timeOfDayHours, elev = Math.sin(((h - 6) / 24) * 2 * Math.PI);
-        const dark = 1 - THREE.MathUtils.smoothstep(elev, -0.12, 0.25) * (this.envService.weather() === 'TROPICAL_RAIN' ? 0.75 : 1);
-        const hl = this.drive.headlights(); this.crashNoise = Math.max(0, this.crashNoise - frameDelta / 2);
-        const lightNight = 20 + (hl === 2 ? 230 : hl === 1 ? 105 : 0) + (this.vehicle.brake > 0.15 ? 22 : 0) + (this.drive.leftOn || this.drive.rightOn ? 10 : 0);
-        const vis = THREE.MathUtils.lerp(170, lightNight, dark);
-        const skid = telem.wheels[0].isSkidding || (this.vehicle.handbrake && telem.speedKmh > 20);
-        const noise = 12 + telem.speedKmh * 0.85 + telem.throttle * 26 + (skid ? 70 : 0) + (this.drive.horn() ? 260 : 0) + this.crashNoise * 130;
-        sm.policeUpdate(frameDelta, { x: this.vehicle.position.x, z: this.vehicle.position.z, vx: this.vehicle.velocity.x, vz: this.vehicle.velocity.z, speedKmh: telem.speedKmh }, { visRadius: vis, noiseRadius: noise }, dark);
-        if (sm.police && !this.copHooked) {
-          this.copHooked = true;
-          sm.police.onBusted = () => { this.policeSvc.busted.update((n) => n + 1); this.policeSvc.flash('BUSTED! Back to the start'); const sp = sm.worldBuilder.meta.spawn; this.vehicle.position.set(sp.x, sm.worldBuilder.groundHeightAt(sp.x, sp.z) + 0.9, sp.z); this.vehicle.velocity.set(0, 0, 0); this.vehicle.angularVelocity.set(0, 0, 0); this.vehicle.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), sp.yaw); sm.police?.reset(); };
-          sm.police.onEscaped = () => { this.policeSvc.escaped.update((n) => n + 1); this.policeSvc.flash('YOU LOST THEM'); };
-        }
-        const st = sm.police?.status; this.audioService.setSiren(st && st.nearestChaser < 380 ? Math.pow(1 - st.nearestChaser / 380, 1.2) : 0);
-        this.polAcc += frameDelta; if (st && this.polAcc > 0.1) { this.polAcc = 0; const ps = this.policeSvc; ps.state.set(st.state); ps.suspicion.set(st.suspicion); ps.vis.set(Math.min(1, vis / 260)); ps.noise.set(Math.min(1, noise / 260)); ps.chasers.set(st.chasers); ps.nearest.set(st.nearest); }
-      }
+      this.raceTick(frameDelta);
 
       if (telem.backfirePop) {
         this.audioService.playBackfirePop();
@@ -351,13 +338,18 @@ export class App implements AfterViewInit, OnDestroy {
       );
       tp = this.mark('camera', tp);
       this.sceneManager.syncVehicleVisuals(this.vehicle, frameDelta);
+      if (this.mp.status() === 'online') {
+        const h = this.drive.headlights(), fl = (this.vehicle.brake > 0.1 || this.vehicle.handbrake ? FLAG.BRAKE : 0) | (h > 0 ? FLAG.HEAD : 0) | (h > 1 ? FLAG.HIGH : 0) | (this.drive.horn() ? FLAG.HORN : 0) | (this.drive.hazards() ? FLAG.HAZARD : 0);
+        this.mp.sendPose(this.vehicle, this.sceneManager.groundUnder(this.vehicle), fl, now);
+      }
+      if (this.mp.states.size || this.mp.status() === 'online') this.sceneManager.syncRemotes(this.mp.states, frameDelta);
       tp = this.mark('sync(world,traffic,wheels)', tp);
 
       // Push telemetry snapshot to Angular UI at ~20 Hz
       this.telemetryService.pushSnapshot(telem);
       if (this.hudComponent) {
         this.hudComponent.world = this.sceneManager.worldBuilder;
-        const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(this.vehicle.quaternion);
+        const fwd = this.fwdS.set(0, 0, 1).applyQuaternion(this.vehicle.quaternion);
         const np = this.nav.pose; np.x = this.vehicle.position.x; np.z = this.vehicle.position.z; np.yaw = Math.atan2(fwd.x, fwd.z); np.speedKmh = telem.speedKmh;
         this.hudComponent.updateDistrictAndGps(this.vehicle.position.x, this.vehicle.position.z, Math.atan2(fwd.x, fwd.z));
       }
@@ -384,8 +376,11 @@ export class App implements AfterViewInit, OnDestroy {
 
   private nightFactor = 1;
   /** One-shot controller actions (edge triggers), handled once per rendered frame. */
-  private handlePad(pad: ReturnType<GamepadService['pollControls']>): void {
-    if (!pad.connected || !this.started()) return;
+  private handlePad(pad0: ReturnType<GamepadService['pollControls']>): void {
+    let pad = pad0; if (!pad.connected || !this.started()) return;
+    if (pad.toggleRaces) this.raceSvc.toggle();
+    const rm = this.raceSvc.menu() && this.raceSvc.phase() === 'IDLE', n = this.raceSvc.events.length;
+    if (rm) { if (pad.padUp) this.raceSvc.sel.update((i) => (i + n - 1) % n); if (pad.padDown) this.raceSvc.sel.update((i) => (i + 1) % n); if (pad.padConfirm) this.raceSvc.start(this.raceSvc.sel()); pad = { ...pad, headlights: false, hazards: false, resetCar: false }; }
     if (pad.cycleCamera) this.onCycleCamera();
     if (pad.toggleTelemetry) this.telemetryService.toggleTelemetry();
     if (pad.toggleMap) this.showMap.update((m) => !m);
@@ -409,7 +404,7 @@ export class App implements AfterViewInit, OnDestroy {
     if (pad.worldTools) this.showPipeline.update((v) => !v);
     if (pad.toggleHelp) this.showHelp.update((v) => !v);
   }
-  private keyHorn = false;
+  private keyHorn = false; private fwdS = new THREE.Vector3();
 
   private stepPhysics(dt: number): void {
     // 1. Poll Controller inputs (DS4 priority > Touch > Keyboard)
@@ -459,6 +454,7 @@ export class App implements AfterViewInit, OnDestroy {
         steer = this.steerSm; throttle = this.thrSm; brake = this.brkSm;
       } else { this.steerSm = steer; this.thrSm = throttle; this.brkSm = brake; }
     }
+    if (this.sceneManager.race?.holding) { throttle = 0; brake = 0; handbrake = true; this.vehicle.reverse = false; this.thrSm = 0; }
     this.vehicle.steerInput = steer;
     this.vehicle.throttle = throttle;
     this.vehicle.brake = brake;
@@ -534,10 +530,11 @@ export class App implements AfterViewInit, OnDestroy {
   @HostListener('window:keydown', ['$event'])
   onKeyDown(event: KeyboardEvent): void {
     this.audioService.unlockAudio();
+    if ((event.target as HTMLElement | null)?.tagName === 'INPUT') return;   // typing in the lobby / chat
     if (!this.started()) { if (event.code === 'Enter') this.begin(); return; }
 
     if (event.code === 'KeyB') { this.benchStart(); return; }
-    if (event.code === 'KeyY') { try { localStorage.setItem('shesha.style', localStorage.getItem('shesha.style') === '0' ? '1' : '0'); } catch { /* ignore */ } location.reload(); return; }
+    if (event.code === 'KeyY') { try { localStorage.setItem('shesha.style', localStorage.getItem('shesha.style') === '1' ? '0' : '1'); } catch { /* ignore */ } location.reload(); return; }
     if (event.code === 'KeyF') { this.hudComponent?.showFps.update((v) => !v); return; }
     if (event.code === 'KeyY') { this.settings.toggleTheme(); return; }
     if (event.code === 'KeyQ') { this.settings.cycleQuality(); return; }
@@ -546,12 +543,14 @@ export class App implements AfterViewInit, OnDestroy {
     if (event.code === 'Comma') { this.drive.toggleLeft(); return; }
     if (event.code === 'Period') { this.drive.toggleRight(); return; }
     if (event.code === 'KeyX') { this.drive.toggleHazards(); return; }
-    if (event.code === 'KeyJ') { this.policeSvc.toggle(); return; }
+    if (event.code === 'KeyN') { this.raceSvc.toggle(); return; }
+    if (this.raceSvc.menu()) { const d = /^Digit([1-9])$/.exec(event.code); if (d && +d[1] <= this.raceSvc.events.length) { this.raceSvc.start(+d[1] - 1); return; } if (event.code === 'Escape') { this.raceSvc.menu.set(false); return; } }
     if (event.code === 'KeyL') { this.drive.cycleHeadlights(); return; }
     if (event.code === 'KeyB') { this.keyHorn = true; this.drive.setHorn(true); return; }
     if (event.code === 'KeyK') { this.sceneManager.cameraRig.recentreLook(); return; }
     if (event.code === 'F1' || event.code === 'Slash' || event.code === 'KeyI') { event.preventDefault(); this.showHelp.update((v) => !v); return; }
     if (event.code === 'KeyV') { this.showCars.update((v) => !v); return; }
+    if (event.code === 'KeyJ') { this.mp.menu.update((v) => !v); return; }
     switch (event.code) {
       case 'ArrowLeft':
       case 'KeyA':
@@ -595,6 +594,7 @@ export class App implements AfterViewInit, OnDestroy {
 
   @HostListener('window:keyup', ['$event'])
   onKeyUp(event: KeyboardEvent): void {
+    if ((event.target as HTMLElement | null)?.tagName === 'INPUT') return;
     if (event.code === 'KeyB') { this.keyHorn = false; this.drive.setHorn(false); }
     switch (event.code) {
       case 'ArrowLeft':
@@ -655,6 +655,31 @@ export class App implements AfterViewInit, OnDestroy {
     link.download = `SHESHA_Eswatini_${Date.now()}.png`;
     link.href = dataUrl;
     link.click();
+  }
+
+  /** Street races: wire the menu, run the AI field every frame, mirror the state to the HUD. */
+  private raceTick(dt: number): void {
+    const sm = this.sceneManager, race = sm.race, rs = this.raceSvc; if (!race) return;
+    if (!this.raceHooked) {
+      this.raceHooked = true;
+      rs.onStart = (i) => {
+        const st = race.start(i); if (!st) { rs.flash('Route not ready'); return; }
+        const v = this.vehicle; v.position.set(st.x, sm.worldBuilder.groundHeightAt(st.x, st.z) + 0.9, st.z); v.velocity.set(0, 0, 0); v.angularVelocity.set(0, 0, 0); v.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), st.yaw);
+        const np = this.nav.pose; np.x = st.x; np.z = st.z; this.nav.follow(st.route, st.finish); rs.result.set(null);
+      };
+      rs.onAbandon = () => race.stop();
+      race.onEvent = (e) => {
+        if (e === 'count' || e === 'checkpoint') this.audioService.playCheckpointChime();
+        else if (e === 'go') { this.audioService.playSpeedTrapChirp(); this.hapticsService.triggerImpulse('speedTrap', 0.9, 0.9, 250); }
+        else if (e === 'finish') { this.audioService.playSpeedTrapChirp(); if (race.status.result) rs.finish(race.status.result); }
+        else if (e === 'end') this.nav.clear();
+      };
+    }
+    if (!race.active) { if (rs.phase() !== 'IDLE') rs.phase.set('IDLE'); return; }
+    const v = this.vehicle; sm.raceUpdate(dt, { x: v.position.x, z: v.position.z, vx: v.velocity.x, vz: v.velocity.z });
+    this.raceAcc += dt; if (this.raceAcc < 0.1 && rs.phase() === race.status.phase && rs.count() === race.status.count) return; this.raceAcc = 0;
+    const s = race.status; rs.phase.set(s.phase); rs.name.set(s.name); rs.count.set(s.count); rs.pos.set(s.pos); rs.total.set(s.total); rs.time.set(s.time); rs.cp.set(s.cp); rs.cps.set(s.cps); rs.remaining.set(s.remaining); rs.offRoute.set(s.offRoute);
+    if (rs.order().join() !== s.order.join()) rs.order.set(s.order.slice());
   }
 
   public teleportToDistrict(pos: [number, number]): void {

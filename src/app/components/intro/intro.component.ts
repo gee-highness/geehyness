@@ -36,7 +36,7 @@ import { AssetLibrary } from '../../game/graphics/asset-library';
         </svg>
         <div class="text-[11px] tracking-[0.5em] text-amber-300 font-bold mb-3">SISWATI FOR “GO FAST”</div>
         <h1 class="text-5xl sm:text-7xl font-black tracking-tight leading-none">SHESHA</h1>
-        <div class="text-lg sm:text-2xl font-light text-zinc-200 mt-2 tracking-wide">Eswatini open-road racing · Manzini <span class="text-amber-400">→</span> Mbabane</div>
+        <div class="text-lg sm:text-2xl font-light text-zinc-200 mt-2 tracking-wide">Manzini open-world racing · <span class="text-amber-400">The Hub</span> of Eswatini</div>
       </div>
 
       <div class="rise mt-10 w-full max-w-xs" style="animation-delay:.25s">

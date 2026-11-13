@@ -7,6 +7,7 @@ export class CameraRig {
   public camera: THREE.PerspectiveCamera;
 
   // Smoothing states
+  private _f = new THREE.Vector3(); private _u = new THREE.Vector3(); private _t = new THREE.Vector3(); private _l = new THREE.Vector3(); private _k = new THREE.Vector3();
   private currentPos = new THREE.Vector3(0, 3, 7);
   private currentTarget = new THREE.Vector3(0, 1, 0);
   private currentFov = 65;
@@ -66,8 +67,7 @@ export class CameraRig {
       return;
     }
 
-    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(vehicleQuat);
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(vehicleQuat);
+    const forward = this._f.set(0, 0, 1).applyQuaternion(vehicleQuat), up = this._u.set(0, 1, 0).applyQuaternion(vehicleQuat), tmp = this._k;
 
     // Look back toggle (Circle button)
     if (isLookingBack) {
@@ -76,8 +76,7 @@ export class CameraRig {
     if (this.lookYaw !== 0) forward.applyAxisAngle(up, this.lookYaw);
     const pitchLift = Math.sin(this.lookPitch);
 
-    let targetPos = new THREE.Vector3();
-    let lookTarget = vehiclePos.clone().add(new THREE.Vector3(0, 0.7, 0));
+    const targetPos = this._t, lookTarget = this._l.copy(vehiclePos); lookTarget.y += 0.7;
     let desiredFov = 65;
 
     // Speed-dependent FOV widening for high-speed sensation (Forza style)
@@ -86,43 +85,44 @@ export class CameraRig {
     switch (this.mode) {
       case 'CHASE_NEAR':
         // 5.5m behind, 1.8m above, looking 4m ahead of car
-        targetPos = vehiclePos.clone()
-          .sub(forward.clone().multiplyScalar(5.5))
-          .add(up.clone().multiplyScalar(1.8 + pitchLift * 4.5));
-        lookTarget = vehiclePos.clone().add(forward.clone().multiplyScalar(4.0)).add(new THREE.Vector3(0, 0.8, 0));
+        targetPos.copy(vehiclePos).addScaledVector(forward, -5.5).addScaledVector(up, 1.8 + pitchLift * 4.5);
+        lookTarget.copy(vehiclePos).addScaledVector(forward, 4.0); lookTarget.y += 0.8;
         desiredFov = 65 + fovBonus;
         break;
 
       case 'CHASE_FAR':
         // 8.5m behind, 2.8m above
-        targetPos = vehiclePos.clone()
-          .sub(forward.clone().multiplyScalar(8.5))
-          .add(up.clone().multiplyScalar(2.8 + pitchLift * 6));
-        lookTarget = vehiclePos.clone().add(forward.clone().multiplyScalar(5.0)).add(new THREE.Vector3(0, 1.0, 0));
+        targetPos.copy(vehiclePos).addScaledVector(forward, -8.5).addScaledVector(up, 2.8 + pitchLift * 6);
+        lookTarget.copy(vehiclePos).addScaledVector(forward, 5.0); lookTarget.y += 1.0;
         desiredFov = 68 + fovBonus;
         break;
 
       case 'COCKPIT': {
         // Inside cockpit at driver eye height (Right-Hand Drive for Eswatini: x +0.28, y +0.75, z +0.1)
-        const cockpitOffset = new THREE.Vector3(0.28, 0.75, 0.1).applyQuaternion(vehicleQuat);
-        targetPos = vehiclePos.clone().add(cockpitOffset);
-        lookTarget = targetPos.clone().add(forward.clone().multiplyScalar(15.0)).add(up.clone().multiplyScalar(Math.tan(this.lookPitch) * 15));
+        targetPos.copy(vehiclePos).add(tmp.set(0.28, 0.75, 0.1).applyQuaternion(vehicleQuat));
+        lookTarget.copy(targetPos).addScaledVector(forward, 15.0).addScaledVector(up, Math.tan(this.lookPitch) * 15.0);
         desiredFov = 74 + fovBonus * 0.5;
         break;
       }
 
       case 'BUMPER': {
         // Low on front bumper
-        const bumperOffset = new THREE.Vector3(0, 0.35, 1.95).applyQuaternion(vehicleQuat);
-        targetPos = vehiclePos.clone().add(bumperOffset);
-        lookTarget = targetPos.clone().add(forward.clone().multiplyScalar(20.0)).add(up.clone().multiplyScalar(Math.tan(this.lookPitch) * 20));
+        targetPos.copy(vehiclePos).add(tmp.set(0, 0.35, 1.95).applyQuaternion(vehicleQuat));
+        lookTarget.copy(targetPos).addScaledVector(forward, 20.0).addScaledVector(up, Math.tan(this.lookPitch) * 20.0);
         desiredFov = 80 + fovBonus;
         break;
       }
     }
 
+    if (this.mode === 'COCKPIT' || this.mode === 'BUMPER') { // first person is rigidly attached to the car: a world-space lag puts the eye behind the driver's seat at speed
+      this.currentPos.copy(targetPos);
+      this.currentTarget.x = THREE.MathUtils.damp(this.currentTarget.x, lookTarget.x, 60, dt); this.currentTarget.y = THREE.MathUtils.damp(this.currentTarget.y, lookTarget.y, 60, dt); this.currentTarget.z = THREE.MathUtils.damp(this.currentTarget.z, lookTarget.z, 60, dt);
+      this.currentFov = THREE.MathUtils.damp(this.currentFov, desiredFov, 6, dt);
+      this.camera.position.copy(this.currentPos); this.camera.lookAt(this.currentTarget); this.camera.fov = this.currentFov; this.camera.updateProjectionMatrix();
+      return;
+    }
     // Silky-smooth exponential damping
-    const posDampSpeed = this.mode === 'COCKPIT' ? 30 : 12;
+    const posDampSpeed = 12;
     this.currentPos.x = THREE.MathUtils.damp(this.currentPos.x, targetPos.x, posDampSpeed, dt);
     this.currentPos.y = THREE.MathUtils.damp(this.currentPos.y, targetPos.y, posDampSpeed, dt);
     this.currentPos.z = THREE.MathUtils.damp(this.currentPos.z, targetPos.z, posDampSpeed, dt);

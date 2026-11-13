@@ -3,8 +3,8 @@ import { MatIconModule } from '@angular/material/icon';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { AssetLibrary } from '../../game/graphics/asset-library';
-import { CAR_CATALOG, CAR_CLASSES, CarClass, CarDef } from '../../game/cars';
-import { ARCHETYPES } from '../../services/tuning.service';
+import { CAR_CATALOG, CAR_CLASSES, CarClass, CarDef, carConfig } from '../../game/cars';
+import { TuningService } from '../../services/tuning.service';
 
 @Component({
   selector: 'app-car-select',
@@ -52,7 +52,8 @@ import { ARCHETYPES } from '../../services/tuning.service';
           <div class="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-end gap-4 border-t border-white/10">
             <div class="flex-1">
               <div class="text-2xl font-black leading-tight">{{ sel().name }}</div>
-              <div class="text-xs text-zinc-400 mb-2">{{ sel().blurb }}</div>
+              <div class="text-xs text-zinc-400">{{ sel().blurb }}</div>
+              <div class="text-[11px] text-amber-200/90 font-mono mb-2">{{ stats().a.engineMaxPowerKw }} kW · {{ stats().a.massKg }} kg · {{ stats().a.driveType }}</div>
               <div class="grid grid-cols-3 gap-3 text-[10px] font-bold tracking-wider text-zinc-400">
                 <div>POWER<div class="bar mt-1"><i [style.width.%]="stats().power"></i></div></div>
                 <div>GRIP<div class="bar mt-1"><i [style.width.%]="stats().grip"></i></div></div>
@@ -78,8 +79,8 @@ export class CarSelectComponent implements AfterViewInit, OnDestroy {
   readonly sel = signal<CarDef>(CAR_CATALOG[0]);
   readonly filtered = computed(() => CAR_CATALOG.filter((c) => !this.cls() || c.cls === this.cls()));
   readonly stats = computed(() => {
-    const a = ARCHETYPES[this.sel().archetype];
-    return { power: Math.min(100, (a.engineMaxPowerKw / 450) * 100), grip: Math.min(100, ((a.tireGripPeak - 0.8) / 1.0) * 100 + 20), mass: Math.min(100, (a.massKg / 2400) * 100) };
+    const a = carConfig(this.sel());
+    return { a, power: Math.min(100, Math.sqrt(a.engineMaxPowerKw / 520) * 100), grip: Math.min(100, ((a.tireGripPeak - 0.8) / 0.75) * 100), mass: Math.min(100, Math.sqrt(a.massKg / 13500) * 100) };
   });
 
   private renderer!: THREE.WebGLRenderer;
@@ -88,7 +89,8 @@ export class CarSelectComponent implements AfterViewInit, OnDestroy {
   private pivot = new THREE.Group();
   private raf = 0; private token = 0;
 
-  drive(c: CarDef): string { return ARCHETYPES[c.archetype].driveType; }
+  private tuning = inject(TuningService);
+  drive(c: CarDef): string { return carConfig(c).driveType; }
   pick(c: CarDef): void { this.sel.set(c); this.show(c); }
 
   ngAfterViewInit(): void {
@@ -119,10 +121,9 @@ export class CarSelectComponent implements AfterViewInit, OnDestroy {
 
   private async show(def: CarDef): Promise<void> {
     const t = ++this.token;
-    const m = await AssetLibrary.load(def.file).catch(() => null);
-    if (!m || t !== this.token) return;
+    const car = await AssetLibrary.preview(def, this.tuning.visuals().bodyColor).catch(() => null);
+    if (!car || t !== this.token) return;
     this.pivot.clear();
-    const car = m.clone(true);
     const box = new THREE.Box3().setFromObject(car), size = box.getSize(new THREE.Vector3());
     const s = 4.4 / Math.max(size.x, size.z);
     const g = new THREE.Group(); car.scale.setScalar(s); g.add(car);

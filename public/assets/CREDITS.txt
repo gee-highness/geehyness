@@ -7,3 +7,9 @@ Cars: Kenney Car Kit 3.1 (CC0, kenney.nl) via OpenGameArt; Kenney Starter-Kit-Ra
 Poly Haven CC0 also: herringbone_pavement_03, concrete_pavement.
 
 Street furniture positions (lamps, poles, signs, signals): Mapillary contributors, CC BY-SA 4.0 (mapillary.com).
+
+Aerial orthophoto of Manzini (ground texture, roof colours): "Manzini Municipality", National Disaster Management Agency (Eswatini),
+  via OpenAerialMap, 2024-08, CC-BY 4.0. https://openaerialmap.org
+Satellite ground colour outside the survey: contains modified Copernicus Sentinel-2 data (2024), processed from the AWS open-data archive.
+Elevation: Copernicus DEM GLO-30 (c) DLR e.V. 2010-2014 and (c) Airbus Defence and Space GmbH 2014-2018, provided under COPERNICUS by the European Union and ESA.
+Building footprints: Microsoft Global ML Building Footprints (ODbL) where OpenStreetMap had none.

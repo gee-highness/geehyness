@@ -98,7 +98,7 @@ APK → `android/app/build/outputs/apk/debug/app-debug.apk` (~93 MB). Send with 
 
 ## Fourth session (enhancement plan, slice 1)
 - Measured: after GC the live JS heap is <100 MB (the ~600 MB `usedJSHeapSize` was uncollected garbage). Real mobile risks are GPU/texture memory (59 x 1k JPG textures), draw calls (150-340) and triangles (260-690k). Parked-car detail radius now 60 m; static geometry drops its CPU copy after upload (`GeoBuf.toGeometry`).
-- Terrain: 40 m DEM from AWS z13 (`fetch_dem.py 40 13 data/dem.json`), terrain mesh 40 m (LOD1 320 m), `data/dem.json` replaced, `public/assets/world` regenerated.
+- Terrain: 40 m grid sampled (bicubic) from Copernicus GLO-30 native 30 m posts via `scripts/fetch_dem_glo30.py` (replaces AWS terrarium z13, which was resampled + offset ~1 px); `data/dem.json` and `public/assets/world` regenerated.
 - Road graph + GPS (`game/road-graph.ts`, `NavigationService`): A* over OSM ways, turn-by-turn guidance on the HUD, route drawn on map + radar, auto re-route. Debug: `__shesha.nav`.
 - Neo-Eswatini (futuristic procedural theme) is designed but NOT started; traffic lights/lane AI not started; textures not compressed (no KTX2 tool in sandbox).
 
@@ -153,3 +153,47 @@ Plans: `docs/FIDELITY_PLAN.md` (brand-faithful stations/chains/landmarks, tiers 
 - Road tar recoloured warm grey, verge/gravel red-brown, yellow edge lines.
 - Release workflow (`release.yml`) builds Linux packages + APK on tag/dispatch; needs the workflow file on the default branch (merge the branch), tag pushes are blocked from the cloud session.
 - Still TODO: verify poles/billboards/colours visually, Galp canopy sizing, CBD verandahs, retail-modern, taxi/coach models, far-hill ring, vegetation zones, real-device perf (Phase 0 bench).
+
+## Eighth session - Manzini-only, higher fidelity (read this first)
+- **World reduced** to Manzini + Matsapha + outskirts (17 x 12 km, bounds in `build_world.py`); OSM inputs are clipped by `clip()`. Districts are now MANZINI, MATSAPHA, FAIRVIEW, NGWANE_PARK, KWALUSENI, AIRPORT, MONENI (`world-pipeline.service.ts`, snaps in `build_world.py`).
+- **Terrain**: 20 m grid from Copernicus GLO-30 (`fetch_dem_glo30.py`), refined by `refine_dem.py` (roof/canopy bias removed where OSM confirms it, roads flattened across their width with graded profiles). Mesh spacing follows `meta.dem.step`.
+- **Ground**: 10 m colour/class raster; dense building areas become packed earth / paving instead of lawn; ~90k trees by ground class.
+- **Look**: the clean full-resolution render is the default (retro pixel look is opt-in with Y). Neutral tone mapping + filmic grade, lighter fog, 2k/4k sun shadows over a 220 m box, roads receive shadows, buildings to 520 m, far cards to 1250 m.
+- **Car**: desktop loads the full `ferrari.glb` with clear-coat paint; phones keep `ferrari-lod.glb`.
+- `?hq` forces full quality on a software renderer (headless screenshots). Rebuild commands: bottom of `data/README.md`.
+- Not verified on a real GPU or phone: frame rate with the longer draw distances and bigger shadow map.
+- **Real imagery**: `fetch_ortho.py` (17 cm NDMA aerial survey of Manzini via OpenAerialMap, CC-BY 4.0) gives the 2 m ground layer (`ortho.jpg`, desktop only) and true roof colours; `fetch_s2.py` (Sentinel-2) colours the rest of the map. Building tuple has a 6th value: packed roof sRGB (+ bit 24 = from the aerial photo).
+- **Missing buildings**: `merge_ms_buildings.py` adds Microsoft ML footprints not in OSM (`data/bld_ms.json.gz`, +14.5k -> 61k buildings).
+- **Road clearance volume** (`WorldBuilder.inRoadVolume`): every carriageway extruded 5 m up. `CollisionWorld.clear` refuses any collider inside it (`keep` flag for building shells, parked cars, animals); the prop `box()` helpers skip visuals inside it; guardrails and bridge parapets leave gaps at junction mouths. `relocateProps()` moves mapped poles/lamps/signs/billboards/trees/masts/tanks to the nearest verge (`vergeSpot`) instead of deleting them. Debug: `__shesha.roadCut()`, `__shesha.roadFix()`. Sweep test: `node scripts/roadscan.cjs` (server on :4300) must report `blocked: 0`.
+
+### Eighth session - state at hand-over (CONTINUE FROM HERE)
+Done and pushed on `ccr-cac88f1d-gkebu8` (see bullets above plus):
+- **Vehicles**: `car-gen.ts` generates sedan / hatch / bakkie / SUV / Quantum minibus / coach bodies (~1.5k tris, vertex colours, real paint mix). Used by traffic (`road-traffic.ts`), parked cars (`street-builder.placeParked`) and `vehicles-sa.ts`. Kenney GLBs remain only in the player car catalogue. Close-up visual check of each body kind is still owed.
+- **Buildings**: roof form from the aerial photo (`build_world.roof_shape`, 7th tuple value: 2 pitched / 1 flat), realistic wall palette in `city-builder.ts`, plain painted render in `stylized.ts` (SK 1), near-white sky light so walls are not blue.
+- **Traffic AI**: agents drive whole A* trips through junctions (`routeSpawn`), follow the car ahead with a ~2 s gap, slow for bends/turns, obey signals; volume follows the clock (`setHour`: peaks ~07:25 and ~17:10, near-empty at night). NOT yet watched in motion - verify no cars float/sink on overpasses and that junction turns look right.
+- **DONE (ninth session) - races, see below.** Original plan: (user asked: "add races, AI smart and realistic"): plan = `game/race.ts` RaceManager: events between district snaps (Manzini->Moneni, Manzini->Matsapha, Fairview climb, Airport run, Ngwane Park descent, grand tour loop), race line from `RoadGraph.route`, checkpoints every ~250 m, 4 AI racers (`makeCar`) with curvature-based speed, skill spread and mild rubber-banding, countdown, position/timer HUD component, finish banner. Free keys: N, O, U, Z, digits. `festival.service.ts` already has `activeRace`/`raceLap` signals; per-frame hook goes next to `wb.collision.resolve` in `app.ts`.
+- Other open asks from the user: every building "the best it can be" (facade detail still generic), better player-catalogue vehicles, real-GPU/phone performance check (draw distances and shadows were raised; ~960k triangles in the CBD on High with the full Ferrari).
+- All build inputs are now in `data/` (see the table at the end of `data/README.md`): `unzip -q data/build-inputs.zip -d /tmp`. Only the 822 MB original aerial GeoTIFF is outside the repo. Python deps: `pip install rasterio tifffile imagecodecs scipy`. Test server: `python3 -m http.server 4300 --directory dist/app/browser`; screenshots with `?hq`.
+
+## Ninth session - street races
+- `game/graphics/race.ts` (`Race`, `RACES`): 7 events between district snaps (Moneni Dash, MR3 Sprint, Fairview Climb, Ngwane Park Descent, Airport Run, Kwaluseni Ridge, Manzini Grand Tour 20 km). Race line = routed centre-line resampled at 5 m + smoothed; curvature speed profile with a braking pass. 4 AI rivals (generated cars): inside line in bends, overtake traffic/rivals/player on the free side or follow, pace mistakes, staggered launch reaction, mild catch-up (-5 %/+7 %), squeeze past a stationary blocker after 2 s. Gates every ~300 m must be driven through in order; finish gate is white.
+- `services/race.service.ts` (HUD signals, menu, personal bests in `localStorage['shesha.races']`), HUD panel/countdown/result + rail button, `NavigationService.follow()` (locked race route: turn-by-turn + map line, no re-route), `SceneManager.raceUpdate`, racer colliders (ids 2000+). Player is held on the grid during the countdown.
+- Keys: **N** opens the race menu / abandons; **1-7** pick an event; Esc closes. Debug: `__shesha.race()`, `__shesha.raceSvc`.
+- Some snaps (moneni) sit on a disconnected road scrap: `Race.snap()` nudges them onto the main network.
+- Verified by simulated-time runs in headless Chromium (all 7 events finish, AI averages 86-151 km/h, no stalls or height pops, player gate/finish logic, grid screenshot). NOT verified: feel/difficulty on a real device with each player car; gamepad binding for the race menu (touch uses the flag rail button).
+
+### Ninth session, optimisation pass
+- Far terrain is one indexed mesh (`terrain-far`, tile index ranges rewritten on visibility change): ~140 -> ~4 terrain draw calls. Far traffic silhouettes are one `InstancedMesh` (`traffic-far`). Removed dead `TrafficSimulator` (12 never-updated box cars, ~77 draw calls). Phone profile (Pixel 7 emulation, Auto): CBD ~158 calls / 227k tris, MR3 ~99 calls / 144k tris (was ~340 / 450k+ on desktop High).
+- Per-frame allocations removed from camera rig, collision step, scene sync, traffic update.
+- Gamepad: Share+R1 opens race menu, D-pad up/down select, Cross starts.
+- APK rebuilt (Java + `/opt/android-sdk` were present; `bash` the steps in this file). Still no real-device numbers: ask for key F readout.
+- Remaining ideas: worker-thread chunk generation, baked chunks (docs/MASTER_PLAN.md 3.1), KTX2 textures, facade detail, Galp canopy sizing, release workflow (needs merge to default branch).
+
+### Cops removed, first-person fixed
+- AI cops are gone (`police.ts`, `police.service.ts`, HUD meters, J key, siren hook). Cops return only as real players in a future multiplayer cops-and-robbers mode: `AudioService.setSiren`, the `police` player car (`cars.ts`), `lamp-light` COP emitter slots and `RoadGraph` are kept for that.
+- First person (COCKPIT/BUMPER): camera is rigidly attached to the car (no world-space lag) and the car's own meshes are hidden so roof/pillars/bonnet never block the view (`SceneManager.syncVehicleVisuals`, `CameraRig.update`).
+
+## Multiplayer (free-roam, v1)
+- Relay server: `npm run mp-server` (`server/mp-server.mjs`, `ws`, PORT env, default 8787; GET / = room list). Rooms by code, max 16, 60 msg/s cap, input sanitised. Clients keep their own physics and send pose at ~15 Hz.
+- Client: `services/multiplayer.service.ts` (connection, roster, chat, pose send), `graphics/remote-players.ts` (dead-reckoned cars, name tags, collision circles id >= 3000), `components/multiplayer` lobby (J, or HUD menu). Server address is typed in the lobby (saved locally) - a hosted `wss://` URL is still needed for phones/internet play.
+- Not yet: cops-and-robbers roles (PLAN.md section G), shared clock/weather, lights/siren rendering on remote cars (pose flags are already sent), server-side speed sanity checks, voice.

@@ -60,13 +60,14 @@ SM styleMat(vec2 sp, vec3 wp, vec3 n){
   if (nearF > 0.001) {
     rain = smoothstep(0.5, 0.85, sfbm(vec2(sp.x*3.2, wp.y*0.035) + 21.)) * aaF;
     bloom = smoothstep(0.55, 0.8, sfbm(sp*0.16 + wp.y*0.05 + 40.));
-    crk = smoothstep(0.972, 1.0, sridge(sp*vec2(1.1, 0.8) + vec2(wp.y*0.3, 5.))) * aaF;
+    crk = smoothstep(0.99, 1.0, sridge(sp*vec2(1.1, 0.8) + vec2(wp.y*0.3, 5.))) * aaF * smoothstep(0.45, 0.7, big); // rare hairlines, only on weathered patches
   }
-  vec3 hue = mix(vec3(0.94,1.0,1.06), vec3(1.07,1.0,0.93), pn.z);
-  m.col = 0.86 * hue * (0.9 + 0.18*pn.y) * (0.9 + 0.2*streak) * (1. - 0.2*pn.x) * (0.93 + 0.14*fine);
-  m.col *= 1. - 0.22*rain - 0.14*bloom - 0.3*crk;
+  // painted render: one even coat (no visible block grid), faint trowel mottling, rain streaks under the eaves, a darker damp band at the foot of the wall
+  vec3 hue = mix(vec3(0.985,1.0,1.01), vec3(1.015,1.0,0.985), pn.z);
+  m.col = 0.9 * hue * (0.97 + 0.05*pn.y) * (0.93 + 0.12*streak) * (1. - 0.05*pn.x) * (0.95 + 0.1*fine);
+  m.col *= 1. - 0.22*rain - 0.14*bloom - 0.16*crk;
   m.col *= mix(vec3(1.), vec3(0.93,0.96,0.9), bloom * 0.6);              // faint algae / damp tint
-  m.h = -pn.x*0.7 + (fine - 0.5)*0.5 - crk*0.8; m.rough = 0.12*pn.x - 0.1*pn.y + 0.12*rain;
+  m.h = -pn.x*0.15 + (fine - 0.5)*0.5 - crk*0.2; m.rough = 0.04*pn.x - 0.04*pn.y + 0.12*rain;
   m.em = vec3(0.0);
 #elif SK == 2
   // staggered ceramic tiles, strong per-tile hue variation
@@ -88,7 +89,7 @@ SM styleMat(vec2 sp, vec3 wp, vec3 n){
 #elif SK == 4
   // concrete paving slabs: joints with moss, per-slab shade, cracks, stains, gum spots, worn lanes
   vec3 pn = spanel(sp, vec2(1.35, 0.85), 0.55, 0.5);
-  float crk = nearF > 0.001 ? smoothstep(0.975, 1.0, sridge(sp*1.7 + 4.)) * aaF : 0.;
+  float crk = nearF > 0.001 ? smoothstep(0.988, 1.0, sridge(sp*1.7 + 4.)) * aaF : 0.;
   float stn = nearF > 0.001 ? smoothstep(0.6, 0.82, sfbm(sp*0.5 + 31.)) * 0.28 : 0.;
   float gum = step(0.992, sh1(floor(sp*7.))) * aaF * 0.25;
   m.col = mix(vec3(0.82,0.86,0.95), vec3(1.1,1.06,1.0), pn.y) * (1. - 0.4*pn.x) * (0.92 + 0.14*fine) * (1. - stn - crk*0.35 - gum);

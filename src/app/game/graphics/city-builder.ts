@@ -4,17 +4,18 @@ import { GeoBuf, slab } from './geo-buf';
 import type { WorldBuilder } from './world-builder';
 
 /** [use, heightDm, footprint dm..., signIndex, seed] */
-type Bld = [number, number, number[], number, number];
+type Bld = [number, number, number[], number, number, number?, number?];
 
 const CH = 800;
 const rnd = (a: number): number => { const s = Math.sin(a * 12.9898) * 43758.5453; return s - Math.floor(s); };
 const pick = <T>(arr: T[], r: number): T => arr[Math.floor(r * arr.length) % arr.length];
 
-const HOUSE: number[][] = [[0.9, 0.93, 0.97], [0.96, 0.86, 0.7], [0.97, 0.66, 0.56], [0.62, 0.82, 0.95], [0.6, 0.88, 0.78], [0.98, 0.84, 0.46], [0.9, 0.6, 0.5], [0.8, 0.84, 0.9], [0.92, 0.62, 0.72], [0.45, 0.78, 0.82]];
-const CIVIC: number[][] = [[0.98, 0.94, 0.78], [0.96, 0.96, 0.94], [0.92, 0.86, 0.7]];
-const CONCRETE: number[][] = [[0.86, 0.86, 0.86], [0.95, 0.93, 0.88], [0.76, 0.79, 0.82], [0.92, 0.84, 0.72], [0.7, 0.72, 0.74]];
-const BRICK: number[][] = [[1, 0.88, 0.8], [0.9, 0.7, 0.6], [1, 0.95, 0.9], [0.8, 0.65, 0.55]];
-const METAL: number[][] = [[0.7, 0.72, 0.75], [0.55, 0.65, 0.58], [0.6, 0.66, 0.78], [0.82, 0.82, 0.8], [0.78, 0.6, 0.52]];
+// Wall colours seen on Manzini streets: cream / off-white / beige render dominates, some peach, pale yellow, light grey and sage; no candy colours.
+const HOUSE: number[][] = [[0.93, 0.9, 0.82], [0.95, 0.94, 0.9], [0.9, 0.84, 0.72], [0.93, 0.8, 0.66], [0.94, 0.88, 0.66], [0.84, 0.84, 0.82], [0.88, 0.78, 0.68], [0.8, 0.84, 0.76], [0.96, 0.92, 0.84], [0.86, 0.72, 0.6]];
+const CIVIC: number[][] = [[0.96, 0.93, 0.8], [0.95, 0.95, 0.93], [0.9, 0.85, 0.72]];
+const CONCRETE: number[][] = [[0.86, 0.85, 0.83], [0.94, 0.92, 0.87], [0.78, 0.78, 0.77], [0.9, 0.84, 0.74], [0.72, 0.72, 0.71]];
+const BRICK: number[][] = [[0.82, 0.5, 0.38], [0.72, 0.42, 0.32], [0.88, 0.62, 0.46], [0.66, 0.4, 0.32]];
+const METAL: number[][] = [[0.74, 0.75, 0.76], [0.66, 0.7, 0.66], [0.7, 0.72, 0.76], [0.84, 0.84, 0.82], [0.76, 0.62, 0.54]];
 const ROOFS: number[][] = [[0.62, 0.66, 0.74], [0.86, 0.38, 0.24], [0.14, 0.58, 0.6], [0.7, 0.24, 0.2], [0.9, 0.92, 0.96], [0.3, 0.38, 0.78], [0.82, 0.56, 0.36], [0.26, 0.29, 0.38]];
 const AWNING: number[][] = [[0.8, 0.16, 0.16], [0.14, 0.32, 0.7], [0.1, 0.5, 0.25], [0.95, 0.7, 0.1], [0.9, 0.9, 0.88], [0.9, 0.4, 0.1]];
 
@@ -259,10 +260,10 @@ export class CityBuilder {
   }
 
   /** Build the area around the start synchronously so it is ready before the intro ends (after barriers/features exist). */
-  prime(): void { const sp = this.w.meta.spawn; this.stream(sp.x, sp.z, 900, 1e9); }
+  prime(): void { const sp = this.w.meta.spawn; this.stream(sp.x, sp.z, 1300, 1e9); }
 
   /** Called every frame: builds nearby chunks within a small time budget (keeps the frame rate smooth). */
-  update(px: number, pz: number): void { this.stream(px, pz, 900, 1.6); }
+  update(px: number, pz: number): void { this.stream(px, pz, 1300, 1.6); }
 
   private stream(px: number, pz: number, radius: number, budgetMs: number): void {
     const t0 = performance.now();
@@ -299,7 +300,7 @@ export class CityBuilder {
       const q = this.emitQ.shift()!; const card = q.mk === 'card', isProp = q.mk === 'props' || q.mk === 'sign' || card;
       const mesh = new THREE.Mesh(q.buf.toGeometry(q.mk !== 'sign', !isProp), card ? this.mats['props'] : this.mats[q.mk]);
       mesh.name = 'bld:' + q.mk; mesh.castShadow = false; mesh.receiveShadow = true;
-      this.w.registerChunk(mesh, q.cx, q.cz, q.sz * 0.75, card ? 820 : isProp ? 190 : 400); if (card) mesh.userData['near'] = 380; this.w.landmarksGroup.add(mesh);
+      this.w.registerChunk(mesh, q.cx, q.cz, q.sz * 0.75, card ? 1250 : isProp ? 230 : 520); if (card) mesh.userData['near'] = 500; this.w.landmarksGroup.add(mesh);
       if (performance.now() - t0 > budgetMs) return false;
     }
     return true;
@@ -343,6 +344,15 @@ export class CityBuilder {
     n = pts.length; const area = A / 2, r = seed / 1000, w = this.w;
     let maxH = -1e9; const hs = pts.map((p) => { const h = w.calculateRawTerrainHeight(p[0], p[1]); maxH = Math.max(maxH, h); return h; });
     const st = this.style(use, r, area, n);
+    const sat = b[5];
+    if (sat !== undefined && sat >= 0 && use !== 17) {
+      // real roof colour: bit 24 = from the 1 m aerial photo (trusted fully); otherwise a Sentinel-2 pixel shared with the yard (trusted less on small roofs)
+      const aerial = (sat >> 24) & 1;
+      let c = [(sat >> 16) & 255, (sat >> 8) & 255, sat & 255].map((v) => Math.pow(v / 255, 1.7) * 1.12);
+      const l = (c[0] + c[1] + c[2]) / 3; c = c.map((v) => Math.max(0.04, Math.min(1, l + (v - l) * (aerial ? 1.15 : 1.35))));
+      const k = aerial ? 1 : Math.max(0.5, Math.min(1, area / 320));
+      st.rtint = st.rtint.map((v, i) => v + (c[i] - v) * k);
+    }
     const boost = st.wall === 'plaster' ? 1.0 : st.wall === 'concrete' ? 0.98 : st.wall === 'brick' ? 1.05 : 1.15;
     st.tint = st.tint.map((v) => v * boost);
     const h = (hdm / 10) * this.neoHeight(cx, cz, area); const top = maxH + h;
@@ -372,6 +382,9 @@ export class CityBuilder {
 
     // roof
     let roof = st.roof;
+    // roof form read from the aerial photo (build_world.roof_shape): 2 = a lit and a shaded side -> pitched; 1 = one even tone on a big roof -> flat
+    if (b[6] === 2 && (roof === 'flat' || roof === 'canopy') && use !== 17) roof = area < 420 && n <= 8 ? 'hip' : 'lowgable';
+    else if (b[6] === 1 && roof !== 'flat' && use !== 0 && use !== 1 && use !== 18) roof = 'flat';
     if ((roof === 'gable' || roof === 'lowgable') && (fill < 0.82 || n > 10 || halfV < 1.5)) roof = n <= 8 && area < 400 ? 'hip' : 'flat';
     if (roof === 'hip' && n > 9) roof = 'flat';
     if (roof === 'canopy') roof = 'flat';
@@ -392,7 +405,7 @@ export class CityBuilder {
     }
 
     // collision footprint + tree rejection
-    if (use !== 17 && !w.overlapsRoad(pts, cx, cz)) w.collision.addPolygon(pts.flatMap((p) => [p[0], p[1]]), Math.min(...hs) - 1, top, roof === 'flat' && area > 30);
+    if (use !== 17 && !w.overlapsRoad(pts, cx, cz)) w.collision.addPolygon(pts.flatMap((p) => [p[0], p[1]]), Math.min(...hs) - 1, top, roof === 'flat' && area > 30, true);
 
     // walled compound + hedge for houses in town (detail only when close)
     if ((use === 0 || use === 1 || use === 13) && area > 70 && Math.hypot(cx + 750, cz + 210) < 3400 && r < 0.8) this.compound(cx, cz, ocx, ocz, ux, uz, vx, vz, halfU, halfV, r, hs);
@@ -558,6 +571,7 @@ export class CityBuilder {
   }
 
   private box(b: GeoBuf, x: number, y: number, z: number, sx: number, sy: number, sz: number, rot: number, col: number[]): void {
+    if (sy > 0.25 && this.w.inRoadVolume(x, z, 0, y, y + sy)) return;   // road clearance volume: nothing solid stands in a carriageway
     const c = Math.cos(rot), s = Math.sin(rot); const hx = sx / 2, hz = sz / 2;
     const corner = (lx: number, lz: number): [number, number] => [x + lx * c - lz * s, z + lx * s + lz * c];
     const q = [corner(-hx, -hz), corner(hx, -hz), corner(hx, hz), corner(-hx, hz)];

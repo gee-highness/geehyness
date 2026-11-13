@@ -16,10 +16,13 @@ export class NavigationService {
   private world?: WorldBuilder; private graph?: RoadGraph; private idx = 0; private lastRoute = 0;
 
   attach(w: WorldBuilder): void { this.world = w; }
-  /** Shared lazily-built road graph (also used by the police AI). */
+  /** Shared lazily-built road graph. */
   getGraph(): RoadGraph | undefined { if (!this.graph && this.world?.ready) this.graph = new RoadGraph(this.world.roadWays); return this.graph; }
-  set(x: number, z: number): void { this.waypoint.set([x, z]); this.compute(); }
-  clear(): void { this.waypoint.set(null); this.route.set(null); this.guidance.set(null); }
+  set(x: number, z: number): void { this.locked = false; this.waypoint.set([x, z]); this.compute(); }
+  /** Follow a fixed route (a race course): guidance without re-routing. */
+  follow(r: Route, end: [number, number]): void { this.locked = true; this.waypoint.set(end); this.route.set(r); this.idx = 0; this.update(this.pose.x, this.pose.z); }
+  private locked = false;
+  clear(): void { this.locked = false; this.waypoint.set(null); this.route.set(null); this.guidance.set(null); }
 
   private compute(): void {
     const wp = this.waypoint(); if (!wp || !this.world?.ready) return;
@@ -38,9 +41,9 @@ export class NavigationService {
     const r = this.route(); if (!r) return; const n = r.pts.length / 2;
     let best = this.idx, bd = 1e18; for (let i = this.idx; i < Math.min(n, this.idx + 80); i++) { const d = (r.pts[i * 2] - x) ** 2 + (r.pts[i * 2 + 1] - z) ** 2; if (d < bd) { bd = d; best = i; } }
     this.idx = best;
-    if (Math.sqrt(bd) > 60 && performance.now() - this.lastRoute > 4000) { this.compute(); return; } // off route -> reroute
+    if (!this.locked && Math.sqrt(bd) > 60 && performance.now() - this.lastRoute > 4000) { this.compute(); return; } // off route -> reroute
     const along = r.cum[this.idx], remaining = Math.max(0, r.length - along);
-    if (remaining < 25) { this.clear(); return; }
+    if (remaining < 25 && !this.locked) { this.clear(); return; }
     const step = r.steps.find((s) => s.at > along + 4) ?? r.steps[r.steps.length - 1];
     this.guidance.set({ turn: step.turn, text: turnText(step.turn), dist: Math.max(0, step.at - along), remaining, etaMin: Math.max(1, Math.round(remaining / (Math.max(30, this.pose.speedKmh) / 3.6) / 60)), road: step.name });
   }

@@ -53,6 +53,9 @@ meta["xwalks"] = dedupe(xwalks, 6.0)
 meta["furn"] = dedupe(furn, 2.0)
 meta["upoles"] = dedupe(upoles, 4.0)
 meta["bills"] = dedupe(bills, 10.0)
+_b = meta["bounds"]
+for k in ("lamps", "signals", "signs", "msigns", "xwalks", "furn", "upoles", "bills"):   # the world rectangle shrank: drop detections outside it
+    meta[k] = [q for q in meta.get(k, []) if _b[0] <= q[0] <= _b[1] and _b[2] <= q[1] <= _b[3]]
 json.dump(meta, open(M, "w"), separators=(",", ":"))
 # real speed limits: set 'ms' on the nearest road way (and same-named ways within 400 m) for every Mapillary speed-limit sign
 R = "public/assets/world/roads.json"; rd = json.load(open(R)); ways = rd["roads"]; changed = 0
