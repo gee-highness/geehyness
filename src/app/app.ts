@@ -367,7 +367,7 @@ export class App implements AfterViewInit, OnDestroy {
 
     // Render Scene
     tp = this.mark('hud+misc', tp);
-    if (this.hudComponent?.showFps() && now - this.fpsT > 500) { this.fpsT = now; const sm = this.sceneManager; this.hudComponent.fpsText.set(`${sm.fps} fps · ${Math.round(sm.resolution * 100)}% res · ${Math.round((this.perf['physics'] ?? 0) * 10) / 10}ms phys`); }
+    if (this.hudComponent?.showFps() && now - this.fpsT > 500) { this.fpsT = now; const sm = this.sceneManager; this.hudComponent.fpsText.set(`${sm.fps} fps · ${Math.round(sm.resolution * 100)}% res · ${Math.round((this.perf['physics'] ?? 0) * 10) / 10}ms phys\ninput: ${this.pad.connected ? 'pad ' + this.gamepadService.controllerName().slice(0, 28) + ` steer ${this.pad.steer.toFixed(2)} thr ${this.pad.throttle.toFixed(2)} brk ${this.pad.brake.toFixed(2)}` : 'no pad'} | keys ${this.keyThrottle ? 'W' : '-'}${this.keyBrake ? 'S' : '-'}${this.keySteerLeft ? 'A' : '-'}${this.keySteerRight ? 'D' : '-'} | car ${this.vehicle.throttle.toFixed(2)}/${this.vehicle.brake.toFixed(2)} ${Math.round(this.vehicle.velocity.length() * 3.6)} km/h`); }
     this.sceneManager.render(frameDelta * 1000);
     this.mark('render(cpu submit)', tp);
 

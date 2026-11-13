@@ -82,7 +82,7 @@ import { WorldPipelineService } from '../../services/world-pipeline.service';
       </div>
 
       @if (showFps()) {
-        <div class="absolute left-4 top-[74px] hud-card px-3 py-1.5 text-[11px] font-mono pointer-events-none" [class.text-emerald-300]="fpsText().startsWith('6') || fpsText().startsWith('5')" [class.text-amber-300]="!fpsText().startsWith('6') && !fpsText().startsWith('5')">{{ fpsText() }}</div>
+        <div class="absolute left-4 top-[74px] whitespace-pre hud-card px-3 py-1.5 text-[11px] font-mono pointer-events-none" [class.text-emerald-300]="fpsText().startsWith('6') || fpsText().startsWith('5')" [class.text-amber-300]="!fpsText().startsWith('6') && !fpsText().startsWith('5')">{{ fpsText() }}</div>
       }
 
       <!-- Event banner -->
