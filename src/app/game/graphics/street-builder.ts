@@ -5,6 +5,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { GeoBuf } from './geo-buf';
 import { AssetLibrary } from './asset-library';
 import type { WorldBuilder } from './world-builder';
+import { PAVE_LIFT, KERB_LIP } from './street-constants';
 
 const CH = 800;
 const rnd = (a: number): number => { const s = Math.sin(a * 12.9898) * 43758.5453; return s - Math.floor(s); };
@@ -15,7 +16,7 @@ const PARKED = ['sedan', 'hatchback-sports', 'suv', 'van', 'taxi', 'delivery', '
  * wooden utility poles with sagging wires, parked cars, traffic lights, zebra crossings, clouds.
  */
 export class StreetBuilder {
-  public static readonly PAVE_LIFT = 0.15; // kerb height above the road surface
+  public static readonly PAVE_LIFT = PAVE_LIFT; // kerb height above the road surface (220 mm)
   private bufs = new Map<string, Map<string, GeoBuf>>();
   public streetTrees: { x: number; z: number; c: number }[] = [];
   private parkedList: { m: string; x: number; z: number; rot: number }[] = [];
@@ -37,7 +38,7 @@ export class StreetBuilder {
     const w = this.w;
     const pave1 = w.pbr('herringbone_pavement_03', 2.4, 0.85), pave2 = w.pbr('concrete_pavement', 3, 0.9);
     for (const m of [pave1, pave2]) { m.polygonOffset = true; m.polygonOffsetFactor = -3; m.polygonOffsetUnits = -3;  }
-    const curb = new THREE.MeshStandardMaterial({ color: 0x9a9a98, roughness: 0.85, vertexColors: false });
+    const curb = new THREE.MeshStandardMaterial({ color: 0xc2c0bb, roughness: 0.85, vertexColors: false });
     const props = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.15, side: THREE.DoubleSide });
     const decal = new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 });
     for (const m of [curb, props, decal]) addLampLight(m);
@@ -80,11 +81,7 @@ export class StreetBuilder {
   }
 
   /** Pavements only where photos show them: town centres and dense blocks (not suburbs, rural edges or the open MR3). */
-  private paved(x: number, z: number): boolean {
-    const nb = this.w.buildingsNear(x, z); if (nb < 5) return false; if (nb >= 26) return true;
-    let d = 1e9; for (const k of Object.keys(this.w.meta.snaps ?? {})) { const s = (this.w.meta.snaps as Record<string, [number, number]>)[k]; d = Math.min(d, Math.hypot(s[0] - x, s[1] - z)); }
-    return d < 1000;
-  }
+  private paved(x: number, z: number): boolean { return this.w.pavedZone(x, z); }
   private urban(x: number, z: number): boolean { return this.w.buildingsNear(x, z) >= 4; }
 
   // ------------------------------------------------------------------ pavements
@@ -119,6 +116,10 @@ export class StreetBuilder {
           const tb = this.buf(mx, mz, top); const wh = [1, 1, 1];
           const t0 = tb.vert(ax, ya + H, az, 0, 1, 0, ax, az, wh), t1 = tb.vert(bx, yb + H, bz, 0, 1, 0, bx, bz, wh), t2 = tb.vert(cx, yc + H, cz, 0, 1, 0, cx, cz, wh), t3 = tb.vert(dx, yd + H, dz, 0, 1, 0, dx, dz, wh);
           if (side === 0) { tb.tri(t0, t1, t2); tb.tri(t1, t3, t2); } else { tb.tri(t0, t2, t1); tb.tri(t1, t2, t3); }
+          // kerb stone: a lighter lip along the road edge of the top, so the raised edge reads from a distance
+          { const lx = pts[i][0] + n0[0] * (hw + 0.05 + KERB_LIP), lz = pts[i][1] + n0[1] * (hw + 0.05 + KERB_LIP), mx2 = pts[i + 1][0] + n1[0] * (hw + 0.05 + KERB_LIP), mz2 = pts[i + 1][1] + n1[1] * (hw + 0.05 + KERB_LIP);
+            const kb = this.buf(mx, mz, 'curb'), e = 0.002, l0 = kb.vert(ax, ya + H + e, az, 0, 1, 0, 0, 0, wh), l1 = kb.vert(bx, yb + H + e, bz, 0, 1, 0, 0, 0, wh), l2 = kb.vert(lx, w.calculateRawTerrainHeight(lx, lz) + y0 + H + e, lz, 0, 1, 0, 0, 0, wh), l3 = kb.vert(mx2, w.calculateRawTerrainHeight(mx2, mz2) + y0 + H + e, mz2, 0, 1, 0, 0, 0, wh);
+            if (side === 0) { kb.tri(l0, l1, l2); kb.tri(l1, l3, l2); } else { kb.tri(l0, l2, l1); kb.tri(l1, l2, l3); } }
           // kerb face toward the road
           const cb = this.buf(mx, mz, 'curb'); const nxv = -n0[0], nzv = -n0[1];
           const k0 = cb.vert(ax, ya, az, nxv, 0, nzv, 0, 0, wh), k1 = cb.vert(bx, yb, bz, nxv, 0, nzv, 0, 0, wh), k2 = cb.vert(bx, yb + H, bz, nxv, 0, nzv, 0, 0, wh), k3 = cb.vert(ax, ya + H, az, nxv, 0, nzv, 0, 0, wh);

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { WorldBuilder } from './world-builder';
+import { PAVE_LIFT } from './street-constants';
 
 interface Head { x: number; y: number; z: number; nx: number; nz: number; cluster: number; axis: 0 | 1 }
 interface Stop { x: number; z: number; dx: number; dz: number; cluster: number; axis: 0 | 1 }
@@ -26,7 +27,7 @@ export class TrafficSignals {
       let d = Math.abs(hdg - clusters[ci].ref) % Math.PI; if (d > Math.PI / 2) d = Math.PI - d;
       const axis: 0 | 1 = d < Math.PI / 4 ? 0 : 1;
       const nx = -road.tz, nz = road.tx, side = road.way.w / 2 + 0.9, px = sx + nx * side, pz = sz + nz * side;
-      if (!w.roadAt(px, pz)) { const yy = w.calculateRawTerrainHeight(px, pz) + (road.way.sw ? 0.15 : 0) + w.roadLift(road.way.c); this.heads.push({ x: px + nx * 0.19, y: yy + 4.35, z: pz + nz * 0.19, nx, nz, cluster: ci, axis }); }
+      if (!w.roadAt(px, pz)) { const yy = w.calculateRawTerrainHeight(px, pz) + (road.way.sw ? PAVE_LIFT : 0) + w.roadLift(road.way.c); this.heads.push({ x: px + nx * 0.19, y: yy + 4.35, z: pz + nz * 0.19, nx, nz, cluster: ci, axis }); }
       for (const dir of [1, -1]) { // an approach each way, stop line 9 m before the junction centre
         const s: Stop = { x: sx - road.tx * 9 * dir, z: sz - road.tz * 9 * dir, dx: road.tx * dir, dz: road.tz * dir, cluster: ci, axis };
         const k = Math.floor(s.x / 50) * 100003 + Math.floor(s.z / 50); let l = this.grid.get(k); if (!l) { l = []; this.grid.set(k, l); } l.push(s);

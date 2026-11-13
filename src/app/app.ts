@@ -181,7 +181,7 @@ export class App implements AfterViewInit, OnDestroy {
       // Drop the car on the real MR3 (Ngwane St, eastbound) once the world has streamed in
       (window as unknown as { __shesha: Record<string, unknown> }).__shesha = {
         ...((window as unknown as { __shesha?: Record<string, unknown> }).__shesha ?? {}),
-        roadCut: () => this.sceneManager.worldBuilder.collision.cut, roadFix: () => this.sceneManager.worldBuilder.roadFix, wb: this.sceneManager.worldBuilder, veh: this.vehicle, nav: this.nav, env: this.envService, drive: this.drive, race: () => this.sceneManager.race, raceSvc: this.raceSvc,
+        roadCut: () => this.sceneManager.worldBuilder.collision.cut, roadFix: () => this.sceneManager.worldBuilder.roadFix, wb: this.sceneManager.worldBuilder, veh: this.vehicle, scene: this.sceneManager.scene, nav: this.nav, env: this.envService, drive: this.drive, race: () => this.sceneManager.race, raceSvc: this.raceSvc,
         perf: () => Object.fromEntries(Object.entries(this.perf).map(([k, v]) => [k, Math.round(v * 100) / 100])),
         tpRoad: (x: number, z: number) => {
           const wb = this.sceneManager.worldBuilder; const r = wb.nearestRoadSegment(x, z, 5); if (!r) return null;

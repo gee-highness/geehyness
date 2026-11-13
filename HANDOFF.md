@@ -197,3 +197,9 @@ Done and pushed on `ccr-cac88f1d-gkebu8` (see bullets above plus):
 - Transport: PeerJS WebRTC, same as Ludo Sync (`net/transport.ts`, `net/peer-transport.ts` copied from it). No game server: first player into room code `shesha-<code>` hosts a `net/room-hub.ts` (validation, 60 msg/s cap, 16 players, 15 Hz pose fan-out) inside their browser; the rest dial them. Host leaving ends the room (no host migration yet).
 - Client: `services/multiplayer.service.ts` (connection, roster, chat, pose send), `graphics/remote-players.ts` (dead-reckoned cars, name tags, collision circles id >= 3000), `components/multiplayer` lobby (J, or HUD menu). 
 - Not yet: cops-and-robbers roles (PLAN.md section G), shared clock/weather, lights/siren rendering on remote cars (pose flags are already sent), server-side speed sanity checks, voice.
+
+## Raised pavements (220 mm, town-wide)
+- `graphics/street-constants.ts`: `PAVE_LIFT = 0.22` m (kerb height) + `KERB_LIP`. One value for visible pavements (`StreetBuilder.sidewalks`), driving surface (`WorldBuilder.pavementTop` -> `groundHeightAt` / `queryGround`), lamp poles, signal heads. Before, physics used a hard-coded 0.15 + class-4 lift and could disagree with the drawn pavement.
+- `WorldBuilder.pavedZone(x,z)` is the single rule for where pavements exist (any street with >= 3 buildings beside it, or any street within 1.8 km of a district centre) - used by both visuals and physics. ~4,500 of 5,340 class 1-6 ways now have pavements.
+- Kerb stone: lighter 0.2 m lip along the road edge of the pavement top, lighter kerb face. Junction mouths still skip the strip (dropped kerbs).
+- Not done: pavement-level crossing ramps, driveway dropped kerbs, gutter line, street-by-street planning of furniture spacing.
