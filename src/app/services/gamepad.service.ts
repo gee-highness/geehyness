@@ -59,9 +59,10 @@ export class GamepadService {
     let best: Gamepad | null = null, bs = -1;
     for (const p of Array.from(navigator.getGamepads())) {
       if (!p || !p.connected) continue;
-      const touched = p.buttons.some((b) => b.pressed || b.value > 0.5) || p.axes.some((a, i) => Math.abs(a) > 0.5 && (p.mapping === 'standard' || i < 4));
+      // Only a standard-mapped pad can be "touched" by its sticks: raw Steam Controller / HID devices rest at odd axis values and would hijack the choice
+      const touched = p.buttons.some((b) => b.pressed || b.value > 0.5) || (p.mapping === 'standard' && p.axes.some((a) => Math.abs(a) > 0.5));
       if (touched) this.activeIdx = p.index;
-      const sc = (p.index === this.activeIdx ? 1000 : 0) + (p.mapping === 'standard' ? 100 : 0) + (p.buttons.length >= 10 ? 20 : 0) + (p.axes.length >= 4 ? 20 : 0) + (/xbox|dualshock|dualsense|wireless controller|gamepad|controller|054c|045e/i.test(p.id) ? 10 : 0);
+      const sc = (p.index === this.activeIdx ? 1000 : 0) + (p.mapping === 'standard' ? 300 : 0) + (p.buttons.length >= 10 ? 20 : 0) + (p.axes.length >= 4 ? 20 : 0) + (/xbox|dualshock|dualsense|wireless controller|gamepad|controller|054c|045e/i.test(p.id) ? 10 : 0);
       if (sc > bs) { bs = sc; best = p; }
     }
     // a device with no sticks and few buttons (keyboard / mouse / headset) is not a controller

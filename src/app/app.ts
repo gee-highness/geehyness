@@ -416,7 +416,7 @@ export class App implements AfterViewInit, OnDestroy {
     let handbrake = false;
 
     // Controller wins while it is being used; an idle or phantom pad no longer locks out touch / keyboard
-    const padActive = pad.connected && (Math.abs(pad.steer) > 0.02 || pad.throttle > 0.02 || pad.brake > 0.02 || pad.handbrake);
+    const padActive = pad.connected && (Math.abs(pad.steer) > 0.12 || pad.throttle > 0.05 || pad.brake > 0.05 || pad.handbrake);
     if (padActive) {
       steer = pad.steer;
       throttle = pad.throttle;
