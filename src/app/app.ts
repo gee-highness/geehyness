@@ -36,6 +36,7 @@ import { RaycastVehicle } from './game/physics/raycast-vehicle';
 // Components
 import { CarSelectComponent } from './components/car-select/car-select.component';
 import { CAR_CATALOG, CarDef, carConfig } from './game/cars';
+import { ControllerSetupComponent } from './components/controller-setup/controller-setup.component';
 import { MultiplayerComponent } from './components/multiplayer/multiplayer.component';
 import { MultiplayerService, FLAG } from './services/multiplayer.service';
 import { IntroComponent } from './components/intro/intro.component';
@@ -49,7 +50,7 @@ import { TouchControlsComponent } from './components/touch-controls/touch-contro
 
 @Component({
   selector: 'app-root',
-  imports: [MultiplayerComponent, HelpComponent, 
+  imports: [ControllerSetupComponent, MultiplayerComponent, HelpComponent, 
     CommonModule,
     MatIconModule,
     HudComponent,
@@ -101,6 +102,7 @@ export class App implements AfterViewInit, OnDestroy {
   readonly isPhotoMode = signal<boolean>(false);
   readonly started = signal<boolean>(false);
   readonly showCars = signal<boolean>(false);
+  readonly showPadSetup = signal<boolean>(false);
   readonly currentCar = signal<CarDef>(CAR_CATALOG[0]);
 
   public onChooseCar(def: CarDef): void {
@@ -116,7 +118,7 @@ export class App implements AfterViewInit, OnDestroy {
     this.sceneManager.spawnVehicle(config, this.tuningService.visuals(), def);
     this.showCars.set(false);
   }
-  public begin(): void { this.audioService.unlockAudio(); this.started.set(true); try { window.focus(); } catch { /* embedded preview */ } }
+  public begin(): void { this.audioService.unlockAudio(); this.started.set(true); this.watchInput(); try { window.focus(); } catch { /* embedded preview */ } }
   readonly showTouchControls = signal<boolean>(false);
 
   // Core Game Loop & Physics
@@ -404,6 +406,12 @@ export class App implements AfterViewInit, OnDestroy {
     if (pad.worldTools) this.showPipeline.update((v) => !v);
     if (pad.toggleHelp) this.showHelp.update((v) => !v);
   }
+  /** If nothing at all (key, pad, touch) is received 15 s after starting, say how to get control. */
+  private watchInput(): void {
+    let seen = false; const on = () => { seen = true; };
+    window.addEventListener('keydown', on, { once: true }); window.addEventListener('pointerdown', on, { once: true });
+    setTimeout(() => { if (!seen && !this.pad.connected) this.raceSvc.flash('No input yet: click the game, then use W A S D / arrows or a controller. F2 = controller setup, F = input readout.', 9000); }, 15000);
+  }
   private keyHorn = false; private fwdS = new THREE.Vector3();
 
   private stepPhysics(dt: number): void {
@@ -518,7 +526,11 @@ export class App implements AfterViewInit, OnDestroy {
   // Window resize handler
   @HostListener('window:blur')
   @HostListener('document:visibilitychange')
-  onFocusLost(): void { this.hapticsService.stopAll(); }
+  onFocusLost(): void {
+    this.hapticsService.stopAll();
+    // keys released while the window was unfocused never send keyup: forget them so the car does not drive itself
+    this.keySteerLeft = this.keySteerRight = this.keyThrottle = this.keyBrake = this.keyHandbrake = false; this.keyHorn = false; this.drive.setHorn(false);
+  }
 
   @HostListener('window:resize')
   onResize(): void {
@@ -550,6 +562,7 @@ export class App implements AfterViewInit, OnDestroy {
     if (event.code === 'KeyK') { this.sceneManager.cameraRig.recentreLook(); return; }
     if (event.code === 'F1' || event.code === 'Slash' || event.code === 'KeyI') { event.preventDefault(); this.showHelp.update((v) => !v); return; }
     if (event.code === 'KeyV') { this.showCars.update((v) => !v); return; }
+    if (event.code === 'F2') { event.preventDefault(); this.showPadSetup.update((v) => !v); this.gamepadService.cancelLearn(); return; }
     if (event.code === 'KeyJ') { this.mp.menu.update((v) => !v); return; }
     switch (event.code) {
       case 'ArrowLeft':
