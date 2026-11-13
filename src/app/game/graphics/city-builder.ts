@@ -174,9 +174,9 @@ export class CityBuilder {
 
   /** Neo theme only (decided when a chunk is generated): taller towers where the OSM footprint density is high. */
   private neoHeight(cx: number, cz: number, area: number): number {
-    if (typeof localStorage === 'undefined' || localStorage.getItem('shesha.theme') !== 'NEO') return 1;
+    if (typeof localStorage === 'undefined' || localStorage.getItem('shesha.theme') === 'REAL') return 1;
     const l = this.pending.get(`${Math.floor(cx / CH)},${Math.floor(cz / CH)}`); const density = l ? l.length : 0;
-    return 1 + Math.min(2.2, density / 260) * Math.min(1, Math.sqrt(area) / 14);
+    return 1 + Math.min(3.4, density / 190) * Math.min(1, Math.sqrt(area) / 12);
   }
 
   // ------------------------------------------------------------------ main

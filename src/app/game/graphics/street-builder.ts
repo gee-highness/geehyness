@@ -37,8 +37,9 @@ export class StreetBuilder {
   build(scene: THREE.Scene): void {
     const w = this.w;
     const pave1 = w.pbr('herringbone_pavement_03', 2.4, 0.85), pave2 = w.pbr('concrete_pavement', 3, 0.9);
-    for (const m of [pave1, pave2]) { m.polygonOffset = true; m.polygonOffsetFactor = -3; m.polygonOffsetUnits = -3;  }
-    const curb = new THREE.MeshStandardMaterial({ color: 0xc2c0bb, roughness: 0.85, vertexColors: false });
+    // future city: dark glossy pavement slabs edged with a light-strip kerb
+    for (const m of [pave1, pave2]) { m.polygonOffset = true; m.polygonOffsetFactor = -3; m.polygonOffsetUnits = -3; m.color.setHex(0x56627f); m.roughness = 0.38; m.metalness = 0.25; m.emissive.setHex(0x0a1426); }
+    const curb = new THREE.MeshStandardMaterial({ color: 0x1a2a3e, roughness: 0.35, metalness: 0.3, emissive: 0x16c8e8, emissiveIntensity: 0.95, vertexColors: false });
     const props = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.15, side: THREE.DoubleSide });
     const decal = new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 });
     for (const m of [curb, props, decal]) addLampLight(m);

@@ -27,9 +27,9 @@ const SPECS: Record<CarKind, Spec> = {
   coach: { L: 12, W: 2.5, H: 3.4, wr: 0.5, ax: [-3.4, 3.9], belt: 1.9, sill: 0.5, prof: [[-6, 0.7], [-5.98, 3.25], [-5.6, 3.4], [5.2, 3.4], [5.55, 3.3], [5.92, 1.7], [6, 0.7]], glass: [[-5.6, 5.3]] },
 };
 /** Paint colours weighted like a real Southern African car park: mostly white, silver and grey. */
-export const PAINTS: number[][] = [[0.93, 0.93, 0.92], [0.93, 0.93, 0.92], [0.93, 0.93, 0.92], [0.93, 0.93, 0.92], [0.66, 0.68, 0.7], [0.66, 0.68, 0.7], [0.36, 0.38, 0.4], [0.36, 0.38, 0.4],
-  [0.05, 0.05, 0.06], [0.55, 0.06, 0.07], [0.09, 0.2, 0.48], [0.62, 0.56, 0.42], [0.35, 0.05, 0.08], [0.08, 0.25, 0.16], [0.82, 0.82, 0.8], [0.72, 0.3, 0.08], [0.1, 0.33, 0.36], [0.75, 0.62, 0.1]];
-const GLASS = [0.045, 0.07, 0.1], DARK = [0.035, 0.035, 0.04], TYRE = [0.03, 0.03, 0.035], HUB = [0.62, 0.64, 0.66], LAMP = [2.4, 2.3, 1.9], TAIL = [1.7, 0.07, 0.07], CHROME = [0.8, 0.82, 0.85], RAIL = [0.1, 0.1, 0.11], PLATE = [0.92, 0.8, 0.2];
+export const PAINTS: number[][] = [[0.95, 0.97, 1.0], [0.95, 0.97, 1.0], [0.95, 0.97, 1.0], [0.7, 0.76, 0.84], [0.7, 0.76, 0.84], [0.2, 0.24, 0.32], [0.2, 0.24, 0.32],
+  [0.03, 0.04, 0.07], [0.04, 0.45, 0.62], [0.08, 0.14, 0.55], [0.48, 0.12, 0.75], [0.8, 0.08, 0.5], [0.05, 0.6, 0.5], [0.9, 0.35, 0.1], [0.85, 0.87, 0.92]];   // future fleet: pearl whites, titanium, midnight, electric cyan / violet / magenta
+const GLASS = [0.045, 0.07, 0.1], DARK = [0.035, 0.035, 0.04], TYRE = [0.03, 0.03, 0.035], HUB = [0.62, 0.64, 0.66], LAMP = [2.4, 2.3, 1.9], TAIL = [1.7, 0.07, 0.07], GLOW = [0.25, 2.6, 3.3], CHROME = [0.8, 0.82, 0.85], RAIL = [0.1, 0.1, 0.11], PLATE = [0.92, 0.8, 0.2];
 
 const profY = (s: Spec, z: number): number => {
   const p = s.prof; if (z <= p[0][0]) return p[0][1];
@@ -124,7 +124,10 @@ export function carBody(kind: CarKind, col: number[], stripe?: number[]): THREE.
   const plan = (z: number): number => 1 - 0.13 * Math.pow(Math.abs((2 * z) / s.L), 3.6), side = (z: number): number => hw * plan(z) + 0.004;
   for (let i = 0; i + 1 < s.glass.length; i++) { const z = (s.glass[i][1] + s.glass[i + 1][0]) / 2; for (const sd of [-1, 1]) parts.push(box(0.012, s.belt - s.sill - 0.14, 0.012, sd * side(z), (s.sill + 0.12 + s.belt) / 2, z, DARK)); }   // door shut lines
   if (kind !== 'coach') for (const gl of s.glass) for (const sd of [-1, 1]) parts.push(box(0.03, 0.03, 0.14, sd * (side(gl[0]) + 0.012), s.belt - 0.1, gl[0] + 0.16, CHROME));   // door handles
-  parts.push(box(s.W * 0.4, 0.03, 0.04, 0, Math.min(ny, s.belt) - (big ? 0.12 : 0.1), f + 0.005, CHROME));                                                      // grille bar
+  parts.push(box(s.W * 0.4, 0.03, 0.04, 0, Math.min(ny, s.belt) - (big ? 0.12 : 0.1), f + 0.005, CHROME));
+  // future fleet: light-bar nose and tail, glowing underglow strips along both sills
+  parts.push(box(s.W * 0.7, 0.035, 0.05, 0, Math.min(ny, s.belt) - (big ? 0.02 : 0.02), f + 0.012, [2.2, 2.6, 3.0]), box(s.W * 0.74, 0.04, 0.05, 0, Math.min(ry, s.belt) - (big ? 0.12 : 0.04), -f - 0.012, TAIL));
+  for (const sd of [-1, 1]) parts.push(box(0.03, 0.035, s.L * 0.5, sd * (hw + 0.012), s.sill + 0.03, 0, GLOW));                                                      // grille bar
   for (const sd of [-1, 1]) { parts.push(box(0.12, 0.07, 0.05, sd * hw * 0.72, s.sill + 0.12, f + 0.01, LAMP));                                                     // fog lamps
     parts.push(box(0.5, 0.012, 0.02, sd * 0.3, profY(s, mz) + 0.012, mz - 0.04, RAIL)); }                                                                              // wipers
   if (kind === 'sedan' || kind === 'hatch' || kind === 'coupe') { parts.push(box(0.012, 0.28, 0.012, hw * 0.55, s.H + 0.14, -0.4, RAIL)); for (const sd of [-1, 1]) parts.push(box(0.06, 0.06, 0.12, sd * hw * 0.55, s.sill + 0.08, -f - 0.04, CHROME)); }   // aerial, exhaust tips
@@ -153,7 +156,7 @@ export function wheelGeo(r: number): THREE.BufferGeometry {
   const parts = [paint(tyre, TYRE)];
   for (const sd of [-1, 1]) {
     const disc = new THREE.CircleGeometry(r * 0.62, 14).toNonIndexed(); disc.rotateY((sd * Math.PI) / 2); disc.translate(sd * (w / 2 + 0.003), 0, 0); parts.push(paint(disc, DARK));
-    const lip = new THREE.RingGeometry(r * 0.54, r * 0.64, 14).toNonIndexed(); lip.rotateY((sd * Math.PI) / 2); lip.translate(sd * (w / 2 + 0.006), 0, 0); parts.push(paint(lip, HUB));
+    const lip = new THREE.RingGeometry(r * 0.54, r * 0.64, 14).toNonIndexed(); lip.rotateY((sd * Math.PI) / 2); lip.translate(sd * (w / 2 + 0.006), 0, 0); parts.push(paint(lip, GLOW));
     const hubc = new THREE.CircleGeometry(r * 0.15, 8).toNonIndexed(); hubc.rotateY((sd * Math.PI) / 2); hubc.translate(sd * (w / 2 + 0.012), 0, 0); parts.push(paint(hubc, HUB));
     for (let k = 0; k < 6; k++) { const sp = new THREE.BoxGeometry(0.014, r * 0.42, r * 0.1).toNonIndexed(); sp.translate(sd * (w / 2 + 0.009), r * 0.3, 0); sp.rotateX((k * Math.PI * 2) / 6); parts.push(paint(sp, HUB)); }
   }

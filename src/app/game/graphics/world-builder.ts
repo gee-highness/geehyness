@@ -145,12 +145,9 @@ export class WorldBuilder {
   public onPavement(x: number, z: number): boolean { return this.pavementTop(x, z) !== null; }
 
   private snapList?: [number, number][];
-  /** Town-wide pavement zone: any street with a few buildings beside it, and every street within ~1.8 km of a district centre. Shared by the visible pavements and the physics. */
+  /** Pavement zone: everywhere. Kept as one function so the visible pavements and the physics always agree. */
   public pavedZone(x: number, z: number): boolean {
-    const nb = this.buildingsNear(x, z); if (nb < 1) return false; if (nb >= 3) return true;
-    this.snapList ??= Object.values((this.meta.snaps ?? {}) as Record<string, [number, number]>);
-    for (const s of this.snapList) if (Math.hypot(s[0] - x, s[1] - z) < 1800) return true;
-    return false;
+    return true;   // every paved street gets raised pavements (unpaved tracks and bridges are excluded by the builder)
   }
 
   /** Height of the pavement top above bare terrain at (x,z) (carriageway lift of the street it borders + kerb height), or null if this is not pavement. */
@@ -815,7 +812,7 @@ export class WorldBuilder {
     const crown = new THREE.ConeGeometry(2.8, 1.1, 7); crown.translate(0, 7.6, 0);
     const crown2 = new THREE.ConeGeometry(1.5, 0.9, 7); crown2.translate(0, 8.2, 0);
     const geoPalm = mergeGeometries([paint(ptrunk, new THREE.Color(0x8d7d5e)), paint(crown, new THREE.Color(0x3f7d2c)), paint(crown2, new THREE.Color(0x4f9236))].map((g) => { g.deleteAttribute('uv'); return g; }))!;
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, flatShading: true });
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.2, flatShading: true, emissive: 0x0a1a2a });   // holo-trees: bioluminescent canopies
     const TCH = 300;   // tree cells: small enough that distant trees really drop out (was one 800 m block)
     const sn = this.meta.snaps as Record<string, [number, number]> | undefined;
     const cbd = (x: number, z: number): boolean => !!sn && ['manzini', 'matsapha'].some((k) => sn[k] && Math.hypot(sn[k][0] - x, sn[k][1] - z) < 900);
@@ -842,9 +839,9 @@ export class WorldBuilder {
         im.setMatrixAt(i, m4);
         const r = WorldBuilder.hash(t.x * 2, t.z * 3);
         if (sp === 2) return;                                                           // palm keeps its baked colours
-        if (sp === 1) col.setRGB(0.07 + r * 0.05, 0.22 + r * 0.12, 0.1 + r * 0.05);
-        else if (t.c === 10 || (t.c === 8 && r > 0.82)) col.setRGB(0.5 + r * 0.1, 0.34, 0.74); // jacaranda blossom
-        else col.setRGB(0.22 + r * 0.12, 0.42 + r * 0.14, 0.18 + r * 0.06);
+        // futuristic canopies: teal, electric blue, violet and magenta glow (values above 1 read as lit)
+        const pal = [[0.1, 1.25, 1.05], [0.35, 0.7, 1.5], [0.85, 0.4, 1.4], [1.4, 0.3, 0.95], [0.3, 1.35, 0.6]], pc = pal[Math.floor(WorldBuilder.hash(t.x * 5, t.z * 7) * pal.length) % pal.length];
+        if (sp === 1) col.setRGB(pc[0] * 0.8, pc[1] * 0.8, pc[2] * 0.8); else col.setRGB(pc[0] * (0.85 + r * 0.3), pc[1] * (0.85 + r * 0.3), pc[2] * (0.85 + r * 0.3));
         im.setColorAt(i, col);
       });
       im.userData['far'] = 380; im.computeBoundingSphere();
@@ -904,8 +901,8 @@ export class WorldBuilder {
     const armG = new THREE.BoxGeometry(2.6, 0.12, 0.14); armG.translate(1.3, 9, 0);
     const headG = new THREE.BoxGeometry(0.9, 0.16, 0.38); headG.translate(2.5, 8.9, 0);
     const pole = mergeGeometries([poleG, armG].map((g) => g.toNonIndexed()))!;
-    const poleM = new THREE.MeshStandardMaterial({ color: 0x8a9096, metalness: 0.8, roughness: 0.35 });
-    const headM = new THREE.MeshBasicMaterial({ color: 0xfff1c0 });
+    const poleM = new THREE.MeshStandardMaterial({ color: 0x1c2740, metalness: 0.85, roughness: 0.25, emissive: 0x062a3a });
+    const headM = new THREE.MeshBasicMaterial({ color: 0xb8f4ff });
     const spots: { x: number; z: number; rot: number }[] = [];
     // real OSM street lamps first (arm turned toward the nearest carriageway); procedural ones then skip anywhere near a real lamp
     for (const [lx, lz] of this.meta.lamps ?? []) {
