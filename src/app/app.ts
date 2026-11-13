@@ -116,7 +116,7 @@ export class App implements AfterViewInit, OnDestroy {
     this.sceneManager.spawnVehicle(config, this.tuningService.visuals(), def);
     this.showCars.set(false);
   }
-  public begin(): void { this.audioService.unlockAudio(); this.started.set(true); }
+  public begin(): void { this.audioService.unlockAudio(); this.started.set(true); try { window.focus(); } catch { /* embedded preview */ } }
   readonly showTouchControls = signal<boolean>(false);
 
   // Core Game Loop & Physics
@@ -325,7 +325,7 @@ export class App implements AfterViewInit, OnDestroy {
       // Update Camera & Visuals
       const pad = this.pad;
       this.sceneManager.cameraRig.look(pad.lookX + this.mlx, pad.lookY + this.mly, frameDelta); this.mlx = this.mly = 0;
-      this.sceneManager.setWaypoint(this.nav.waypoint());
+      this.sceneManager.setNav(this.nav.waypoint(), this.nav.route(), this.nav.progress, this.vehicle.position, frameDelta);
       this.drive.tick(frameDelta, this.vehicle.steerInput);
       this.audioService.setHorn(this.drive.horn());
       this.sceneManager.setLights(this.drive.headlights(), this.drive.leftOn, this.drive.rightOn, this.vehicle.brake > 0.15 || this.vehicle.handbrake, false, this.nightFactor);
@@ -415,13 +415,14 @@ export class App implements AfterViewInit, OnDestroy {
     let brake = 0;
     let handbrake = false;
 
-    if (pad.connected) {
+    // Controller wins while it is being used; an idle or phantom pad no longer locks out touch / keyboard
+    const padActive = pad.connected && (Math.abs(pad.steer) > 0.02 || pad.throttle > 0.02 || pad.brake > 0.02 || pad.handbrake);
+    if (padActive) {
       steer = pad.steer;
       throttle = pad.throttle;
       brake = pad.brake;
       handbrake = pad.handbrake;
-
-        } else if (this.showTouchControls()) {
+    } else if (this.showTouchControls() && !pad.connected) {
       steer = this.touchSteer;
       throttle = this.touchThrottle;
       brake = this.touchBrake;
@@ -533,7 +534,6 @@ export class App implements AfterViewInit, OnDestroy {
     if ((event.target as HTMLElement | null)?.tagName === 'INPUT') return;   // typing in the lobby / chat
     if (!this.started()) { if (event.code === 'Enter') this.begin(); return; }
 
-    if (event.code === 'KeyB') { this.benchStart(); return; }
     if (event.code === 'KeyY') { try { localStorage.setItem('shesha.style', localStorage.getItem('shesha.style') === '1' ? '0' : '1'); } catch { /* ignore */ } location.reload(); return; }
     if (event.code === 'KeyF') { this.hudComponent?.showFps.update((v) => !v); return; }
     if (event.code === 'KeyY') { this.settings.toggleTheme(); return; }

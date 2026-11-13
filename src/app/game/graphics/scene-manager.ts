@@ -35,6 +35,8 @@ import { AssetLibrary } from './asset-library';
 import { RoadTraffic } from './road-traffic';
 import { CAR_CATALOG, CarDef } from '../cars';
 import { RemotePlayers } from './remote-players';
+import { NavMarkers } from './nav-markers';
+import type { Route } from '../road-graph';
 import type { PeerState } from '../../services/multiplayer.service';
 import { CarFactory } from './car-factory';
 import { RaycastVehicle } from '../physics/raycast-vehicle';
@@ -227,6 +229,11 @@ export class SceneManager {
 
   // ---- map waypoint beacon: a tall magenta light shaft
   private beacon?: THREE.Mesh;
+  private navMarkers?: NavMarkers;
+  /** Sat-nav in the world: route chevrons on the road, destination beam + label, next-turn marker. */
+  public setNav(wp: [number, number] | null, route: Route | null, idx: number, car: THREE.Vector3, dt: number): void {
+    (this.navMarkers ??= new NavMarkers(this.scene, (x, z, y) => this.worldBuilder.groundHeightAt(x, z, y))).update(wp, route, idx, car, dt);
+  }
   public setWaypoint(wp: [number, number] | null): void {
     if (!wp) { if (this.beacon) this.beacon.visible = false; return; }
     if (!this.beacon) {

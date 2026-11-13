@@ -15,6 +15,8 @@ export class NavigationService {
   readonly routing = signal(false);
   private world?: WorldBuilder; private graph?: RoadGraph; private idx = 0; private lastRoute = 0;
 
+  /** Index of the route point nearest the car. */
+  get progress(): number { return this.idx; }
   attach(w: WorldBuilder): void { this.world = w; }
   /** Shared lazily-built road graph. */
   getGraph(): RoadGraph | undefined { if (!this.graph && this.world?.ready) this.graph = new RoadGraph(this.world.roadWays); return this.graph; }

@@ -52,13 +52,27 @@ export class GamepadService {
     }
   }
 
+  /** The pad we are listening to: the one that was last touched, else the most gamepad-like device (browsers also list keyboards, headsets and motion sensors as "gamepads"). */
+  private activeIdx = -1; private shownId = '';
   public getConnectedGamepad(): Gamepad | null {
     if (typeof navigator === 'undefined' || !navigator.getGamepads) return null;
-    const pads = navigator.getGamepads();
-    for (const p of pads) {
-      if (p && p.connected) return p;
+    let best: Gamepad | null = null, bs = -1;
+    for (const p of Array.from(navigator.getGamepads())) {
+      if (!p || !p.connected) continue;
+      const touched = p.buttons.some((b) => b.pressed || b.value > 0.5) || p.axes.some((a, i) => Math.abs(a) > 0.5 && (p.mapping === 'standard' || i < 4));
+      if (touched) this.activeIdx = p.index;
+      const sc = (p.index === this.activeIdx ? 1000 : 0) + (p.mapping === 'standard' ? 100 : 0) + (p.buttons.length >= 10 ? 20 : 0) + (p.axes.length >= 4 ? 20 : 0) + (/xbox|dualshock|dualsense|wireless controller|gamepad|controller|054c|045e/i.test(p.id) ? 10 : 0);
+      if (sc > bs) { bs = sc; best = p; }
     }
-    return null;
+    // a device with no sticks and few buttons (keyboard / mouse / headset) is not a controller
+    if (best && best.axes.length < 2 && best.buttons.length < 4) best = null;
+    this.announce(best);
+    return best;
+  }
+  /** Keeps the connected / name signals right even when the browser never fired `gamepadconnected` (it waits for a button press). */
+  private announce(p: Gamepad | null): void {
+    const id = p ? `${p.index}:${p.id}` : ''; if (id === this.shownId) return; this.shownId = id;
+    if (p) this.onGamepadConnected({ gamepad: p } as GamepadEvent); else { this.isConnected.set(false); this.controllerName.set('No Controller Detected'); this.isDualShock.set(false); this.hasVibration.set(false); }
   }
 
   private static readonly NONE: GamepadControlsSnapshot = {
@@ -83,6 +97,8 @@ export class GamepadService {
   public pollControls(): GamepadControlsSnapshot {
     const pad = this.getConnectedGamepad();
     if (!pad) return GamepadService.NONE;
+    // Generic / non-standard pads (Android, Firefox, Switch, old DirectInput): triggers often arrive as axes 2 / 5 and the right stick as axes 3 / 4
+    const odd = pad.mapping !== 'standard' && pad.axes.length >= 6 && pad.buttons.length < 8, trig = (v: number | undefined): number => Math.max(0, Math.min(1, ((v ?? -1) + 1) / 2));
     const b = pad.buttons, down = (i: number) => b[i]?.pressed || false;
     const edge = (i: number) => { const d = down(i), e = d && !this.lastButtons[i]; return e; };
     const share = down(8);
@@ -94,7 +110,7 @@ export class GamepadService {
 
     // Left stick X steering with a gentle response curve
     const rawSteer = this.dz(pad.axes[0] || 0), steer = Math.sign(rawSteer) * Math.pow(Math.abs(rawSteer), 1.5);
-    const l2 = b[6]?.value ?? (b[6]?.pressed ? 1 : 0), r2 = b[7]?.value ?? (b[7]?.pressed ? 1 : 0);
+    const l2 = odd ? trig(pad.axes[2]) : (b[6]?.value ?? (b[6]?.pressed ? 1 : 0)), r2 = odd ? trig(pad.axes[5]) : (b[7]?.value ?? (b[7]?.pressed ? 1 : 0));
     const out: GamepadControlsSnapshot = {
       ...GamepadService.NONE,
       connected: true, id: pad.id, isDualShock: this.isDualShock(), hasVibration: !!(pad as unknown as { vibrationActuator?: VibrationActuatorLike }).vibrationActuator,
@@ -104,7 +120,7 @@ export class GamepadService {
       cycleCamera: e[2] && !share, resetCar: down(3) && !share,
       toggleMap: e[9] && !share, togglePhoto: e[16],
       toggleTelemetry: shareTap,
-      lookX: this.dz(pad.axes[2] || 0, 0.12), lookY: this.dz(pad.axes[3] || 0, 0.12),
+      lookX: this.dz(pad.axes[odd ? 3 : 2] || 0, 0.12), lookY: this.dz(pad.axes[odd ? 4 : 3] || 0, 0.12),
       indicateLeft: e[14] && !share, indicateRight: e[15] && !share, headlights: e[12] && !share, hazards: e[13] && !share,
       horn: down(10), recentreLook: e[11],
       cycleWeather: combo(12), cycleQuality: combo(13), toggleCars: combo(14), toggleFps: combo(15),
