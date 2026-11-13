@@ -11,8 +11,7 @@
     "lint": "ng lint",
     "desktop": "electron electron/main.cjs",
     "dist:linux": "npm run build && electron-builder --linux",
-    "dist:win": "npm run build && electron-builder --win",
-    "mp-server": "node server/mp-server.mjs"
+    "dist:win": "npm run build && electron-builder --win"
   },
   "private": true,
   "dependencies": {
@@ -34,10 +33,10 @@
     "express": "^5.1.0",
     "material-icons": "^1.13.14",
     "motion": "^12.23.24",
+    "peerjs": "^1.5.5",
     "rxjs": "~7.8.0",
     "three": "^0.187.0",
-    "tslib": "^2.3.0",
-    "ws": "^8.18.0"
+    "tslib": "^2.3.0"
   },
   "devDependencies": {
     "@angular/build": "^21.0.0",
@@ -50,15 +49,15 @@
     "@types/three": "^0.187.0",
     "angular-eslint": "21.1.0",
     "cross-env": "^10.1.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
     "eslint": "^9.39.1",
     "jsdom": "^27.0.0",
     "postcss": "^8.5.3",
     "tailwindcss": "^4.1.12",
     "typescript": "~5.9.2",
     "typescript-eslint": "8.47.0",
-    "vitest": "^4.0.0",
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8"
+    "vitest": "^4.0.0"
   },
   "main": "electron/main.cjs",
   "description": "SHESHA - Eswatini Open-Road Racing",

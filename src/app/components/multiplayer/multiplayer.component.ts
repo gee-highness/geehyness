@@ -34,15 +34,14 @@ import { MultiplayerService } from '../../services/multiplayer.service';
           @if (mp.status() === 'offline') {
             <label class="block mt-4 text-[11px] font-bold tracking-wider text-zinc-400">YOUR NAME<input [value]="mp.name()" maxlength="16" (input)="mp.name.set($any($event.target).value)"/></label>
             <label class="block mt-3 text-[11px] font-bold tracking-wider text-zinc-400">ROOM CODE (friends type the same one)<input [value]="mp.code()" maxlength="24" (input)="mp.code.set($any($event.target).value)"/></label>
-            <label class="block mt-3 text-[11px] font-bold tracking-wider text-zinc-400">SERVER<input [value]="mp.url()" (input)="mp.url.set($any($event.target).value)" placeholder="wss://your-server"/></label>
             @if (mp.error()) { <div class="mt-3 text-sm text-rose-300">{{ mp.error() }}</div> }
-            <button class="go w-full mt-4 rounded-2xl py-3 font-black tracking-wider cursor-pointer hover:brightness-110" (click)="mp.connect()">JOIN ROOM</button>
-            <div class="mt-3 text-[11px] text-zinc-500">Host a server with <code>npm run mp-server</code> (port 8787) on any always-on machine, then put its ws:// or wss:// address here.</div>
+            <button class="go w-full mt-4 rounded-2xl py-3 font-black tracking-wider cursor-pointer hover:brightness-110" (click)="mp.connect()">JOIN OR HOST ROOM</button>
+            <div class="mt-3 text-[11px] text-zinc-500">No server needed: it works like Ludo Sync. The first player into a room code hosts it, everyone else with the same code joins them directly.</div>
           } @else if (mp.status() === 'connecting') {
             <div class="mt-6 text-center text-zinc-300">Connecting…</div>
             <button class="w-full mt-4 rounded-2xl py-3 font-bold border border-white/20 cursor-pointer" (click)="mp.disconnect()">Cancel</button>
           } @else {
-            <div class="mt-4 text-sm text-zinc-300">Room <b class="text-white">{{ mp.room() }}</b> · {{ mp.roster().length + 1 }} driving · {{ mp.ping() }} ms</div>
+            <div class="mt-4 text-sm text-zinc-300">Room <b class="text-white">{{ mp.room() }}</b> · {{ mp.role() === 'host' ? 'you host' : 'joined' }} · {{ mp.roster().length + 1 }} driving · {{ mp.ping() }} ms</div>
             <form class="mt-3 flex gap-2" (submit)="$event.preventDefault(); say()"><input [value]="msg()" placeholder="Say something…" maxlength="120" (input)="msg.set($any($event.target).value)"/><button class="go rounded-xl px-4 font-black cursor-pointer" type="submit">Send</button></form>
             <button class="w-full mt-4 rounded-2xl py-3 font-bold border border-white/20 cursor-pointer hover:bg-white/10" (click)="mp.disconnect()">Leave room</button>
           }

@@ -194,6 +194,6 @@ Done and pushed on `ccr-cac88f1d-gkebu8` (see bullets above plus):
 - First person (COCKPIT/BUMPER): camera is rigidly attached to the car (no world-space lag) and the car's own meshes are hidden so roof/pillars/bonnet never block the view (`SceneManager.syncVehicleVisuals`, `CameraRig.update`).
 
 ## Multiplayer (free-roam, v1)
-- Relay server: `npm run mp-server` (`server/mp-server.mjs`, `ws`, PORT env, default 8787; GET / = room list). Rooms by code, max 16, 60 msg/s cap, input sanitised. Clients keep their own physics and send pose at ~15 Hz.
-- Client: `services/multiplayer.service.ts` (connection, roster, chat, pose send), `graphics/remote-players.ts` (dead-reckoned cars, name tags, collision circles id >= 3000), `components/multiplayer` lobby (J, or HUD menu). Server address is typed in the lobby (saved locally) - a hosted `wss://` URL is still needed for phones/internet play.
+- Transport: PeerJS WebRTC, same as Ludo Sync (`net/transport.ts`, `net/peer-transport.ts` copied from it). No game server: first player into room code `shesha-<code>` hosts a `net/room-hub.ts` (validation, 60 msg/s cap, 16 players, 15 Hz pose fan-out) inside their browser; the rest dial them. Host leaving ends the room (no host migration yet).
+- Client: `services/multiplayer.service.ts` (connection, roster, chat, pose send), `graphics/remote-players.ts` (dead-reckoned cars, name tags, collision circles id >= 3000), `components/multiplayer` lobby (J, or HUD menu). 
 - Not yet: cops-and-robbers roles (PLAN.md section G), shared clock/weather, lights/siren rendering on remote cars (pose flags are already sent), server-side speed sanity checks, voice.

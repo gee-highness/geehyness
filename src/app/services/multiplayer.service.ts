@@ -1,5 +1,8 @@
 import { Injectable, signal } from '@angular/core';
 import type { RaycastVehicle } from '../game/physics/raycast-vehicle';
+import { PeerNetwork } from '../net/peer-transport';
+import { RoomHub } from '../net/room-hub';
+import type { Endpoint, Link } from '../net/transport';
 
 export interface Peer { id: number; name: string; car: string; color: string; }
 /** Latest pose of a remote player (+ when it arrived), consumed by RemotePlayers. */
@@ -11,7 +14,10 @@ export interface ChatLine { id: number; name: string; text: string; at: number; 
 /** pose flag bits */
 export const FLAG = { BRAKE: 1, HEAD: 2, HIGH: 4, HORN: 8, HAZARD: 16, SIREN: 32 };
 
-/** Online free-roam: a thin WebSocket client for server/mp-server.mjs. The car's physics stays local; only pose goes over the wire (~15 Hz). */
+/** Room id on the PeerJS broker: whoever claims it first hosts the room (same scheme as Ludo Sync: no game server, WebRTC straight between players). */
+const ROOM_PREFIX = 'shesha-';
+
+/** Online free-roam over PeerJS/WebRTC, the same transport Ludo Sync uses. The first player into a room code hosts it (a RoomHub in their browser); everyone else dials the host. Physics stays local; only pose goes over the wire (~15 Hz). */
 @Injectable({ providedIn: 'root' })
 export class MultiplayerService {
   readonly status = signal<'offline' | 'connecting' | 'online'>('offline');
@@ -22,7 +28,7 @@ export class MultiplayerService {
   readonly chat = signal<ChatLine[]>([]);
   readonly ping = signal(0);
   readonly menu = signal(false);
-  readonly url = signal(this.load('url', 'ws://localhost:8787'));
+  readonly role = signal<'' | 'host' | 'guest'>('');
   readonly name = signal(this.load('name', `Driver${Math.floor(Math.random() * 900 + 100)}`));
   readonly code = signal(this.load('room', 'manzini'));
   /** Live poses by player id (mutated in place, read every frame by the scene). */
@@ -32,32 +38,58 @@ export class MultiplayerService {
   /** Supplied by the app: current car id and paint colour. */
   getLoadout: () => { car: string; color: string } = () => ({ car: 'ferrari', color: '#ef4444' });
 
-  private ws: WebSocket | null = null;
+  private ep: Endpoint | null = null; private link: Link | null = null; private hub: RoomHub | null = null; private gen = 0;
   private lastSend = 0; private pingAt = 0;
   private pingTimer: ReturnType<typeof setInterval> | undefined;
 
   private load(k: string, d: string): string { try { return localStorage.getItem('shesha.mp.' + k) ?? d; } catch { return d; } }
   private save(k: string, v: string): void { try { localStorage.setItem('shesha.mp.' + k, v); } catch { /* private mode */ } }
 
-  connect(): void {
-    if (this.ws) return;
-    const url = this.url().trim(); if (!/^wss?:\/\//i.test(url)) { this.error.set('Server address must start with ws:// or wss://'); return; }
-    this.error.set(''); this.status.set('connecting');
-    this.save('url', url); this.save('name', this.name()); this.save('room', this.code());
-    let ws: WebSocket; try { ws = new WebSocket(url); } catch { this.error.set('Invalid server address'); this.status.set('offline'); return; }
-    this.ws = ws;
-    ws.onopen = () => { const l = this.getLoadout(); ws.send(JSON.stringify({ t: 'join', room: this.code(), name: this.name(), car: l.car, color: l.color })); };
-    ws.onmessage = (e) => this.onMessage(e.data as string);
-    ws.onerror = () => { if (this.status() !== 'online') this.error.set('Could not reach the server'); };
-    ws.onclose = () => { if (this.ws === ws) this.cleanup(); };
-    this.pingTimer = setInterval(() => { this.pingAt = performance.now(); this.raw({ t: 'ping' }); }, 5000);
+  /** Join `room`: try to claim it as host; if somebody already holds it, dial them as a guest. */
+  async connect(): Promise<void> {
+    if (this.status() !== 'offline') return;
+    const code = this.code().toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 24) || 'manzini';
+    this.error.set(''); this.status.set('connecting'); this.code.set(code);
+    this.save('name', this.name()); this.save('room', code);
+    const gen = ++this.gen, net = new PeerNetwork(), hostId = ROOM_PREFIX + code, l = this.getLoadout();
+    const join = { t: 'join', name: this.name(), car: l.car, color: l.color };
+    try {
+      let ep: Endpoint | null = null;
+      try { ep = await net.open(hostId); } catch (e) { if ((e as { kind?: string }).kind !== 'unavailable-id') throw e; }
+      if (gen !== this.gen) { ep?.close(); return; }
+      if (ep) {                                                                  // we are first in: host the room
+        this.ep = ep; this.role.set('host');
+        this.hub = new RoomHub(code, (m) => this.onMessage(m));
+        ep.onIncoming((link) => this.hub?.attach(link));
+        ep.onStatus((st) => { if (st === 'lost' && this.status() === 'online') this.onEvent?.('Lost the connection to the match broker; new players cannot join until it returns'); });
+        this.hub.local(join);
+      } else {                                                                   // somebody hosts it: dial them
+        const mine = await net.open(`${hostId}-${Math.random().toString(36).slice(2, 8)}`);
+        if (gen !== this.gen) { mine.close(); return; }
+        this.ep = mine;
+        const link = await mine.dial(hostId, 15000);
+        if (gen !== this.gen) { link.close(); mine.close(); return; }
+        this.link = link; this.role.set('guest');
+        link.onMessage((d) => { if (typeof d === 'string') { try { this.onMessage(JSON.parse(d)); } catch { /* bad frame */ } } });
+        link.onClose(() => { if (this.link === link && this.status() !== 'offline') { this.onEvent?.('The host left the room'); this.disconnect(); } });
+        link.send(JSON.stringify(join));
+      }
+      this.pingTimer = setInterval(() => { this.pingAt = performance.now(); this.raw({ t: 'ping' }); }, 5000);
+    } catch (e) {
+      if (gen !== this.gen) return;
+      const kind = (e as { kind?: string }).kind;
+      this.error.set(kind === 'peer-unavailable' ? 'The room host disappeared, try again' : kind === 'blocked' ? 'Could not connect directly to the host (network blocks peer-to-peer)' : kind === 'unsupported' ? 'This browser cannot do peer-to-peer' : 'Could not reach the match broker, check your internet');
+      this.disconnect();
+    }
   }
-  disconnect(): void { const w = this.ws; this.ws = null; w?.close(); this.cleanup(); }
-  private cleanup(): void { this.ws = null; clearInterval(this.pingTimer); this.status.set('offline'); this.roster.set([]); this.states.clear(); this.myId.set(0); this.room.set(''); }
-  private raw(o: unknown): void { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify(o)); }
+  disconnect(): void { this.gen++; this.cleanup(); }
+  private cleanup(): void {
+    clearInterval(this.pingTimer); this.hub?.close(); this.hub = null; try { this.link?.close(); } catch { /* gone */ } this.link = null; try { this.ep?.close(); } catch { /* gone */ } this.ep = null;
+    this.status.set('offline'); this.role.set(''); this.roster.set([]); this.states.clear(); this.myId.set(0); this.room.set('');
+  }
+  private raw(o: Record<string, unknown>): void { if (this.hub) this.hub.local(o); else if (this.link?.open) this.link.send(JSON.stringify(o)); }
 
-  private onMessage(data: string): void {
-    let m: any; try { m = JSON.parse(data); } catch { return; }   // eslint-disable-line @typescript-eslint/no-explicit-any
+  private onMessage(m: any): void {   // eslint-disable-line @typescript-eslint/no-explicit-any
     switch (m.t) {
       case 'welcome': this.myId.set(m.id); this.room.set(m.room); this.status.set('online'); this.roster.set(m.peers); for (const p of m.peers as Peer[]) this.ensure(p); this.menu.set(false); this.onEvent?.(`Joined room "${m.room}"`); break;
       case 'join': this.roster.update((r) => [...r, m.peer]); this.ensure(m.peer); this.onEvent?.(`${m.peer.name} joined`); break;
