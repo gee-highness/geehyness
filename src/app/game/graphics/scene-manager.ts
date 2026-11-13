@@ -34,6 +34,8 @@ function applyStyleGrade(): void {
 import { AssetLibrary } from './asset-library';
 import { RoadTraffic } from './road-traffic';
 import { CAR_CATALOG, CarDef } from '../cars';
+import { RemotePlayers } from './remote-players';
+import type { PeerState } from '../../services/multiplayer.service';
 import { CarFactory } from './car-factory';
 import { RaycastVehicle } from '../physics/raycast-vehicle';
 import { VehicleArchetypeConfig, VisualCustomization } from '../../models/vehicle.types';
@@ -59,7 +61,7 @@ export class SceneManager {
   private modelRadius = 0.33;
   private roadTraffic?: RoadTraffic;
   private pedestrians?: Pedestrians;
-  private fwdS = new THREE.Vector3(); private fpHidden = false; private fpT = 0; public race?: Race;
+  private fwdS = new THREE.Vector3(); private fpHidden = false; private fpT = 0; public race?: Race; private remotes?: RemotePlayers;
   public graphProvider?: () => RoadGraph | undefined;
   private signals?: TrafficSignals;
   private pedFraction = 1;
@@ -439,8 +441,12 @@ export class SceneManager {
   }
 
   private baseColliders() { return [...(this.roadTraffic?.colliders() ?? [])]; }
-  public trafficColliders() { return [...this.baseColliders(), ...(this.race?.colliders() ?? [])]; }
-  public hitTraffic(id: number, impact: number): void { if (id >= 2000) this.race?.hit(id, impact); else this.roadTraffic?.hit(id, impact); }
+  public trafficColliders() { return [...this.baseColliders(), ...(this.race?.colliders() ?? []), ...(this.remotes?.colliders() ?? [])]; }
+  /** Draw / move the other online players (called every frame while connected). */
+  public syncRemotes(states: Map<number, PeerState>, dt: number): void { (this.remotes ??= new RemotePlayers(this.scene)).update(states, dt, performance.now()); }
+  /** Surface height under a vehicle (sent to other players so their copy of our car sits on the road). */
+  public groundUnder(v: RaycastVehicle): number { return this.worldBuilder.groundHeightAt(v.position.x, v.position.z, v.position.y); }
+  public hitTraffic(id: number, impact: number): void { if (id >= 3000) return; if (id >= 2000) this.race?.hit(id, impact); else this.roadTraffic?.hit(id, impact); }
   public raceUpdate(dt: number, p: RacePose): void { if (this.race?.active) this.race.update(dt, p, this.baseColliders()); }
 
   /** Chunky-pixel mode: fixed internal height per tier, nearest-neighbour upscaled. Cheap on the GPU and part of the look. */

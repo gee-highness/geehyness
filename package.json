@@ -11,7 +11,8 @@
     "lint": "ng lint",
     "desktop": "electron electron/main.cjs",
     "dist:linux": "npm run build && electron-builder --linux",
-    "dist:win": "npm run build && electron-builder --win"
+    "dist:win": "npm run build && electron-builder --win",
+    "mp-server": "node server/mp-server.mjs"
   },
   "private": true,
   "dependencies": {
@@ -35,7 +36,8 @@
     "motion": "^12.23.24",
     "rxjs": "~7.8.0",
     "three": "^0.187.0",
-    "tslib": "^2.3.0"
+    "tslib": "^2.3.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@angular/build": "^21.0.0",

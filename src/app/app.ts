@@ -36,6 +36,8 @@ import { RaycastVehicle } from './game/physics/raycast-vehicle';
 // Components
 import { CarSelectComponent } from './components/car-select/car-select.component';
 import { CAR_CATALOG, CarDef, carConfig } from './game/cars';
+import { MultiplayerComponent } from './components/multiplayer/multiplayer.component';
+import { MultiplayerService, FLAG } from './services/multiplayer.service';
 import { IntroComponent } from './components/intro/intro.component';
 import { HudComponent } from './components/hud/hud.component';
 import { TelemetryComponent } from './components/telemetry/telemetry.component';
@@ -47,7 +49,7 @@ import { TouchControlsComponent } from './components/touch-controls/touch-contro
 
 @Component({
   selector: 'app-root',
-  imports: [HelpComponent, 
+  imports: [MultiplayerComponent, HelpComponent, 
     CommonModule,
     MatIconModule,
     HudComponent,
@@ -72,6 +74,7 @@ export class App implements AfterViewInit, OnDestroy {
   public hapticsService = inject(HapticsService);
   public settings = inject(SettingsService);
   public drive = inject(DriveStateService);
+  public mp = inject(MultiplayerService);
   public raceSvc = inject(RaceService);
   private raceHooked = false; private raceAcc = 0;
   private crashNoise = 0; 
@@ -103,6 +106,7 @@ export class App implements AfterViewInit, OnDestroy {
   public onChooseCar(def: CarDef): void {
     this.currentCar.set(def);
     this.tuningService.setCar(carConfig(def));
+    queueMicrotask(() => this.mp.announceCar());
     const config = this.tuningService.getActiveConfig();
     const old = this.vehicle;
     this.vehicle = new RaycastVehicle(config, this.tuningService.tuning());
@@ -153,6 +157,8 @@ export class App implements AfterViewInit, OnDestroy {
   }
 
   private initGame(): void {
+    this.mp.getLoadout = () => ({ car: this.currentCar().id, color: this.tuningService.visuals().bodyColor });
+    this.mp.onEvent = (m) => this.raceSvc.flash(m);
     const container = this.canvasContainerRef.nativeElement;
 
     // Run high-frequency graphics & physics outside Angular Zone for 60 FPS
@@ -332,6 +338,11 @@ export class App implements AfterViewInit, OnDestroy {
       );
       tp = this.mark('camera', tp);
       this.sceneManager.syncVehicleVisuals(this.vehicle, frameDelta);
+      if (this.mp.status() === 'online') {
+        const h = this.drive.headlights(), fl = (this.vehicle.brake > 0.1 || this.vehicle.handbrake ? FLAG.BRAKE : 0) | (h > 0 ? FLAG.HEAD : 0) | (h > 1 ? FLAG.HIGH : 0) | (this.drive.horn() ? FLAG.HORN : 0) | (this.drive.hazards() ? FLAG.HAZARD : 0);
+        this.mp.sendPose(this.vehicle, this.sceneManager.groundUnder(this.vehicle), fl, now);
+      }
+      if (this.mp.states.size || this.mp.status() === 'online') this.sceneManager.syncRemotes(this.mp.states, frameDelta);
       tp = this.mark('sync(world,traffic,wheels)', tp);
 
       // Push telemetry snapshot to Angular UI at ~20 Hz
@@ -519,6 +530,7 @@ export class App implements AfterViewInit, OnDestroy {
   @HostListener('window:keydown', ['$event'])
   onKeyDown(event: KeyboardEvent): void {
     this.audioService.unlockAudio();
+    if ((event.target as HTMLElement | null)?.tagName === 'INPUT') return;   // typing in the lobby / chat
     if (!this.started()) { if (event.code === 'Enter') this.begin(); return; }
 
     if (event.code === 'KeyB') { this.benchStart(); return; }
@@ -538,6 +550,7 @@ export class App implements AfterViewInit, OnDestroy {
     if (event.code === 'KeyK') { this.sceneManager.cameraRig.recentreLook(); return; }
     if (event.code === 'F1' || event.code === 'Slash' || event.code === 'KeyI') { event.preventDefault(); this.showHelp.update((v) => !v); return; }
     if (event.code === 'KeyV') { this.showCars.update((v) => !v); return; }
+    if (event.code === 'KeyJ') { this.mp.menu.update((v) => !v); return; }
     switch (event.code) {
       case 'ArrowLeft':
       case 'KeyA':
@@ -581,6 +594,7 @@ export class App implements AfterViewInit, OnDestroy {
 
   @HostListener('window:keyup', ['$event'])
   onKeyUp(event: KeyboardEvent): void {
+    if ((event.target as HTMLElement | null)?.tagName === 'INPUT') return;
     if (event.code === 'KeyB') { this.keyHorn = false; this.drive.setHorn(false); }
     switch (event.code) {
       case 'ArrowLeft':
